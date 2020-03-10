@@ -54,6 +54,7 @@ class Sequential
     static void test(LocalPaths paths)
     {
         Java.installJDK(paths);
+        Graal.installMx(paths);
         Graal.downloadGraal(paths);
     }
 }
@@ -64,7 +65,7 @@ class Graal
 
     static void downloadGraal(LocalPaths paths)
     {
-        if (paths.svm.toFile().exists()) {
+        if (paths.svm().toFile().exists()) {
             LOG.info("Skipping Graal download");
             return;
         }
@@ -73,7 +74,18 @@ class Graal
         OperatingSystem.exec().apply(gitClone(repo, paths.root));
     }
 
-    static OperatingSystem.Command gitClone(String repo, Path directory)
+    static void installMx(LocalPaths paths)
+    {
+        if (paths.mx().toFile().exists()) {
+            LOG.info("Skipping Mx install");
+            return;
+        }
+
+        var repo = "https://github.com/graalvm/mx";
+        OperatingSystem.exec().apply(gitClone(repo, paths.root));
+    }
+
+    private static OperatingSystem.Command gitClone(String repo, Path directory)
     {
         return new OperatingSystem.Command(
             Stream.of(
@@ -97,7 +109,7 @@ class Java
 
     static void installJDK(LocalPaths paths)
     {
-        if (paths.java.toFile().exists()) {
+        if (paths.java().toFile().exists()) {
             LOG.info("Skipping JDK install");
             return;
         }
@@ -189,16 +201,16 @@ class LocalPaths
     final Path root;
     final Path jdk;
     final Path javaHome;
-    final Path java;
-    final Path svm;
+    final Path mxHome;
+    final Path graalHome;
 
-    private LocalPaths(Path root, Path jdk, Path javaHome, Path java, Path svm)
+    LocalPaths(Path root, Path jdk, Path javaHome, Path mxHome, Path graalHome)
     {
         this.root = root;
         this.jdk = jdk;
         this.javaHome = javaHome;
-        this.java = java;
-        this.svm = svm;
+        this.mxHome = mxHome;
+        this.graalHome = graalHome;
     }
 
     static LocalPaths newSystemPaths()
@@ -208,12 +220,27 @@ class LocalPaths
         var javaHome = OperatingSystem.type() == OperatingSystem.Type.MAC_OS
             ? jdk.resolve("Contents").resolve("Home")
             : jdk;
-        var java = javaHome.resolve("bin").resolve("java");
-        var svm = root.resolve("graal").resolve("substratevm");
-        return new LocalPaths(root, jdk, javaHome, java, svm);
+        var mxHome = root.resolve("mx");
+        var graalHome = root.resolve("graal");
+        return new LocalPaths(root, jdk, javaHome, mxHome, graalHome);
     }
 
-    static Path rootPath()
+    Path java()
+    {
+        return javaHome.resolve("bin").resolve("java");
+    }
+
+    Path mx()
+    {
+        return mxHome.resolve("mx");
+    }
+
+    Path svm()
+    {
+        return graalHome.resolve("substratevm");
+    }
+
+    private static Path rootPath()
     {
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
