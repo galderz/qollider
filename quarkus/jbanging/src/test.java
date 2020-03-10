@@ -61,6 +61,7 @@ class Sequential
 
         // Build steps
         Graal.buildGraal(paths);
+        Quarkus.buildQuarkus(paths);
     }
 }
 
@@ -80,6 +81,35 @@ class Quarkus
         OperatingSystem.exec()
             .compose(Git.clone(repo))
             .apply(paths.root);
+    }
+
+    public static void buildQuarkus(LocalPaths paths)
+    {
+        if (LocalPaths.quarkusDocumentationJar(paths).toFile().exists())
+        {
+            LOG.info("Skipping Quarkus build");
+            return;
+        }
+
+        OperatingSystem.exec()
+            .compose(Quarkus::mvnInstall)
+            .apply(paths);
+    }
+
+    private static OperatingSystem.Command mvnInstall(LocalPaths paths)
+    {
+        return new OperatingSystem.Command(
+            Stream.of(
+                "mvn" // ?
+                , "install"
+                , "-DskipTests"
+                , "-Dno-format"
+            )
+            , LocalPaths.quarkusHome(paths)
+            , Stream.of(
+                LocalEnvs.graalJavaHome(paths)
+            )
+        );
     }
 }
 
@@ -109,7 +139,7 @@ class Graal
             )
             , LocalPaths.svm(paths)
             , Stream.of(
-                LocalEnvs.javaHome(paths)
+                LocalEnvs.jdkJavaHome(paths)
             )
         );
     }
@@ -259,11 +289,19 @@ class Java
 
 class LocalEnvs
 {
-    static OperatingSystem.EnvVar javaHome(LocalPaths paths)
+    static OperatingSystem.EnvVar jdkJavaHome(LocalPaths paths)
     {
         return new OperatingSystem.EnvVar(
             "JAVA_HOME"
             , LocalPaths.javaHome(paths).toString()
+        );
+    }
+
+    static OperatingSystem.EnvVar graalJavaHome(LocalPaths paths)
+    {
+        return new OperatingSystem.EnvVar(
+            "JAVA_HOME"
+            , LocalPaths.graalHome(paths).toString()
         );
     }
 }
@@ -297,8 +335,8 @@ class LocalPaths
 
     static Path java(LocalPaths paths)
     {
-        final var java = Path.of("bin", "java");
-        return javaHome(paths).resolve(java);
+        final var javaPath = Path.of("bin", "java");
+        return javaHome(paths).resolve(javaPath);
     }
 
     static Path mxHome(LocalPaths paths)
@@ -313,23 +351,24 @@ class LocalPaths
 
     static Path graalHome(LocalPaths paths)
     {
-        return paths.root.resolve("graal");
+        final var graalHomePath = Path.of(
+            "graal"
+            , "sdk"
+            , "latest_graalvm_home"
+        );
+        return paths.root.resolve(graalHomePath);
     }
 
     static Path svm(LocalPaths paths)
     {
-        return graalHome(paths).resolve("substratevm");
+        final var svmPath = Path.of("graal", "substratevm");
+        return paths.root.resolve(svmPath);
     }
 
     static Path nativeImage(LocalPaths paths)
     {
-        final var path = Path.of(
-            "sdk"
-            , "latest_graalvm_home"
-            , "bin"
-            , "native-image"
-        );
-        return graalHome(paths).resolve(path);
+        final var nativeImagePath = Path.of("bin", "native-image");
+        return graalHome(paths).resolve(nativeImagePath);
     }
 
     static Path quarkusHome(LocalPaths paths)
@@ -340,6 +379,16 @@ class LocalPaths
     static Path quarkusPomXml(LocalPaths paths)
     {
         return quarkusHome(paths).resolve("pom.xml");
+    }
+
+    static Path quarkusDocumentationJar(LocalPaths paths)
+    {
+        final var documentationJarPath = Path.of(
+            "docs"
+            , "target"
+            , "quarkus-documentation-999-SNAPSHOT.jar"
+        );
+        return quarkusHome(paths).resolve(documentationJarPath);
     }
 
     private static Path rootPath()
