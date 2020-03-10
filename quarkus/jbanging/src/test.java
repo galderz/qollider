@@ -57,9 +57,29 @@ class Sequential
         Java.installJDK(paths);
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
+        Quarkus.downloadQuarkus(paths);
 
         // Build steps
         Graal.buildGraal(paths);
+    }
+}
+
+class Quarkus
+{
+    static final Logger LOG = LogManager.getLogger(Java.class);
+
+    static void downloadQuarkus(LocalPaths paths)
+    {
+        if (LocalPaths.quarkusPomXml(paths).toFile().exists())
+        {
+            LOG.info("Skipping Quarkus download");
+            return;
+        }
+
+        var repo = "https://github.com/quarkusio/quarkus";
+        OperatingSystem.exec()
+            .compose(Git.clone(repo))
+            .apply(paths.root);
     }
 }
 
@@ -104,7 +124,7 @@ class Graal
 
         var repo = "https://github.com/oracle/graal";
         OperatingSystem.exec()
-            .compose(Graal.gitClone(repo))
+            .compose(Git.clone(repo))
             .apply(paths.root);
     }
 
@@ -118,11 +138,15 @@ class Graal
 
         var repo = "https://github.com/graalvm/mx";
         OperatingSystem.exec()
-            .compose(Graal.gitClone(repo))
+            .compose(Git.clone(repo))
             .apply(paths.root);
     }
 
-    private static Function<Path, OperatingSystem.Command> gitClone(String repo)
+}
+
+class Git
+{
+    static Function<Path, OperatingSystem.Command> clone(String repo)
     {
         return path ->
             new OperatingSystem.Command(
@@ -239,7 +263,7 @@ class LocalEnvs
     {
         return new OperatingSystem.EnvVar(
             "JAVA_HOME"
-            , paths.javaHome.toString()
+            , LocalPaths.javaHome(paths).toString()
         );
     }
 }
@@ -250,45 +274,51 @@ class LocalPaths
 
     final Path root;
     final Path jdk;
-    final Path javaHome;
-    final Path mxHome;
-    final Path graalHome;
 
-    LocalPaths(Path root, Path jdk, Path javaHome, Path mxHome, Path graalHome)
+    private LocalPaths(Path root, Path jdk)
     {
         this.root = root;
         this.jdk = jdk;
-        this.javaHome = javaHome;
-        this.mxHome = mxHome;
-        this.graalHome = graalHome;
     }
 
     static LocalPaths newSystemPaths()
     {
         var root = OperatingSystem.mkdirs(rootPath());
         var jdk = OperatingSystem.mkdirs(root.resolve("jdk"));
-        var javaHome = OperatingSystem.type() == OperatingSystem.Type.MAC_OS
-            ? jdk.resolve("Contents").resolve("Home")
-            : jdk;
-        var mxHome = root.resolve("mx");
-        var graalHome = root.resolve("graal");
-        return new LocalPaths(root, jdk, javaHome, mxHome, graalHome);
+        return new LocalPaths(root, jdk);
+    }
+
+    static Path javaHome(LocalPaths paths)
+    {
+        return OperatingSystem.type() == OperatingSystem.Type.MAC_OS
+            ? paths.jdk.resolve("Contents").resolve("Home")
+            : paths.jdk;
     }
 
     static Path java(LocalPaths paths)
     {
         final var java = Path.of("bin", "java");
-        return paths.javaHome.resolve(java);
+        return javaHome(paths).resolve(java);
+    }
+
+    static Path mxHome(LocalPaths paths)
+    {
+        return paths.root.resolve("mx");
     }
 
     static Path mx(LocalPaths paths)
     {
-        return paths.mxHome.resolve("mx");
+        return mxHome(paths).resolve("mx");
+    }
+
+    static Path graalHome(LocalPaths paths)
+    {
+        return paths.root.resolve("graal");
     }
 
     static Path svm(LocalPaths paths)
     {
-        return paths.graalHome.resolve("substratevm");
+        return graalHome(paths).resolve("substratevm");
     }
 
     static Path nativeImage(LocalPaths paths)
@@ -299,7 +329,17 @@ class LocalPaths
             , "bin"
             , "native-image"
         );
-        return paths.graalHome.resolve(path);
+        return graalHome(paths).resolve(path);
+    }
+
+    static Path quarkusHome(LocalPaths paths)
+    {
+        return paths.root.resolve("quarkus");
+    }
+
+    static Path quarkusPomXml(LocalPaths paths)
+    {
+        return quarkusHome(paths).resolve("pom.xml");
     }
 
     private static Path rootPath()
