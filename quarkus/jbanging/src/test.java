@@ -28,7 +28,7 @@ import java.util.stream.Stream;
 )
 public class test implements Callable<Integer>
 {
-    static final Logger logger = LogManager.getLogger(test.class);
+    static final Logger LOG = LogManager.getLogger(test.class);
 
     public static void main(String[] args)
     {
@@ -42,78 +42,104 @@ public class test implements Callable<Integer>
     @Override
     public Integer call()
     {
-        logger.info("Test the combo!");
-        Sequential.test();
+        LOG.info("Test the combo!");
+        final var paths = LocalPaths.newSystemPaths();
+        Sequential.test(paths);
         return 0;
     }
 }
 
 class Sequential
 {
-    static void test()
+    static void test(LocalPaths paths)
     {
-        final var root = LocalPaths.rootPath();
-        Java.installLabsJDK(root);
+        Java.installJDK(paths);
     }
 }
 
 class Java
 {
-    static void installLabsJDK(Path root)
+    static final Logger LOG = LogManager.getLogger(Java.class);
+
+    static void installJDK(LocalPaths paths)
     {
-        OperatingSystem.exec()
-            .compose(Java.downloadLabsJDK(root))
-            .apply(labsJDK());
+        if (paths.java.toFile().exists()) {
+            LOG.info("Skipping JDK install");
+            return;
+        }
+
+        final var steps = Stream.of(
+            Java.downloadJDK(paths)
+            , Java.extractJDK(paths)
+        );
+
+        steps.forEach(OperatingSystem::exec);
     }
 
-    private static Function<LabsJDK, OperatingSystem.Command> downloadLabsJDK(Path root)
+    private static OperatingSystem.Command extractJDK(LocalPaths paths)
     {
-        return labsJDK ->
-            new OperatingSystem.Command(
-                Stream.of(
-                    "curl"
-                    , "-L"
-                    , labsURL(labsJDK)
-                    , "--output"
-                    , "labsjdk.tar.gz"
-                )
-                , root
-                , Stream.empty()
-            );
+        return new OperatingSystem.Command(
+            Stream.of(
+                "tar"
+                , "-xzvpf"
+                , "jdk.tar.gz"
+                ,"-C"
+                , "jdk"
+                , "--strip-components"
+                , "1"
+            )
+            , paths.root
+            , Stream.empty()
+        );
     }
 
-    private static LabsJDK labsJDK()
+    private static OperatingSystem.Command downloadJDK(LocalPaths paths)
+    {
+        return new OperatingSystem.Command(
+            Stream.of(
+                "curl"
+                , "-L"
+                , jdkURL(jdk())
+                , "--output"
+                , "jdk.tar.gz"
+            )
+            , paths.root
+            , Stream.empty()
+        );
+    }
+
+    private static JDK jdk()
     {
         var osName = OperatingSystem.type() == OperatingSystem.Type.MAC_OS
             ? "darwin"
             : "linux";
 
-        return new LabsJDK(
+        return new JDK(
             "20.0-b02"
             , "11.0.6+9"
             , osName
         );
     }
 
-    private static String labsURL(LabsJDK labsJDK)
+    private static String jdkURL(JDK jdk)
     {
         String base = "https://github.com/graalvm/labs-openjdk-11/releases/download";
         return String.format(
             "%1$s/jvmci-%2$s/labsjdk-ce-%3$s-jvmci-%2$s-%4$s-amd64.tar.gz"
             , base
-            , labsJDK.version
-            , labsJDK.javaVersion
-            , labsJDK.osName
+            , jdk.version
+            , jdk.javaVersion
+            , jdk.osName
         );
     }
 
-    private static class LabsJDK
+    private static class JDK
     {
         final String version;
         final String javaVersion;
         final String osName;
 
-        LabsJDK(String version, String javaVersion, String osName)
+        JDK(String version, String javaVersion, String osName)
         {
             this.version = version;
             this.javaVersion = javaVersion;
@@ -125,6 +151,30 @@ class Java
 class LocalPaths
 {
     static final Logger logger = LogManager.getLogger(LocalPaths.class);
+
+    final Path root;
+    final Path jdk;
+    final Path javaHome;
+    final Path java;
+
+    private LocalPaths(Path root, Path jdk, Path javaHome, Path java)
+    {
+        this.root = root;
+        this.jdk = jdk;
+        this.javaHome = javaHome;
+        this.java = java;
+    }
+
+    static LocalPaths newSystemPaths()
+    {
+        var root = OperatingSystem.mkdirs(rootPath());
+        var jdk = OperatingSystem.mkdirs(root.resolve("jdk"));
+        var javaHome = OperatingSystem.type() == OperatingSystem.Type.MAC_OS
+            ? jdk.resolve("Contents").resolve("Home")
+            : jdk;
+        var java = javaHome.resolve("bin").resolve("java");
+        return new LocalPaths(root, jdk, javaHome, java);
+    }
 
     static Path rootPath()
     {
@@ -138,15 +188,6 @@ class LocalPaths
 
         final var root = Path.of(tmpDir, "quarkus-with-graal", today);
         logger.info("Root path: {}", root);
-
-        final var directory = root.toFile();
-        if (!directory.exists() && !directory.mkdirs())
-        {
-            throw new RuntimeException(String.format(
-                "Unable to create path: %s"
-                , root)
-            );
-        }
 
         return root;
     }
@@ -178,6 +219,20 @@ class OperatingSystem
         WINDOWS, MAC_OS, LINUX, OTHER
     }
 
+    public static Path mkdirs(Path path)
+    {
+        final var directory = path.toFile();
+        if (!directory.exists() && !directory.mkdirs())
+        {
+            throw new RuntimeException(String.format(
+                "Unable to create path: %s"
+                , path)
+            );
+        }
+
+        return path;
+    }
+
     public static Type type()
     {
         String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
@@ -196,10 +251,13 @@ class OperatingSystem
 
     static Function<Command, Void> exec()
     {
-        return OperatingSystem::exec;
+        return command -> {
+            exec(command);
+            return null;
+        };
     }
 
-    private static Void exec(Command command)
+    static void exec(Command command)
     {
         final var commandList = command.command
             .filter(Predicate.not(String::isEmpty))
@@ -225,8 +283,6 @@ class OperatingSystem
                     "Failed, exit code: " + process.exitValue()
                 );
             }
-
-            return null;
         }
         catch (Exception e)
         {
