@@ -53,9 +53,13 @@ class Sequential
 {
     static void test(LocalPaths paths)
     {
+        // Prepare steps
         Java.installJDK(paths);
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
+
+        // Build steps
+        Graal.buildGraal(paths);
     }
 }
 
@@ -63,43 +67,77 @@ class Graal
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
+    static void buildGraal(LocalPaths paths)
+    {
+        if (LocalPaths.nativeImage(paths).toFile().exists())
+        {
+            LOG.info("Skipping Graal build");
+            return;
+        }
+
+        OperatingSystem.exec()
+            .compose(Graal::mxbuild)
+            .apply(paths);
+    }
+
+    private static OperatingSystem.Command mxbuild(LocalPaths paths)
+    {
+        return new OperatingSystem.Command(
+            Stream.of(
+                LocalPaths.mx(paths).toString()
+                , "build"
+            )
+            , LocalPaths.svm(paths)
+            , Stream.of(
+                LocalEnvs.javaHome(paths)
+            )
+        );
+    }
+
     static void downloadGraal(LocalPaths paths)
     {
-        if (paths.svm().toFile().exists()) {
+        if (LocalPaths.svm(paths).toFile().exists())
+        {
             LOG.info("Skipping Graal download");
             return;
         }
 
         var repo = "https://github.com/oracle/graal";
-        OperatingSystem.exec().apply(gitClone(repo, paths.root));
+        OperatingSystem.exec()
+            .compose(Graal.gitClone(repo))
+            .apply(paths.root);
     }
 
     static void installMx(LocalPaths paths)
     {
-        if (paths.mx().toFile().exists()) {
+        if (LocalPaths.mx(paths).toFile().exists())
+        {
             LOG.info("Skipping Mx install");
             return;
         }
 
         var repo = "https://github.com/graalvm/mx";
-        OperatingSystem.exec().apply(gitClone(repo, paths.root));
+        OperatingSystem.exec()
+            .compose(Graal.gitClone(repo))
+            .apply(paths.root);
     }
 
-    private static OperatingSystem.Command gitClone(String repo, Path directory)
+    private static Function<Path, OperatingSystem.Command> gitClone(String repo)
     {
-        return new OperatingSystem.Command(
-            Stream.of(
-                "git"
-                , "clone"
-                , repo
-                , "--depth"
-                , "1"
-                , "-b"
-                , "master"
-            )
-            , directory
-            , Stream.empty()
-        );
+        return path ->
+            new OperatingSystem.Command(
+                Stream.of(
+                    "git"
+                    , "clone"
+                    , repo
+                    , "--depth"
+                    , "1"
+                    , "-b"
+                    , "master"
+                )
+                , path
+                , Stream.empty()
+            );
     }
 }
 
@@ -109,7 +147,8 @@ class Java
 
     static void installJDK(LocalPaths paths)
     {
-        if (paths.java().toFile().exists()) {
+        if (LocalPaths.java(paths).toFile().exists())
+        {
             LOG.info("Skipping JDK install");
             return;
         }
@@ -129,7 +168,7 @@ class Java
                 "tar"
                 , "-xzvpf"
                 , "jdk.tar.gz"
-                ,"-C"
+                , "-C"
                 , "jdk"
                 , "--strip-components"
                 , "1"
@@ -194,6 +233,17 @@ class Java
     }
 }
 
+class LocalEnvs
+{
+    static OperatingSystem.EnvVar javaHome(LocalPaths paths)
+    {
+        return new OperatingSystem.EnvVar(
+            "JAVA_HOME"
+            , paths.javaHome.toString()
+        );
+    }
+}
+
 class LocalPaths
 {
     static final Logger logger = LogManager.getLogger(LocalPaths.class);
@@ -225,19 +275,31 @@ class LocalPaths
         return new LocalPaths(root, jdk, javaHome, mxHome, graalHome);
     }
 
-    Path java()
+    static Path java(LocalPaths paths)
     {
-        return javaHome.resolve("bin").resolve("java");
+        final var java = Path.of("bin", "java");
+        return paths.javaHome.resolve(java);
     }
 
-    Path mx()
+    static Path mx(LocalPaths paths)
     {
-        return mxHome.resolve("mx");
+        return paths.mxHome.resolve("mx");
     }
 
-    Path svm()
+    static Path svm(LocalPaths paths)
     {
-        return graalHome.resolve("substratevm");
+        return paths.graalHome.resolve("substratevm");
+    }
+
+    static Path nativeImage(LocalPaths paths)
+    {
+        final var path = Path.of(
+            "sdk"
+            , "latest_graalvm_home"
+            , "bin"
+            , "native-image"
+        );
+        return paths.graalHome.resolve(path);
     }
 
     private static Path rootPath()
@@ -298,7 +360,8 @@ class OperatingSystem
 
     static Function<Command, Void> exec()
     {
-        return command -> {
+        return command ->
+        {
             exec(command);
             return null;
         };
