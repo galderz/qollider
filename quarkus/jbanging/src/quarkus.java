@@ -1,5 +1,5 @@
 //usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS info.picocli:picocli:4.1.4
+//DEPS info.picocli:picocli:4.2.0
 //DEPS org.apache.logging.log4j:log4j-core:2.13.0
 
 import org.apache.logging.log4j.Level;
