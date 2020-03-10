@@ -22,6 +22,10 @@ installJBang() {
     source ${HOME}/.sdkman/bin/sdkman-init.sh
 }
 
+installMaven() {
+    n | sdk install maven || true
+}
+
 run() {
     jbang src/test.java
 }
@@ -30,6 +34,7 @@ main() {
     getSdkman
     installJava
     installJBang
+    installMaven
     run
 }
 
