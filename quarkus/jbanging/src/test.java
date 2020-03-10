@@ -54,6 +54,40 @@ class Sequential
     static void test(LocalPaths paths)
     {
         Java.installJDK(paths);
+        Graal.downloadGraal(paths);
+    }
+}
+
+class Graal
+{
+    static final Logger LOG = LogManager.getLogger(Java.class);
+
+    static void downloadGraal(LocalPaths paths)
+    {
+        if (paths.svm.toFile().exists()) {
+            LOG.info("Skipping Graal download");
+            return;
+        }
+
+        var repo = "https://github.com/oracle/graal";
+        OperatingSystem.exec().apply(gitClone(repo, paths.root));
+    }
+
+    static OperatingSystem.Command gitClone(String repo, Path directory)
+    {
+        return new OperatingSystem.Command(
+            Stream.of(
+                "git"
+                , "clone"
+                , repo
+                , "--depth"
+                , "1"
+                , "-b"
+                , "master"
+            )
+            , directory
+            , Stream.empty()
+        );
     }
 }
 
@@ -156,13 +190,15 @@ class LocalPaths
     final Path jdk;
     final Path javaHome;
     final Path java;
+    final Path svm;
 
-    private LocalPaths(Path root, Path jdk, Path javaHome, Path java)
+    private LocalPaths(Path root, Path jdk, Path javaHome, Path java, Path svm)
     {
         this.root = root;
         this.jdk = jdk;
         this.javaHome = javaHome;
         this.java = java;
+        this.svm = svm;
     }
 
     static LocalPaths newSystemPaths()
@@ -173,7 +209,8 @@ class LocalPaths
             ? jdk.resolve("Contents").resolve("Home")
             : jdk;
         var java = javaHome.resolve("bin").resolve("java");
-        return new LocalPaths(root, jdk, javaHome, java);
+        var svm = root.resolve("graal").resolve("substratevm");
+        return new LocalPaths(root, jdk, javaHome, java, svm);
     }
 
     static Path rootPath()
@@ -192,23 +229,6 @@ class LocalPaths
         return root;
     }
 }
-
-//class Git
-//{
-//    static Function<String, OperatingSystem.Command> clone(Path directory)
-//    {
-//        return branch ->
-//            new OperatingSystem.Command(
-//                Stream.of(
-//                    "git"
-//                    , "checkout"
-//                    , branch
-//                )
-//                , directory
-//                , Stream.empty()
-//            );
-//    }
-//}
 
 class OperatingSystem
 {
