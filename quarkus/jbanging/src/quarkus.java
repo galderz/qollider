@@ -9,43 +9,64 @@ import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.DefaultConfiguration;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.ParameterException;
+import picocli.CommandLine.Spec;
 
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.concurrent.Callable;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Command(
-    description = "Test quarkus"
-    , mixinStandardHelpOptions = true
-    , name = "test"
-    , version = "test 0.1"
+    subcommands = {
+        QuarkusTest.class
+    }
+    , synopsisSubcommandLabel = "COMMAND"
 )
-public class test implements Callable<Integer>
+public class quarkus implements Runnable
 {
-    static final Logger LOG = LogManager.getLogger(test.class);
+    @Spec
+    CommandSpec spec;
 
     public static void main(String[] args)
     {
         Configurator.initialize(new DefaultConfiguration());
         Configurator.setRootLevel(Level.DEBUG);
 
-        int exitCode = new CommandLine(new test()).execute(args);
+        int exitCode = new CommandLine(new quarkus()).execute(args);
         System.exit(exitCode);
     }
 
     @Override
-    public Integer call()
+    public void run()
+    {
+        throw new ParameterException(
+            spec.commandLine()
+            , "Missing required subcommand"
+        );
+    }
+}
+
+@Command(
+    name = "test"
+    , aliases = {"t"}
+    , description = "Test quarkus."
+)
+class QuarkusTest implements Runnable
+{
+    static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
+
+    @Override
+    public void run()
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
         Sequential.test(paths);
-        return 0;
     }
 }
 
@@ -57,15 +78,15 @@ class Sequential
         Java.installJDK(paths);
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
-        Quarkus.downloadQuarkus(paths);
+        QuarkusIO.downloadQuarkus(paths);
 
         // Build steps
         Graal.buildGraal(paths);
-        Quarkus.buildQuarkus(paths);
+        QuarkusIO.buildQuarkus(paths);
     }
 }
 
-class Quarkus
+class QuarkusIO
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
@@ -92,7 +113,7 @@ class Quarkus
         }
 
         OperatingSystem.exec()
-            .compose(Quarkus::mvnInstall)
+            .compose(QuarkusIO::mvnInstall)
             .apply(paths);
     }
 

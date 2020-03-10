@@ -27,7 +27,7 @@ installMaven() {
 }
 
 run() {
-    jbang src/test.java
+    jbang src/quarkus.java test
 }
 
 main() {
