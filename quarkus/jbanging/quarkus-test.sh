@@ -27,7 +27,7 @@ installMaven() {
 
 run() {
     source ${HOME}/.sdkman/bin/sdkman-init.sh
-    jbang src/quarkus.java test
+    jbang src/quarkus.java test "$@"
 }
 
 main() {
