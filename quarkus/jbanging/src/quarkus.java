@@ -78,17 +78,33 @@ class Sequential
         Java.installJDK(paths);
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
-        QuarkusIO.downloadQuarkus(paths);
+        JBoss.downloadQuarkus(paths);
 
         // Build steps
         Graal.buildGraal(paths);
-        QuarkusIO.buildQuarkus(paths);
+        JBoss.buildQuarkus(paths);
+
+        // Test steps
+        JBoss.testQuarkus(paths);
     }
 }
 
-class QuarkusIO
+class JBoss
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
+
+    static void testQuarkus(LocalPaths paths)
+    {
+        if (LocalPaths.quarkusLastTestJar(paths).toFile().exists())
+        {
+            LOG.info("Skipping Quarkus test");
+            return;
+        }
+
+        OperatingSystem.exec()
+            .compose(JBoss::mvnTest)
+            .apply(paths);
+    }
 
     static void downloadQuarkus(LocalPaths paths)
     {
@@ -104,16 +120,16 @@ class QuarkusIO
             .apply(paths.root);
     }
 
-    public static void buildQuarkus(LocalPaths paths)
+    static void buildQuarkus(LocalPaths paths)
     {
-        if (LocalPaths.quarkusDocumentationJar(paths).toFile().exists())
+        if (LocalPaths.quarkusLastInstallJar(paths).toFile().exists())
         {
             LOG.info("Skipping Quarkus build");
             return;
         }
 
         OperatingSystem.exec()
-            .compose(QuarkusIO::mvnInstall)
+            .compose(JBoss::mvnInstall)
             .apply(paths);
     }
 
@@ -127,6 +143,22 @@ class QuarkusIO
                 , "-Dno-format"
             )
             , LocalPaths.quarkusHome(paths)
+            , Stream.of(
+                LocalEnvs.graalJavaHome(paths)
+            )
+        );
+    }
+
+    private static OperatingSystem.Command mvnTest(LocalPaths paths)
+    {
+        return new OperatingSystem.Command(
+            Stream.of(
+                "mvn" // ?
+                , "install"
+                , "-Dnative"
+                , "-Dno-format"
+            )
+            , LocalPaths.quarkusTests(paths)
             , Stream.of(
                 LocalEnvs.graalJavaHome(paths)
             )
@@ -402,14 +434,31 @@ class LocalPaths
         return quarkusHome(paths).resolve("pom.xml");
     }
 
-    static Path quarkusDocumentationJar(LocalPaths paths)
+    static Path quarkusLastInstallJar(LocalPaths paths)
     {
-        final var documentationJarPath = Path.of(
+        final var lastInstallJar = Path.of(
             "docs"
             , "target"
             , "quarkus-documentation-999-SNAPSHOT.jar"
         );
-        return quarkusHome(paths).resolve(documentationJarPath);
+        return quarkusHome(paths).resolve(lastInstallJar);
+    }
+
+    static Path quarkusLastTestJar(LocalPaths paths)
+    {
+        final var lastTestJar = Path.of(
+            "integration-tests"
+            , "boostrap-config"
+            , "application"
+            , "target"
+            , "quarkus-integration-test-bootstrap-config-application-999-SNAPSHOT.jar"
+        );
+        return quarkusHome(paths).resolve(lastTestJar);
+    }
+
+    static Path quarkusTests(LocalPaths paths)
+    {
+        return quarkusHome(paths).resolve("integration-tests");
     }
 
     private static Path rootPath()
