@@ -506,10 +506,14 @@ class LocalPaths
         var today = date.format(formatter);
         logger.info("Today is {}", today);
 
-        var baseDir = "target";
+        var baseDir = Path.of(
+            System.getProperty("user.dir")
+            , "target"
+            , "quarkus-with-graal"
+        );
         logger.info("Base directory: {}", baseDir);
 
-        final var root = Path.of(baseDir, "quarkus-with-graal", today);
+        final var root = baseDir.resolve(today);
         logger.info("Root path: {}", root);
 
         return root;
