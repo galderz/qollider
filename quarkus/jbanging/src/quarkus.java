@@ -506,10 +506,10 @@ class LocalPaths
         var today = date.format(formatter);
         logger.info("Today is {}", today);
 
-        var tmpDir = System.getProperty("java.io.tmpdir");
-        logger.info("Temp directory: {}", tmpDir);
+        var baseDir = "target";
+        logger.info("Base directory: {}", baseDir);
 
-        final var root = Path.of(tmpDir, "quarkus-with-graal", today);
+        final var root = Path.of(baseDir, "quarkus-with-graal", today);
         logger.info("Root path: {}", root);
 
         return root;
