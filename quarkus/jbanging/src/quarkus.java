@@ -10,9 +10,11 @@ import org.apache.logging.log4j.core.config.DefaultConfiguration;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
 
+import java.net.URL;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -61,24 +63,61 @@ class QuarkusTest implements Runnable
 {
     static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
 
+    @Option(
+        defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
+        , description = "Quarkus source tree URL"
+        , names = {
+            "-qt"
+            , "--quarkus-tree"
+        }
+    )
+    URL quarkusTree;
+
     @Override
     public void run()
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        Sequential.test(paths);
+        final var options = Options.of(quarkusTree);
+        Sequential.test(options, paths);
+    }
+}
+
+class Options
+{
+    final String quarkusRepo;
+    final String quarkusBranch;
+
+    private Options(String quarkusRepo, String quarkusBranch)
+    {
+        this.quarkusRepo = quarkusRepo;
+        this.quarkusBranch = quarkusBranch;
+    }
+
+    static Options of(URL quarkusTree)
+    {
+        var urlPath = quarkusTree.getPath().split("/");
+        var quarkusBranch = urlPath[urlPath.length - 1];
+        var quarkusRepo = String.format(
+            "%s://%s/%s/%s"
+            , quarkusTree.getProtocol()
+            , quarkusTree.getAuthority()
+            , urlPath[1]
+            , urlPath[2]
+        );
+        return new Options(quarkusRepo, quarkusBranch);
     }
 }
 
 class Sequential
 {
-    static void test(LocalPaths paths)
+    static void test(Options options, LocalPaths paths)
     {
         // Prepare steps
         Java.installJDK(paths);
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
-        JBoss.downloadQuarkus(paths);
+        JBoss.downloadQuarkus(options, paths);
 
         // Build steps
         Graal.buildGraal(paths);
@@ -106,7 +145,7 @@ class JBoss
             .apply(paths);
     }
 
-    static void downloadQuarkus(LocalPaths paths)
+    static void downloadQuarkus(Options options, LocalPaths paths)
     {
         if (LocalPaths.quarkusPomXml(paths).toFile().exists())
         {
@@ -114,9 +153,8 @@ class JBoss
             return;
         }
 
-        var repo = "https://github.com/quarkusio/quarkus";
         OperatingSystem.exec()
-            .compose(Git.clone(repo))
+            .compose(Git.clone(options.quarkusRepo, options.quarkusBranch))
             .apply(paths.root);
     }
 
@@ -207,7 +245,7 @@ class Graal
 
         var repo = "https://github.com/oracle/graal";
         OperatingSystem.exec()
-            .compose(Git.clone(repo))
+            .compose(Git.clone(repo, "master"))
             .apply(paths.root);
     }
 
@@ -221,7 +259,7 @@ class Graal
 
         var repo = "https://github.com/graalvm/mx";
         OperatingSystem.exec()
-            .compose(Git.clone(repo))
+            .compose(Git.clone(repo, "master"))
             .apply(paths.root);
     }
 
@@ -229,7 +267,7 @@ class Graal
 
 class Git
 {
-    static Function<Path, OperatingSystem.Command> clone(String repo)
+    static Function<Path, OperatingSystem.Command> clone(String repo, String branch)
     {
         return path ->
             new OperatingSystem.Command(
@@ -240,7 +278,7 @@ class Git
                     , "--depth"
                     , "1"
                     , "-b"
-                    , "master"
+                    , branch
                 )
                 , path
                 , Stream.empty()
