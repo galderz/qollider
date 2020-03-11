@@ -19,7 +19,6 @@ installJava() {
 installJBang() {
     sdk install jbang ${JBANG_VERSION} || true
     sdk use jbang ${JBANG_VERSION}
-    source ${HOME}/.sdkman/bin/sdkman-init.sh
 }
 
 installMaven() {
@@ -27,6 +26,7 @@ installMaven() {
 }
 
 run() {
+    source ${HOME}/.sdkman/bin/sdkman-init.sh
     jbang src/quarkus.java test
 }
 
