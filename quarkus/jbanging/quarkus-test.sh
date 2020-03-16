@@ -35,7 +35,7 @@ main() {
     installJava
     installJBang
     installMaven
-    run
+    run "$@"
 }
 
-main
+main "$@"
