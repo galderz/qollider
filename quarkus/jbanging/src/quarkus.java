@@ -95,6 +95,8 @@ class QuarkusTest implements Runnable
 
 class Options
 {
+    static final Logger LOG = LogManager.getLogger(Options.class);
+
     final String quarkusRepo;
     final String quarkusBranch;
     final String resumeFrom;
@@ -108,6 +110,12 @@ class Options
 
     static Options of(URL quarkusTree, String resumeFrom)
     {
+        LOG.info(
+            "User-provided, or default, options: quarkusTree={}, resumeFrom={}"
+            , quarkusTree
+            , resumeFrom
+        );
+
         var urlPath = quarkusTree.getPath().split("/");
         var quarkusBranch = urlPath[urlPath.length - 1];
         var quarkusRepo = String.format(
