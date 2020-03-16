@@ -536,7 +536,7 @@ class LocalPaths
         logger.info("Today is {}", today);
 
         var baseDir = Path.of(
-            System.getProperty("user.dir")
+            System.getProperty("user.home")
             , "target"
             , "quarkus-with-graal"
         );
