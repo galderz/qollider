@@ -73,12 +73,22 @@ class QuarkusTest implements Runnable
     )
     URL quarkusTree;
 
+    @Option(
+        defaultValue = ""
+        , description = "Resume reactor from specified project"
+        , names = {
+            "-rf"
+            , "--resume-from"
+        }
+    )
+    String resumeFrom;
+
     @Override
     public void run()
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        final var options = Options.of(quarkusTree);
+        final var options = Options.of(quarkusTree, resumeFrom);
         Sequential.test(options, paths);
     }
 }
@@ -87,14 +97,16 @@ class Options
 {
     final String quarkusRepo;
     final String quarkusBranch;
+    final String resumeFrom;
 
-    private Options(String quarkusRepo, String quarkusBranch)
+    private Options(String quarkusRepo, String quarkusBranch, String resumeFrom)
     {
         this.quarkusRepo = quarkusRepo;
         this.quarkusBranch = quarkusBranch;
+        this.resumeFrom = resumeFrom;
     }
 
-    static Options of(URL quarkusTree)
+    static Options of(URL quarkusTree, String resumeFrom)
     {
         var urlPath = quarkusTree.getPath().split("/");
         var quarkusBranch = urlPath[urlPath.length - 1];
@@ -105,7 +117,7 @@ class Options
             , urlPath[1]
             , urlPath[2]
         );
-        return new Options(quarkusRepo, quarkusBranch);
+        return new Options(quarkusRepo, quarkusBranch, resumeFrom);
     }
 }
 
@@ -124,7 +136,7 @@ class Sequential
         JBoss.buildQuarkus(paths);
 
         // Test steps
-        JBoss.testQuarkus(paths);
+        JBoss.testQuarkus(options, paths);
     }
 }
 
@@ -132,7 +144,7 @@ class JBoss
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
-    static void testQuarkus(LocalPaths paths)
+    static void testQuarkus(Options options, LocalPaths paths)
     {
         if (LocalPaths.quarkusLastTestJar(paths).toFile().exists())
         {
@@ -141,7 +153,7 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(JBoss::mvnTest)
+            .compose(JBoss.mvnTest(options))
             .apply(paths);
     }
 
@@ -187,20 +199,29 @@ class JBoss
         );
     }
 
-    private static OperatingSystem.Command mvnTest(LocalPaths paths)
+    private static Function<LocalPaths, OperatingSystem.Command> mvnTest(Options options)
     {
-        return new OperatingSystem.Command(
-            Stream.of(
-                "mvn" // ?
-                , "install"
-                , "-Dnative"
-                , "-Dno-format"
-            )
-            , LocalPaths.quarkusTests(paths)
-            , Stream.of(
+        return paths -> {
+            Stream<String> resumeFrom = options.resumeFrom.isEmpty()
+                ? Stream.empty()
+                : Stream.of("-rf", options.resumeFrom);
+
+            return new OperatingSystem.Command(
+                Stream.concat(
+                    Stream.of(
+                        "mvn" // ?
+                        , "install"
+                        , "-Dnative"
+                        , "-Dno-format"
+                    )
+                    , resumeFrom
+                )
+                , LocalPaths.quarkusTests(paths)
+                , Stream.of(
                 LocalEnvs.graalJavaHome(paths)
             )
-        );
+            );
+        };
     }
 }
 
