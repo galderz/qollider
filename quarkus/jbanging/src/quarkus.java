@@ -14,10 +14,14 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -64,6 +68,12 @@ class QuarkusTest implements Runnable
     static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
 
     @Option(
+        description = "Clean files and directories"
+        , names = "clean"
+    )
+    boolean clean;
+
+    @Option(
         defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
         , description = "Quarkus source tree URL"
         , names = {
@@ -88,7 +98,10 @@ class QuarkusTest implements Runnable
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        final var options = Options.of(quarkusTree, resumeFrom);
+        final var options = Options.of(quarkusTree, resumeFrom, clean);
+        if (options.clean)
+            Sequential.clean(paths);
+
         Sequential.test(options, paths);
     }
 }
@@ -100,15 +113,17 @@ class Options
     final String quarkusRepo;
     final String quarkusBranch;
     final String resumeFrom;
+    final boolean clean;
 
-    private Options(String quarkusRepo, String quarkusBranch, String resumeFrom)
+    private Options(String quarkusRepo, String quarkusBranch, String resumeFrom, boolean clean)
     {
         this.quarkusRepo = quarkusRepo;
         this.quarkusBranch = quarkusBranch;
         this.resumeFrom = resumeFrom;
+        this.clean = clean;
     }
 
-    static Options of(URL quarkusTree, String resumeFrom)
+    static Options of(URL quarkusTree, String resumeFrom, boolean clean)
     {
         LOG.info(
             "User-provided, or default, options: quarkusTree={}, resumeFrom={}"
@@ -125,12 +140,19 @@ class Options
             , urlPath[1]
             , urlPath[2]
         );
-        return new Options(quarkusRepo, quarkusBranch, resumeFrom);
+        return new Options(quarkusRepo, quarkusBranch, resumeFrom, clean);
     }
 }
 
 class Sequential
 {
+    static void clean(LocalPaths paths)
+    {
+        Graal.cleanMx(paths);
+        Graal.cleanGraal(paths);
+        JBoss.cleanQuarkus(paths);
+    }
+
     static void test(Options options, LocalPaths paths)
     {
         // Prepare steps
@@ -231,6 +253,13 @@ class JBoss
             );
         };
     }
+
+    public static void cleanQuarkus(LocalPaths paths)
+    {
+        OperatingSystem.deleteRecursive()
+            .compose(LocalPaths::quarkusHome)
+            .apply(paths);
+    }
 }
 
 class Graal
@@ -292,6 +321,19 @@ class Graal
             .apply(paths.root);
     }
 
+    public static void cleanMx(LocalPaths paths)
+    {
+        OperatingSystem.deleteRecursive()
+            .compose(LocalPaths::mxHome)
+            .apply(paths);
+    }
+
+    public static void cleanGraal(LocalPaths paths)
+    {
+        OperatingSystem.deleteRecursive()
+            .compose(LocalPaths::graalSourceHome)
+            .apply(paths);
+    }
 }
 
 class Git
@@ -469,20 +511,23 @@ class LocalPaths
         return mxHome(paths).resolve("mx");
     }
 
+    static Path graalSourceHome(LocalPaths paths)
+    {
+        return paths.root.resolve("graal");
+    }
+
     static Path graalHome(LocalPaths paths)
     {
         final var graalHomePath = Path.of(
-            "graal"
-            , "sdk"
+             "sdk"
             , "latest_graalvm_home"
         );
-        return paths.root.resolve(graalHomePath);
+        return graalSourceHome(paths).resolve(graalHomePath);
     }
 
     static Path svm(LocalPaths paths)
     {
-        final var svmPath = Path.of("graal", "substratevm");
-        return paths.root.resolve(svmPath);
+        return graalSourceHome(paths).resolve("substratevm");
     }
 
     static Path nativeImage(LocalPaths paths)
@@ -556,6 +601,38 @@ class OperatingSystem
     public enum Type
     {
         WINDOWS, MAC_OS, LINUX, OTHER
+    }
+
+    static Function<Path, Void> deleteRecursive()
+    {
+        return OperatingSystem::deleteRecursive;
+    }
+
+    private static Void deleteRecursive(Path path)
+    {
+        try
+        {
+            final var notDeleted =
+                Files.walk(path)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .filter(Predicate.not(File::delete))
+                    .collect(Collectors.toList());
+
+            if (!notDeleted.isEmpty())
+            {
+                throw new RuntimeException(String.format(
+                    "Unable to delete %s files"
+                    , notDeleted
+                ));
+            }
+
+            return null;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Path mkdirs(Path path)
