@@ -160,6 +160,7 @@ class Sequential
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
         JBoss.downloadQuarkus(options, paths);
+        JBoss.downloadQuarkusPlatform(paths);
 
         // Build steps
         Graal.buildGraal(paths);
@@ -167,6 +168,7 @@ class Sequential
 
         // Test steps
         JBoss.testQuarkus(options, paths);
+        JBoss.testQuarkusPlatform(options, paths);
     }
 }
 
@@ -183,7 +185,20 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(JBoss.mvnTest(options))
+            .compose(JBoss.mvnTest(LocalPaths.quarkusHome(paths), options))
+            .apply(paths);
+    }
+
+    static void testQuarkusPlatform(Options options, LocalPaths paths)
+    {
+//        if (LocalPaths.quarkusLastTestJar(paths).toFile().exists())
+//        {
+//            LOG.info("Skipping Quarkus test");
+//            return;
+//        }
+
+        OperatingSystem.exec()
+            .compose(JBoss.mvnTest(LocalPaths.quarkusPlatformHome(paths), options))
             .apply(paths);
     }
 
@@ -197,6 +212,21 @@ class JBoss
 
         OperatingSystem.exec()
             .compose(Git.clone(options.quarkusRepo, options.quarkusBranch))
+            .apply(paths.root);
+    }
+
+    static void downloadQuarkusPlatform(LocalPaths paths)
+    {
+        if (LocalPaths.quarkusPlatformPomXml(paths).toFile().exists())
+        {
+            LOG.info("Skipping Quarkus Platform download");
+            return;
+        }
+
+        final var repo = "https://github.com/quarkusio/quarkus-platform";
+        final var branch = "master";
+        OperatingSystem.exec()
+            .compose(Git.clone(repo, branch))
             .apply(paths.root);
     }
 
@@ -229,7 +259,7 @@ class JBoss
         );
     }
 
-    private static Function<LocalPaths, OperatingSystem.Command> mvnTest(Options options)
+    private static Function<LocalPaths, OperatingSystem.Command> mvnTest(Path root, Options options)
     {
         return paths -> {
             Stream<String> resumeFrom = options.resumeFrom.isEmpty()
@@ -246,10 +276,10 @@ class JBoss
                     )
                     , resumeFrom
                 )
-                , LocalPaths.quarkusTests(paths)
+                , root
                 , Stream.of(
-                LocalEnvs.graalJavaHome(paths)
-            )
+                    LocalEnvs.graalJavaHome(paths)
+                )
             );
         };
     }
@@ -571,6 +601,16 @@ class LocalPaths
     static Path quarkusTests(LocalPaths paths)
     {
         return quarkusHome(paths).resolve("integration-tests");
+    }
+
+    static Path quarkusPlatformHome(LocalPaths paths)
+    {
+        return paths.root.resolve("quarkus-platform");
+    }
+
+    static Path quarkusPlatformPomXml(LocalPaths paths)
+    {
+        return quarkusPlatformHome(paths).resolve("pom.xml");
     }
 
     private static Path rootPath()
