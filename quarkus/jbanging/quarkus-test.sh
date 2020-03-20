@@ -2,7 +2,7 @@
 
 set -e
 
-JAVA_VERSION="13.0.2"
+JAVA_VERSION="14.0.0"
 JAVA="${JAVA_VERSION}.hs-adpt"
 JBANG_VERSION="0.19.0"
 

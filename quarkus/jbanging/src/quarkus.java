@@ -1,4 +1,6 @@
 //usr/bin/env jbang "$0" "$@" ; exit $?
+//JAVAC_OPTIONS --enable-preview -source 14
+//JAVA_OPTIONS --enable-preview
 //DEPS info.picocli:picocli:4.2.0
 //DEPS org.apache.logging.log4j:log4j-core:2.13.0
 
@@ -99,29 +101,16 @@ class QuarkusTest implements Runnable
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
         final var options = Options.of(quarkusTree, resumeFrom, clean);
-        if (options.clean)
+        if (options.clean())
             Sequential.clean(paths);
 
         Sequential.test(options, paths);
     }
 }
 
-class Options
+record Options(String quarkusRepo, String quarkusBranch, String resumeFrom, boolean clean)
 {
     static final Logger LOG = LogManager.getLogger(Options.class);
-
-    final String quarkusRepo;
-    final String quarkusBranch;
-    final String resumeFrom;
-    final boolean clean;
-
-    private Options(String quarkusRepo, String quarkusBranch, String resumeFrom, boolean clean)
-    {
-        this.quarkusRepo = quarkusRepo;
-        this.quarkusBranch = quarkusBranch;
-        this.resumeFrom = resumeFrom;
-        this.clean = clean;
-    }
 
     static Options of(URL quarkusTree, String resumeFrom, boolean clean)
     {
@@ -211,7 +200,7 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(Git.clone(options.quarkusRepo, options.quarkusBranch))
+            .compose(Git.clone(options.quarkusRepo(), options.quarkusBranch()))
             .apply(paths.root);
     }
 
@@ -262,9 +251,9 @@ class JBoss
     private static Function<LocalPaths, OperatingSystem.Command> mvnTest(Path root, Options options)
     {
         return paths -> {
-            Stream<String> resumeFrom = options.resumeFrom.isEmpty()
+            Stream<String> resumeFrom = options.resumeFrom().isEmpty()
                 ? Stream.empty()
-                : Stream.of("-rf", options.resumeFrom);
+                : Stream.of("-rf", options.resumeFrom());
 
             return new OperatingSystem.Command(
                 Stream.concat(
@@ -464,19 +453,8 @@ class Java
         );
     }
 
-    private static class JDK
-    {
-        final String version;
-        final String javaVersion;
-        final String osName;
+    private record JDK(String version, String javaVersion, String osName) {}
 
-        JDK(String version, String javaVersion, String osName)
-        {
-            this.version = version;
-            this.javaVersion = javaVersion;
-            this.osName = osName;
-        }
-    }
 }
 
 class LocalEnvs
@@ -747,29 +725,8 @@ class OperatingSystem
         }
     }
 
-    static class Command
-    {
-        final Stream<String> command;
-        final Path directory;
-        final Stream<EnvVar> envVars;
+    record Command(Stream<String> command, Path directory, Stream<EnvVar> envVars) {}
 
-        Command(Stream<String> command, Path directory, Stream<EnvVar> envVars)
-        {
-            this.command = command;
-            this.directory = directory;
-            this.envVars = envVars;
-        }
-    }
+    record EnvVar(String name, String value) {}
 
-    static class EnvVar
-    {
-        final String name;
-        final String value;
-
-        EnvVar(String name, String value)
-        {
-            this.name = name;
-            this.value = value;
-        }
-    }
 }
