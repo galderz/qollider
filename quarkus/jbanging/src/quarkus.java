@@ -185,7 +185,7 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(JBoss.mvnTest(LocalPaths.quarkusHome(paths), options))
+            .compose(JBoss.mvnTest(LocalPaths.quarkusTests(paths), options))
             .apply(paths);
     }
 
