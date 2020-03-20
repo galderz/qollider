@@ -108,7 +108,12 @@ class QuarkusTest implements Runnable
     }
 }
 
-record Options(String quarkusRepo, String quarkusBranch, String resumeFrom, boolean clean)
+record Options(
+    String quarkusRepo
+    , String quarkusBranch
+    , String resumeFrom
+    , boolean clean
+)
 {
     static final Logger LOG = LogManager.getLogger(Options.class);
 
@@ -174,8 +179,10 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(JBoss.mvnTest(LocalPaths.quarkusTests(paths), options))
-            .apply(paths);
+            .compose(JBoss::mvnTest)
+            .compose(Suite.of(options, paths))
+            .compose(LocalPaths.quarkus(paths))
+            .apply("integration-tests");
     }
 
     static void testQuarkusPlatform(Options options, LocalPaths paths)
@@ -187,7 +194,9 @@ class JBoss
 //        }
 
         OperatingSystem.exec()
-            .compose(JBoss.mvnTest(LocalPaths.quarkusPlatformHome(paths), options))
+            .compose(JBoss::mvnTest)
+            .compose(Suite.of(options, paths))
+            .compose(LocalPaths::quarkusPlatformHome)
             .apply(paths);
     }
 
@@ -248,29 +257,27 @@ class JBoss
         );
     }
 
-    private static Function<LocalPaths, OperatingSystem.Command> mvnTest(Path root, Options options)
+    private static OperatingSystem.Command mvnTest(Suite suite)
     {
-        return paths -> {
-            Stream<String> resumeFrom = options.resumeFrom().isEmpty()
-                ? Stream.empty()
-                : Stream.of("-rf", options.resumeFrom());
+        Stream<String> resumeFrom = suite.resumeFrom().isEmpty()
+            ? Stream.empty()
+            : Stream.of("-rf", suite.resumeFrom());
 
-            return new OperatingSystem.Command(
-                Stream.concat(
-                    Stream.of(
-                        "mvn" // ?
-                        , "install"
-                        , "-Dnative"
-                        , "-Dno-format"
-                    )
-                    , resumeFrom
+        return new OperatingSystem.Command(
+            Stream.concat(
+                Stream.of(
+                    "mvn" // ?
+                    , "install"
+                    , "-Dnative"
+                    , "-Dno-format"
                 )
-                , root
-                , Stream.of(
-                    LocalEnvs.graalJavaHome(paths)
-                )
-            );
-        };
+                , resumeFrom
+            )
+            , suite.root()
+            , Stream.of(
+                suite.javaHome()
+            )
+        );
     }
 
     public static void cleanQuarkus(LocalPaths paths)
@@ -278,6 +285,23 @@ class JBoss
         OperatingSystem.deleteRecursive()
             .compose(LocalPaths::quarkusHome)
             .apply(paths);
+    }
+
+    record Suite(
+        Path root
+        , String resumeFrom
+        , OperatingSystem.EnvVar javaHome
+    )
+    {
+        static Function<Path, Suite> of(Options options, LocalPaths paths)
+        {
+            return root ->
+                new Suite(
+                    root
+                    , options.resumeFrom()
+                    , LocalEnvs.graalJavaHome(paths)
+                );
+        }
     }
 }
 
@@ -527,7 +551,7 @@ class LocalPaths
     static Path graalHome(LocalPaths paths)
     {
         final var graalHomePath = Path.of(
-             "sdk"
+            "sdk"
             , "latest_graalvm_home"
         );
         return graalSourceHome(paths).resolve(graalHomePath);
@@ -547,6 +571,11 @@ class LocalPaths
     static Path quarkusHome(LocalPaths paths)
     {
         return paths.root.resolve("quarkus");
+    }
+
+    static Function<String, Path> quarkus(LocalPaths paths)
+    {
+        return path -> quarkusHome(paths).resolve(path);
     }
 
     static Path quarkusPomXml(LocalPaths paths)
@@ -574,11 +603,6 @@ class LocalPaths
             , "quarkus-integration-test-bootstrap-config-application-999-SNAPSHOT.jar"
         );
         return quarkusHome(paths).resolve(lastTestJar);
-    }
-
-    static Path quarkusTests(LocalPaths paths)
-    {
-        return quarkusHome(paths).resolve("integration-tests");
     }
 
     static Path quarkusPlatformHome(LocalPaths paths)
@@ -725,7 +749,11 @@ class OperatingSystem
         }
     }
 
-    record Command(Stream<String> command, Path directory, Stream<EnvVar> envVars) {}
+    record Command(
+        Stream<String>command
+        , Path directory
+        , Stream<EnvVar>envVars
+    ) {}
 
     record EnvVar(String name, String value) {}
 
