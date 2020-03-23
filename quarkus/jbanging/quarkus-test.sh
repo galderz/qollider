@@ -2,8 +2,14 @@
 
 set -e
 
-JAVA_VERSION="14.0.0"
-JAVA="${JAVA_VERSION}.hs-adpt"
+SCRIPT_JDK_VERSION="14.0.0"
+SCRIPT_JDK="${SCRIPT_JDK_VERSION}.hs-adpt"
+SCRIPT_JDK_HOME="${HOME}/.sdkman/candidates/java/${SCRIPT_JDK}"
+
+BOOT_JDK_VERSION="11.0.6"
+BOOT_JDK="${BOOT_JDK_VERSION}.hs-adpt"
+BOOT_JDK_HOME="${HOME}/.sdkman/candidates/java/${BOOT_JDK}"
+
 JBANG_VERSION="0.19.0"
 
 getSdkman() {
@@ -11,9 +17,12 @@ getSdkman() {
     source ${HOME}/.sdkman/bin/sdkman-init.sh
 }
 
-installJava() {
-    n | sdk install java ${JAVA} || true
-    sdk use java ${JAVA}
+installBootJDK() {
+    n | sdk install java ${BOOT_JDK} || true
+}
+
+installScriptJDK() {
+    n | sdk install java ${SCRIPT_JDK} || true
 }
 
 installJBang() {
@@ -27,12 +36,15 @@ installMaven() {
 
 run() {
     source ${HOME}/.sdkman/bin/sdkman-init.sh
-    jbang src/quarkus.java test "$@"
+    JAVA_HOME=${SCRIPT_JDK_HOME}
+        BOOT_JDK_HOME=${BOOT_JDK_HOME} \
+        jbang src/quarkus.java test "$@"
 }
 
 main() {
     getSdkman
-    installJava
+    installBootJDK
+    installScriptJDK
     installJBang
     installMaven
     run "$@"

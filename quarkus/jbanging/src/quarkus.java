@@ -18,7 +18,8 @@ import picocli.CommandLine.Spec;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -83,7 +84,7 @@ class QuarkusTest implements Runnable
             , "--quarkus-tree"
         }
     )
-    URL quarkusTree;
+    URI quarkusTree;
 
     @Option(
         defaultValue = ""
@@ -100,7 +101,8 @@ class QuarkusTest implements Runnable
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        final var options = Options.of(quarkusTree, resumeFrom, clean);
+        final var options = new Options(quarkusTree, resumeFrom, clean);
+        LOG.info("Options: {}", options);
         if (options.clean())
             Sequential.clean(paths);
 
@@ -108,35 +110,7 @@ class QuarkusTest implements Runnable
     }
 }
 
-record Options(
-    String quarkusRepo
-    , String quarkusBranch
-    , String resumeFrom
-    , boolean clean
-)
-{
-    static final Logger LOG = LogManager.getLogger(Options.class);
-
-    static Options of(URL quarkusTree, String resumeFrom, boolean clean)
-    {
-        LOG.info(
-            "User-provided, or default, options: quarkusTree={}, resumeFrom={}"
-            , quarkusTree
-            , resumeFrom
-        );
-
-        var urlPath = quarkusTree.getPath().split("/");
-        var quarkusBranch = urlPath[urlPath.length - 1];
-        var quarkusRepo = String.format(
-            "%s://%s/%s/%s"
-            , quarkusTree.getProtocol()
-            , quarkusTree.getAuthority()
-            , urlPath[1]
-            , urlPath[2]
-        );
-        return new Options(quarkusRepo, quarkusBranch, resumeFrom, clean);
-    }
-}
+record Options(URI quarkusTree, String resumeFrom, boolean clean) {}
 
 class Sequential
 {
@@ -149,8 +123,9 @@ class Sequential
 
     static void test(Options options, LocalPaths paths)
     {
-        // Prepare steps
-        Java.installJDK(paths);
+        Java.downloadJDK(paths);
+        Java.buildJDK(paths);
+
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
         JBoss.downloadQuarkus(options, paths);
@@ -172,7 +147,7 @@ class JBoss
 
     static void testQuarkus(Options options, LocalPaths paths)
     {
-        if (LocalPaths.quarkusLastTestJar(paths).toFile().exists())
+        if (QuarkusPaths.lastTestJar(paths).toFile().exists())
         {
             LOG.info("Skipping Quarkus test");
             return;
@@ -181,7 +156,7 @@ class JBoss
         OperatingSystem.exec()
             .compose(JBoss::mvnTest)
             .compose(Suite.of(options, paths))
-            .compose(LocalPaths.quarkus(paths))
+            .compose(QuarkusPaths.resolve(paths))
             .apply("integration-tests");
     }
 
@@ -196,41 +171,44 @@ class JBoss
         OperatingSystem.exec()
             .compose(JBoss::mvnTest)
             .compose(Suite.of(options, paths))
-            .compose(LocalPaths::quarkusPlatformHome)
+            .compose(QuarkusPlatformPaths::root)
             .apply(paths);
     }
 
     static void downloadQuarkus(Options options, LocalPaths paths)
     {
-        if (LocalPaths.quarkusPomXml(paths).toFile().exists())
+        final var marker = QuarkusPaths.pomXml(paths);
+        LOG.info("Checking Quarkus marker {}", marker);
+        if (marker.toFile().exists())
         {
-            LOG.info("Skipping Quarkus download");
+            LOG.info("Skipping Quarkus download, {} exists", marker);
             return;
         }
 
         OperatingSystem.exec()
-            .compose(Git.clone(options.quarkusRepo(), options.quarkusBranch()))
-            .apply(paths.root);
+            .compose(Git.clone(options.quarkusTree()))
+            .apply(paths.root());
     }
 
     static void downloadQuarkusPlatform(LocalPaths paths)
     {
-        if (LocalPaths.quarkusPlatformPomXml(paths).toFile().exists())
+        if (QuarkusPlatformPaths.pomXml(paths).toFile().exists())
         {
             LOG.info("Skipping Quarkus Platform download");
             return;
         }
 
-        final var repo = "https://github.com/quarkusio/quarkus-platform";
-        final var branch = "master";
+        final var tree = URIs.of(
+            "https://github.com/quarkusio/quarkus-platform/tree/master"
+        );
         OperatingSystem.exec()
-            .compose(Git.clone(repo, branch))
-            .apply(paths.root);
+            .compose(Git.clone(tree))
+            .apply(paths.root());
     }
 
     static void buildQuarkus(LocalPaths paths)
     {
-        if (LocalPaths.quarkusLastInstallJar(paths).toFile().exists())
+        if (QuarkusPaths.lastInstallJar(paths).toFile().exists())
         {
             LOG.info("Skipping Quarkus build");
             return;
@@ -250,9 +228,9 @@ class JBoss
                 , "-DskipTests"
                 , "-Dno-format"
             )
-            , LocalPaths.quarkusHome(paths)
+            , QuarkusPaths.root(paths)
             , Stream.of(
-                LocalEnvs.graalJavaHome(paths)
+                LocalEnvs.Graal.graalJavaHome(paths)
             )
         );
     }
@@ -283,7 +261,7 @@ class JBoss
     public static void cleanQuarkus(LocalPaths paths)
     {
         OperatingSystem.deleteRecursive()
-            .compose(LocalPaths::quarkusHome)
+            .compose(QuarkusPaths::root)
             .apply(paths);
     }
 
@@ -299,7 +277,7 @@ class JBoss
                 new Suite(
                     root
                     , options.resumeFrom()
-                    , LocalEnvs.graalJavaHome(paths)
+                    , LocalEnvs.Graal.graalJavaHome(paths)
                 );
         }
     }
@@ -311,7 +289,7 @@ class Graal
 
     static void buildGraal(LocalPaths paths)
     {
-        if (LocalPaths.nativeImage(paths).toFile().exists())
+        if (GraalPaths.nativeImage(paths).toFile().exists())
         {
             LOG.info("Skipping Graal build");
             return;
@@ -326,73 +304,107 @@ class Graal
     {
         return new OperatingSystem.Command(
             Stream.of(
-                LocalPaths.mx(paths).toString()
+                MxPaths.mx(paths).toString()
                 , "build"
             )
-            , LocalPaths.svm(paths)
+            , GraalPaths.svm(paths)
             , Stream.of(
-                LocalEnvs.jdkJavaHome(paths)
+                LocalEnvs.Java.javaHome(paths)
             )
         );
     }
 
     static void downloadGraal(LocalPaths paths)
     {
-        if (LocalPaths.svm(paths).toFile().exists())
+        if (GraalPaths.svm(paths).toFile().exists())
         {
             LOG.info("Skipping Graal download");
             return;
         }
 
-        var repo = "https://github.com/oracle/graal";
+        var tree = URIs.of("https://github.com/oracle/graal/tree/master");
         OperatingSystem.exec()
-            .compose(Git.clone(repo, "master"))
-            .apply(paths.root);
+            .compose(Git.clone(tree))
+            .apply(paths.root());
     }
 
     static void installMx(LocalPaths paths)
     {
-        if (LocalPaths.mx(paths).toFile().exists())
+        if (MxPaths.mx(paths).toFile().exists())
         {
             LOG.info("Skipping Mx install");
             return;
         }
 
-        var repo = "https://github.com/graalvm/mx";
+        var tree = URIs.of("https://github.com/graalvm/mx/tree/master");
         OperatingSystem.exec()
-            .compose(Git.clone(repo, "master"))
-            .apply(paths.root);
+            .compose(Git.clone(tree))
+            .apply(paths.root());
     }
 
     public static void cleanMx(LocalPaths paths)
     {
         OperatingSystem.deleteRecursive()
-            .compose(LocalPaths::mxHome)
+            .compose(MxPaths::root)
             .apply(paths);
     }
 
     public static void cleanGraal(LocalPaths paths)
     {
         OperatingSystem.deleteRecursive()
-            .compose(LocalPaths::graalSourceHome)
+            .compose(GraalPaths::root)
             .apply(paths);
     }
 }
 
 class Git
 {
-    static Function<Path, OperatingSystem.Command> clone(String repo, String branch)
+    record Repository(String directory, URI uri, String branch)
+    {
+        static Repository of(URI tree)
+        {
+            final var path = Path.of(tree.getPath());
+            final var directory = path.getName(1).toString();
+            return Repository.of(directory, path, tree);
+        }
+
+        static Repository of(String directory, URI tree)
+        {
+            final var path = Path.of(tree.getPath());
+            return Repository.of(directory, path, tree);
+        }
+
+        private static Repository of(String directory, Path path, URI tree)
+        {
+            final var repo = tree.resolve("..");
+            final var branch = path.getFileName().toString();
+            return new Repository(directory, repo, branch);
+        }
+    }
+
+    static Function<Path, OperatingSystem.Command> clone(URI tree)
+    {
+        return clone(Repository.of(tree));
+    }
+
+    static Function<Path, OperatingSystem.Command> clone(String directory, URI tree)
+    {
+        return clone(Repository.of(directory, tree));
+    }
+
+    private static Function<Path, OperatingSystem.Command> clone(Repository repo)
     {
         return path ->
             new OperatingSystem.Command(
                 Stream.of(
                     "git"
                     , "clone"
-                    , repo
+                    , "-b"
+                    , repo.branch()
                     , "--depth"
                     , "1"
-                    , "-b"
-                    , branch
+                    , repo.uri().toString()
+                    , repo.directory()
                 )
                 , path
                 , Stream.empty()
@@ -404,215 +416,134 @@ class Java
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
-    static void installJDK(LocalPaths paths)
+    static void downloadJDK(LocalPaths paths)
     {
-        if (LocalPaths.java(paths).toFile().exists())
+        if (JavaPaths.makefile(paths).toFile().exists())
+        {
+            LOG.info("Skipping JDK source repository download");
+            return;
+        }
+
+        OperatingSystem.exec()
+            .compose(Java::downloadJDKCommand)
+            .apply(paths);
+    }
+
+    static void buildJDK(LocalPaths paths)
+    {
+        if (JavaPaths.javaBin(paths).toFile().exists())
         {
             LOG.info("Skipping JDK install");
             return;
         }
 
         final var steps = Stream.of(
-            Java.downloadJDK(paths)
-            , Java.extractJDK(paths)
+            Java.configureSh(paths)
+            , Java.makeJDK(paths)
+            , Java.makeGraalJDK(paths)
         );
 
         steps.forEach(OperatingSystem::exec);
     }
 
-    private static OperatingSystem.Command extractJDK(LocalPaths paths)
+    private static OperatingSystem.Command configureSh(LocalPaths paths)
     {
         return new OperatingSystem.Command(
             Stream.of(
-                "tar"
-                , "-xzvpf"
-                , "jdk.tar.gz"
-                , "-C"
-                , "jdk"
-                , "--strip-components"
-                , "1"
+                "sh"
+                , "configure"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                , "--enable-aot=no"
+                , String.format("--with-boot-jdk=%s", JavaPaths.bootJDK(paths).toString())
             )
-            , paths.root
+            , JavaPaths.root(paths)
             , Stream.empty()
         );
     }
 
-    private static OperatingSystem.Command downloadJDK(LocalPaths paths)
+    private static OperatingSystem.Command makeJDK(LocalPaths paths)
     {
         return new OperatingSystem.Command(
             Stream.of(
-                "curl"
-                , "-L"
-                , jdkURL(jdk())
-                , "--output"
-                , "jdk.tar.gz"
+                "make"
+                , "images"
             )
-            , paths.root
+            , JavaPaths.root(paths)
             , Stream.empty()
         );
     }
 
-    private static JDK jdk()
+    private static OperatingSystem.Command makeGraalJDK(LocalPaths paths)
     {
-        var osName = OperatingSystem.type() == OperatingSystem.Type.MAC_OS
-            ? "darwin"
-            : "linux";
-
-        return new JDK(
-            "20.0-b02"
-            , "11.0.6+9"
-            , osName
+        return new OperatingSystem.Command(
+            Stream.of(
+                "make"
+                , "graal-builder-image"
+            )
+            , JavaPaths.root(paths)
+            , Stream.empty()
         );
     }
 
-    private static String jdkURL(JDK jdk)
+    private static OperatingSystem.Command downloadJDKCommand(LocalPaths paths)
     {
-        String base = "https://github.com/graalvm/labs-openjdk-11/releases/download";
-        return String.format(
-            "%1$s/jvmci-%2$s/labsjdk-ce-%3$s-jvmci-%2$s-%4$s-amd64.tar.gz"
-            , base
-            , jdk.version
-            , jdk.javaVersion
-            , jdk.osName
-        );
+        var repo = URIs.of("https://github.com/openjdk/jdk11u-dev/tree/master");
+        return Git.clone("jdk", repo).apply(paths.root());
     }
-
-    private record JDK(String version, String javaVersion, String osName) {}
 
 }
 
 class LocalEnvs
 {
-    static OperatingSystem.EnvVar jdkJavaHome(LocalPaths paths)
+    static class Java
     {
-        return new OperatingSystem.EnvVar(
-            "JAVA_HOME"
-            , LocalPaths.javaHome(paths).toString()
-        );
+        static OperatingSystem.EnvVar javaHome(LocalPaths paths)
+        {
+            return new OperatingSystem.EnvVar(
+                "JAVA_HOME"
+                , JavaPaths.javaHome(paths).toString()
+            );
+        }
     }
 
-    static OperatingSystem.EnvVar graalJavaHome(LocalPaths paths)
+    static class Graal
     {
-        return new OperatingSystem.EnvVar(
-            "JAVA_HOME"
-            , LocalPaths.graalHome(paths).toString()
-        );
+        static OperatingSystem.EnvVar graalJavaHome(LocalPaths paths)
+        {
+            return new OperatingSystem.EnvVar(
+                "JAVA_HOME"
+                , GraalPaths.graalHome(paths).toString()
+            );
+        }
     }
+
 }
 
-class LocalPaths
+record LocalPaths(
+    Path root
+    , JavaPaths java
+    , MxPaths mx
+    , GraalPaths graal
+    , QuarkusPaths quarkus
+    , QuarkusPlatformPaths quarkusPlatform
+)
 {
     static final Logger logger = LogManager.getLogger(LocalPaths.class);
-
-    final Path root;
-    final Path jdk;
-
-    private LocalPaths(Path root, Path jdk)
-    {
-        this.root = root;
-        this.jdk = jdk;
-    }
 
     static LocalPaths newSystemPaths()
     {
         var root = OperatingSystem.mkdirs(rootPath());
-        var jdk = OperatingSystem.mkdirs(root.resolve("jdk"));
-        return new LocalPaths(root, jdk);
-    }
 
-    static Path javaHome(LocalPaths paths)
-    {
-        return OperatingSystem.type() == OperatingSystem.Type.MAC_OS
-            ? paths.jdk.resolve("Contents").resolve("Home")
-            : paths.jdk;
-    }
+        var bootJDK = Path.of(System.getenv("BOOT_JDK_HOME"));
+        var java = new JavaPaths(root.resolve("jdk"), bootJDK);
 
-    static Path java(LocalPaths paths)
-    {
-        final var javaPath = Path.of("bin", "java");
-        return javaHome(paths).resolve(javaPath);
-    }
-
-    static Path mxHome(LocalPaths paths)
-    {
-        return paths.root.resolve("mx");
-    }
-
-    static Path mx(LocalPaths paths)
-    {
-        return mxHome(paths).resolve("mx");
-    }
-
-    static Path graalSourceHome(LocalPaths paths)
-    {
-        return paths.root.resolve("graal");
-    }
-
-    static Path graalHome(LocalPaths paths)
-    {
-        final var graalHomePath = Path.of(
-            "sdk"
-            , "latest_graalvm_home"
-        );
-        return graalSourceHome(paths).resolve(graalHomePath);
-    }
-
-    static Path svm(LocalPaths paths)
-    {
-        return graalSourceHome(paths).resolve("substratevm");
-    }
-
-    static Path nativeImage(LocalPaths paths)
-    {
-        final var nativeImagePath = Path.of("bin", "native-image");
-        return graalHome(paths).resolve(nativeImagePath);
-    }
-
-    static Path quarkusHome(LocalPaths paths)
-    {
-        return paths.root.resolve("quarkus");
-    }
-
-    static Function<String, Path> quarkus(LocalPaths paths)
-    {
-        return path -> quarkusHome(paths).resolve(path);
-    }
-
-    static Path quarkusPomXml(LocalPaths paths)
-    {
-        return quarkusHome(paths).resolve("pom.xml");
-    }
-
-    static Path quarkusLastInstallJar(LocalPaths paths)
-    {
-        final var lastInstallJar = Path.of(
-            "docs"
-            , "target"
-            , "quarkus-documentation-999-SNAPSHOT.jar"
-        );
-        return quarkusHome(paths).resolve(lastInstallJar);
-    }
-
-    static Path quarkusLastTestJar(LocalPaths paths)
-    {
-        final var lastTestJar = Path.of(
-            "integration-tests"
-            , "boostrap-config"
-            , "application"
-            , "target"
-            , "quarkus-integration-test-bootstrap-config-application-999-SNAPSHOT.jar"
-        );
-        return quarkusHome(paths).resolve(lastTestJar);
-    }
-
-    static Path quarkusPlatformHome(LocalPaths paths)
-    {
-        return paths.root.resolve("quarkus-platform");
-    }
-
-    static Path quarkusPlatformPomXml(LocalPaths paths)
-    {
-        return quarkusPlatformHome(paths).resolve("pom.xml");
+        var mx = new MxPaths(root.resolve("mx"));
+        var quarkus = new QuarkusPaths(root.resolve("quarkus"));
+        var graal = new GraalPaths(root.resolve("graal"));
+        var quarkusPlatform = new QuarkusPlatformPaths(root.resolve("quarkus-platform"));
+        return new LocalPaths(root, java, mx, graal, quarkus, quarkusPlatform);
     }
 
     private static Path rootPath()
@@ -633,6 +564,192 @@ class LocalPaths
         logger.info("Root path: {}", root);
 
         return root;
+    }
+}
+
+final class JavaPaths
+{
+    private final Path root;
+    private final Path bootJDK;
+
+    JavaPaths(Path root, Path bootJDK)
+    {
+        this.root = root;
+        this.bootJDK = bootJDK;
+    }
+
+    static Path root(LocalPaths paths)
+    {
+        return paths.java().root;
+    }
+
+    static Path bootJDK(LocalPaths paths)
+    {
+        return paths.java().bootJDK;
+    }
+
+    static Path javaHome(LocalPaths paths)
+    {
+        final var osArchName = switch(OperatingSystem.type()) {
+            case MAC_OS -> "macosx-x86_64";
+            case LINUX -> "linux-x86_64";
+            case WINDOWS -> "windows-x86_64";
+            case OTHER -> throw new RuntimeException("NYI");
+        };
+
+        return paths.java().root.resolve(
+            Path.of(
+                "build"
+                , String.format("%s-normal-server-release", osArchName)
+                , "images"
+                , "graal-builder-jdk"
+            )
+        );
+    }
+
+    static Path javaBin(LocalPaths paths)
+    {
+        return javaHome(paths).resolve(
+            Path.of(
+                "bin"
+                , "java"
+            )
+        );
+    }
+
+    static Path makefile(LocalPaths paths)
+    {
+        return paths.java().root.resolve("Makefile");
+    }
+}
+
+final class MxPaths
+{
+    private final Path root;
+
+    MxPaths(Path root)
+    {
+        this.root = root;
+    }
+
+    static Path root(LocalPaths paths)
+    {
+        return paths.mx().root;
+    }
+
+    static Path mx(LocalPaths paths)
+    {
+        return paths.mx().root.resolve("mx");
+    }
+}
+
+final class GraalPaths
+{
+    final Path root;
+
+    GraalPaths(Path root)
+    {
+        this.root = root;
+    }
+
+    static Path root(LocalPaths paths)
+    {
+        return paths.graal().root;
+    }
+
+    static Path graalHome(LocalPaths paths)
+    {
+        return root(paths).resolve(
+            Path.of(
+                "sdk"
+                , "latest_graalvm_home"
+            )
+        );
+    }
+
+    static Path svm(LocalPaths paths)
+    {
+        return root(paths).resolve("substratevm");
+    }
+
+    static Path nativeImage(LocalPaths paths)
+    {
+        return graalHome(paths)
+            .resolve(
+                Path.of(
+                    "bin"
+                    , "native-image"
+                )
+            );
+    }
+}
+
+final class QuarkusPaths
+{
+    final Path root;
+
+    QuarkusPaths(Path root)
+    {
+        this.root = root;
+    }
+
+    static Path root(LocalPaths paths)
+    {
+        return paths.quarkus().root;
+    }
+
+    static Function<String, Path> resolve(LocalPaths paths)
+    {
+        return path -> root(paths).resolve(path);
+    }
+
+    static Path pomXml(LocalPaths paths)
+    {
+        return root(paths).resolve("pom.xml");
+    }
+
+    static Path lastInstallJar(LocalPaths paths)
+    {
+        return root(paths).resolve(
+            Path.of(
+                "docs"
+                , "target"
+                , "quarkus-documentation-999-SNAPSHOT.jar"
+            )
+        );
+    }
+
+    static Path lastTestJar(LocalPaths paths)
+    {
+        return root(paths).resolve(
+            Path.of(
+                "integration-tests"
+                , "boostrap-config"
+                , "application"
+                , "target"
+                , "quarkus-integration-test-bootstrap-config-application-999-SNAPSHOT.jar"
+            )
+        );
+    }
+}
+
+final class QuarkusPlatformPaths
+{
+    final Path root;
+
+    QuarkusPlatformPaths(Path root)
+    {
+        this.root = root;
+    }
+
+    static Path root(LocalPaths paths)
+    {
+        return paths.quarkusPlatform().root;
+    }
+
+    static Path pomXml(LocalPaths paths)
+    {
+        return root(paths).resolve("pom.xml");
     }
 }
 
@@ -757,4 +874,19 @@ class OperatingSystem
 
     record EnvVar(String name, String value) {}
 
+}
+
+class URIs
+{
+    static URI of(String spec)
+    {
+        try
+        {
+            return new URI(spec);
+        }
+        catch (URISyntaxException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
 }
