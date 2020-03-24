@@ -81,7 +81,8 @@ class QuarkusTest implements Runnable
     @Option(
         defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
         , description = "Quarkus source tree URL"
-        , names = {
+        , names =
+        {
             "-qt"
             , "--quarkus-tree"
         }
@@ -91,7 +92,8 @@ class QuarkusTest implements Runnable
     @Option(
         defaultValue = ""
         , description = "Resume reactor from specified project"
-        , names = {
+        , names =
+        {
             "-rf"
             , "--resume-from"
         }
@@ -101,7 +103,8 @@ class QuarkusTest implements Runnable
     @Option(
         defaultValue = "quarkus,platform"
         , description = "Test suites to run. Valid values: ${COMPLETION-CANDIDATES}"
-        , names = {
+        , names =
+        {
             "-ts"
             , "--test-suites"
         }
@@ -123,7 +126,12 @@ class QuarkusTest implements Runnable
     }
 }
 
-record Options(URI quarkusTree, String resumeFrom, boolean clean, TestSuite[] testSuites) {}
+record Options(
+    URI quarkusTree
+    , String resumeFrom
+    , boolean clean
+    , TestSuite[]testSuites
+) {}
 
 class Sequential
 {
@@ -258,8 +266,8 @@ class JBoss
             )
             , QuarkusPaths.root(paths)
             , Stream.of(
-                LocalEnvs.Graal.graalJavaHome(paths)
-            )
+            LocalEnvs.Graal.graalJavaHome(paths)
+        )
         );
     }
 
@@ -280,9 +288,7 @@ class JBoss
                 , resumeFrom
             )
             , suite.root()
-            , Stream.of(
-                suite.javaHome()
-            )
+            , Stream.of(suite.javaHome())
         );
     }
 
@@ -336,9 +342,7 @@ class Graal
                 , "build"
             )
             , GraalPaths.svm(paths)
-            , Stream.of(
-                LocalEnvs.Java.javaHome(paths)
-            )
+            , Stream.of(LocalEnvs.Java.javaHome(paths))
         );
     }
 
@@ -618,12 +622,14 @@ final class JavaPaths
 
     static Path javaHome(LocalPaths paths)
     {
-        final var osArchName = switch(OperatingSystem.type()) {
-            case MAC_OS -> "macosx-x86_64";
-            case LINUX -> "linux-x86_64";
-            case WINDOWS -> "windows-x86_64";
-            case OTHER -> throw new RuntimeException("NYI");
-        };
+        final var osArchName =
+            switch (OperatingSystem.type())
+                {
+                    case MAC_OS -> "macosx-x86_64";
+                    case LINUX -> "linux-x86_64";
+                    case WINDOWS -> "windows-x86_64";
+                    case OTHER -> throw new RuntimeException("NYI");
+                };
 
         return paths.java().root.resolve(
             Path.of(
@@ -783,8 +789,7 @@ final class QuarkusPlatformPaths
 
 enum TestSuite
 {
-    QUARKUS
-    , PLATFORM
+    QUARKUS, PLATFORM
 }
 
 class OperatingSystem
