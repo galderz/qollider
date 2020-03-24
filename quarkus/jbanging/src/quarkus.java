@@ -47,7 +47,9 @@ public class quarkus implements Runnable
         Configurator.initialize(new DefaultConfiguration());
         Configurator.setRootLevel(Level.DEBUG);
 
-        int exitCode = new CommandLine(new quarkus()).execute(args);
+        int exitCode = new CommandLine(new quarkus())
+            .setCaseInsensitiveEnumValuesAllowed(true)
+            .execute(args);
         System.exit(exitCode);
     }
 
@@ -96,12 +98,23 @@ class QuarkusTest implements Runnable
     )
     String resumeFrom;
 
+    @Option(
+        defaultValue = "quarkus,platform"
+        , description = "Test suites to run. Valid values: ${COMPLETION-CANDIDATES}"
+        , names = {
+            "-ts"
+            , "--test-suites"
+        }
+        , split = ","
+    )
+    TestSuite[] testSuites;
+
     @Override
     public void run()
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        final var options = new Options(quarkusTree, resumeFrom, clean);
+        final var options = new Options(quarkusTree, resumeFrom, clean, testSuites);
         LOG.info("Options: {}", options);
         if (options.clean())
             Sequential.clean(paths);
@@ -110,7 +123,7 @@ class QuarkusTest implements Runnable
     }
 }
 
-record Options(URI quarkusTree, String resumeFrom, boolean clean) {}
+record Options(URI quarkusTree, String resumeFrom, boolean clean, TestSuite[] testSuites) {}
 
 class Sequential
 {
@@ -136,14 +149,29 @@ class Sequential
         JBoss.buildQuarkus(paths);
 
         // Test steps
-        JBoss.testQuarkus(options, paths);
-        JBoss.testQuarkusPlatform(options, paths);
+        JBoss.test(options, paths);
     }
 }
 
 class JBoss
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
+
+    static void test(Options options, LocalPaths paths)
+    {
+        for (TestSuite suite : options.testSuites())
+        {
+            switch (suite)
+            {
+                case QUARKUS:
+                    JBoss.testQuarkus(options, paths);
+                    break;
+                case PLATFORM:
+                    JBoss.testQuarkusPlatform(options, paths);
+                    break;
+            }
+        }
+    }
 
     static void testQuarkus(Options options, LocalPaths paths)
     {
@@ -751,6 +779,12 @@ final class QuarkusPlatformPaths
     {
         return root(paths).resolve("pom.xml");
     }
+}
+
+enum TestSuite
+{
+    QUARKUS
+    , PLATFORM
 }
 
 class OperatingSystem
