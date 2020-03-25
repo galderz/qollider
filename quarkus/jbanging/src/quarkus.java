@@ -551,7 +551,6 @@ class Java
         {
             return Stream.of(
                 configureSh(paths)
-                , makeJDK(paths)
                 , makeGraalJDK(paths)
             );
         }
@@ -567,18 +566,6 @@ class Java
                     , "--with-jvm-variants=server"
                     , "--enable-aot=no"
                     , String.format("--with-boot-jdk=%s", JavaPaths.bootJDK(paths).toString())
-                )
-                , JavaPaths.root(paths)
-                , Stream.empty()
-            );
-        }
-
-        private static OperatingSystem.Command makeJDK(LocalPaths paths)
-        {
-            return new OperatingSystem.Command(
-                Stream.of(
-                    "make"
-                    , "images"
                 )
                 , JavaPaths.root(paths)
                 , Stream.empty()
