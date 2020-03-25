@@ -475,7 +475,7 @@ class Java
         private static Path javaHome(Java.Vendor.Type jdkType)
         {
             final var os = OperatingSystem.type().toString().toLowerCase();
-            final var arch = OperatingSystem.arch().toString().toLowerCase();
+            final var arch = "x86_64";
 
             return switch (jdkType)
                 {
@@ -889,12 +889,6 @@ class OperatingSystem
         WINDOWS, MACOSX, LINUX, OTHER
     }
 
-    @SuppressWarnings("unused")
-    public enum Arch
-    {
-        X86_64, AMD64
-    }
-
     static Function<Path, Void> deleteRecursive()
     {
         return OperatingSystem::deleteRecursive;
@@ -955,11 +949,6 @@ class OperatingSystem
             return Type.LINUX;
 
         return Type.OTHER;
-    }
-
-    public static Arch arch()
-    {
-        return Arch.valueOf(System.getProperty("os.arch").toUpperCase());
     }
 
     static Function<Command, Void> exec()
