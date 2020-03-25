@@ -112,12 +112,29 @@ class QuarkusTest implements Runnable
     )
     TestSuite[] testSuites;
 
+    @Option(
+        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.0-b02"
+        , description = "JDK source tree URL"
+        , names =
+        {
+            "-jt"
+            , "--jdk-tree"
+        }
+    )
+    URI jdkTree;
+
     @Override
     public void run()
     {
         LOG.info("Test the combo!");
         final var paths = LocalPaths.newSystemPaths();
-        final var options = new Options(quarkusTree, resumeFrom, clean, testSuites);
+        final var options = new Options(
+            quarkusTree
+            , resumeFrom
+            , clean
+            , testSuites
+            , jdkTree
+        );
         LOG.info("Options: {}", options);
         if (options.clean())
             Sequential.clean(paths);
@@ -131,6 +148,7 @@ record Options(
     , String resumeFrom
     , boolean clean
     , TestSuite[]testSuites
+    , URI jdkTree
 ) {}
 
 class Sequential
@@ -144,8 +162,8 @@ class Sequential
 
     static void test(Options options, LocalPaths paths)
     {
-        Java.downloadJDK(paths);
-        Java.buildJDK(paths);
+        Java.downloadJDK(options, paths);
+        Java.buildJDK(options, paths);
 
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
@@ -171,12 +189,12 @@ class JBoss
         {
             switch (suite)
             {
-                case QUARKUS:
-                    JBoss.testQuarkus(options, paths);
-                    break;
-                case PLATFORM:
-                    JBoss.testQuarkusPlatform(options, paths);
-                    break;
+            case QUARKUS:
+                JBoss.testQuarkus(options, paths);
+                break;
+            case PLATFORM:
+                JBoss.testQuarkusPlatform(options, paths);
+                break;
             }
         }
     }
@@ -434,7 +452,7 @@ class Git
                     , "-b"
                     , repo.branch()
                     , "--depth"
-                    , "1"
+                    , "10"
                     , repo.uri().toString()
                     , repo.directory()
                 )
@@ -448,7 +466,7 @@ class Java
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
-    static void downloadJDK(LocalPaths paths)
+    static void downloadJDK(Options options, LocalPaths paths)
     {
         if (JavaPaths.makefile(paths).toFile().exists())
         {
@@ -457,11 +475,11 @@ class Java
         }
 
         OperatingSystem.exec()
-            .compose(Java::downloadJDKCommand)
+            .compose(Java.downloadJDKCommand(options))
             .apply(paths);
     }
 
-    static void buildJDK(LocalPaths paths)
+    static void buildJDK(Options options, LocalPaths paths)
     {
         if (JavaPaths.javaBin(paths).toFile().exists())
         {
@@ -469,62 +487,115 @@ class Java
             return;
         }
 
-        final var steps = Stream.of(
-            Java.configureSh(paths)
-            , Java.makeJDK(paths)
-            , Java.makeGraalJDK(paths)
-        );
+        final var steps =
+            switch (jdkType(options))
+                {
+                    case OPENJDK -> OpenJDK.buildSteps(paths);
+                    case LABSJDK -> LabsJDK.buildSteps(paths);
+                };
 
         steps.forEach(OperatingSystem::exec);
     }
 
-    private static OperatingSystem.Command configureSh(LocalPaths paths)
+    private static Function<LocalPaths, OperatingSystem.Command> downloadJDKCommand(Options options)
     {
-        return new OperatingSystem.Command(
-            Stream.of(
-                "sh"
-                , "configure"
-                , "--disable-warnings-as-errors"
-                , "--with-jvm-features=graal"
-                , "--with-jvm-variants=server"
-                , "--enable-aot=no"
-                , String.format("--with-boot-jdk=%s", JavaPaths.bootJDK(paths).toString())
-            )
-            , JavaPaths.root(paths)
-            , Stream.empty()
-        );
+        return paths ->
+        {
+            var repo = options.jdkTree();
+            return Git.clone("jdk", repo).apply(paths.root());
+        };
     }
 
-    private static OperatingSystem.Command makeJDK(LocalPaths paths)
+    private static Java.Type jdkType(Options options)
     {
-        return new OperatingSystem.Command(
-            Stream.of(
-                "make"
-                , "images"
-            )
-            , JavaPaths.root(paths)
-            , Stream.empty()
-        );
+        final String provider = Path.of(options.jdkTree().getPath()).getName(0).toString();
+        return switch (provider)
+            {
+                case "openjdk" -> Type.OPENJDK;
+                case "graalvm" -> Type.LABSJDK;
+                default -> throw new IllegalStateException(
+                    "Unexpected value: " + provider
+                );
+            };
     }
 
-    private static OperatingSystem.Command makeGraalJDK(LocalPaths paths)
+    enum Type
     {
-        return new OperatingSystem.Command(
-            Stream.of(
-                "make"
-                , "graal-builder-image"
-            )
-            , JavaPaths.root(paths)
-            , Stream.empty()
-        );
+        OPENJDK, LABSJDK
     }
 
-    private static OperatingSystem.Command downloadJDKCommand(LocalPaths paths)
+    private static final class OpenJDK
     {
-        var repo = URIs.of("https://github.com/openjdk/jdk11u-dev/tree/master");
-        return Git.clone("jdk", repo).apply(paths.root());
+        static Stream<OperatingSystem.Command> buildSteps(LocalPaths paths)
+        {
+            return Stream.of(
+                configureSh(paths)
+                , makeJDK(paths)
+                , makeGraalJDK(paths)
+            );
+        }
+
+        private static OperatingSystem.Command configureSh(LocalPaths paths)
+        {
+            return new OperatingSystem.Command(
+                Stream.of(
+                    "sh"
+                    , "configure"
+                    , "--disable-warnings-as-errors"
+                    , "--with-jvm-features=graal"
+                    , "--with-jvm-variants=server"
+                    , "--enable-aot=no"
+                    , String.format("--with-boot-jdk=%s", JavaPaths.bootJDK(paths).toString())
+                )
+                , JavaPaths.root(paths)
+                , Stream.empty()
+            );
+        }
+
+        private static OperatingSystem.Command makeJDK(LocalPaths paths)
+        {
+            return new OperatingSystem.Command(
+                Stream.of(
+                    "make"
+                    , "images"
+                )
+                , JavaPaths.root(paths)
+                , Stream.empty()
+            );
+        }
+
+        private static OperatingSystem.Command makeGraalJDK(LocalPaths paths)
+        {
+            return new OperatingSystem.Command(
+                Stream.of(
+                    "make"
+                    , "graal-builder-image"
+                )
+                , JavaPaths.root(paths)
+                , Stream.empty()
+            );
+        }
     }
 
+    private static final class LabsJDK
+    {
+        static Stream<OperatingSystem.Command> buildSteps(LocalPaths paths)
+        {
+            return Stream.of(buildJDK(paths));
+        }
+
+        private static OperatingSystem.Command buildJDK(LocalPaths paths)
+        {
+            return new OperatingSystem.Command(
+                Stream.of(
+                    "python"
+                    , "build_labsjdk.py"
+                )
+                , JavaPaths.root(paths)
+                , Stream.of(LocalEnvs.Java.jdkBootHome(paths))
+            );
+        }
+    }
 }
 
 class LocalEnvs
@@ -536,6 +607,14 @@ class LocalEnvs
             return new OperatingSystem.EnvVar(
                 "JAVA_HOME"
                 , JavaPaths.javaHome(paths).toString()
+            );
+        }
+
+        static OperatingSystem.EnvVar jdkBootHome(LocalPaths paths)
+        {
+            return new OperatingSystem.EnvVar(
+                "JAVA_HOME"
+                , JavaPaths.bootJDK(paths).toString()
             );
         }
     }
