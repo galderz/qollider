@@ -27,6 +27,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -112,7 +113,7 @@ class QuarkusTest implements Runnable
         }
         , split = ","
     )
-    TestSuite[] testSuites;
+    TestSuite[] testSuites; // TODO switch to List
 
     @Option(
         defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.0-b02"
@@ -123,7 +124,20 @@ class QuarkusTest implements Runnable
             , "--jdk-tree"
         }
     )
+
     URI jdkTree;
+
+    @Option(
+        defaultValue = ""
+        , description = "Additional projects to build. Separated by comma(,) character."
+        , names =
+        {
+            "-ab"
+            , "--also-build"
+        }
+        , split = ","
+    )
+    List<URI> alsoBuild;
 
     @Override
     public void run()
@@ -135,6 +149,7 @@ class QuarkusTest implements Runnable
             , clean
             , testSuites
             , Java.Vendor.of(jdkTree)
+            , Git.URL.of(alsoBuild)
         );
         final var paths = LocalPaths.newSystemPaths(options);
         LOG.info("Options: {}", options);
@@ -151,6 +166,7 @@ record Options(
     , boolean clean
     , TestSuite[]testSuites
     , Java.Vendor jdk
+    , List<Git.URL> alsoBuilds
 ) {}
 
 class Sequential
@@ -169,11 +185,13 @@ class Sequential
 
         Graal.installMx(paths);
         Graal.downloadGraal(paths);
+        JBoss.downloadProjects(options, paths);
         JBoss.downloadQuarkus(options, paths);
         JBoss.downloadQuarkusPlatform(paths);
 
         // Build steps
         Graal.buildGraal(paths);
+        JBoss.buildProjects(options, paths);
         JBoss.buildQuarkus(paths);
 
         // Test steps
@@ -227,6 +245,30 @@ class JBoss
             .apply(paths);
     }
 
+    static void downloadProjects(Options options, LocalPaths paths)
+    {
+        options.alsoBuilds()
+            .forEach(JBoss.downloadProject(paths));
+    }
+
+    static Consumer<Git.URL> downloadProject(LocalPaths paths)
+    {
+        return url ->
+        {
+            final var marker = ProjectPaths.pomXml(url, paths);
+            LOG.info("Checking marker {}", marker);
+            if (marker.toFile().exists())
+            {
+                LOG.info("Skipping {} download, {} exists", url.name(), marker);
+                return;
+            }
+
+            OperatingSystem.exec()
+                .compose(Git.clone(url))
+                .apply(paths.root());
+        };
+    }
+
     static void downloadQuarkus(Options options, LocalPaths paths)
     {
         final var marker = QuarkusPaths.pomXml(paths);
@@ -258,6 +300,35 @@ class JBoss
             .apply(paths.root());
     }
 
+    static void buildProjects(Options options, LocalPaths paths)
+    {
+        options.alsoBuilds()
+            .forEach(JBoss.buildProject(paths));
+    }
+
+    static Consumer<Git.URL> buildProject(LocalPaths paths)
+    {
+        return url ->
+            OperatingSystem.exec()
+                .compose(JBoss.mvnInstallProject(url))
+                .apply(paths);
+    }
+
+    private static Function<LocalPaths, OperatingSystem.Command> mvnInstallProject(Git.URL url)
+    {
+        return paths ->
+            new OperatingSystem.Command(
+                Stream.of(
+                    "mvn" // ?
+                    , "install"
+                    , "-DskipTests"
+                    , "-Dno-format"
+                )
+                , ProjectPaths.root(url, paths)
+                , Stream.of(LocalEnvs.Graal.graalJavaHome(paths))
+            );
+    }
+
     static void buildQuarkus(LocalPaths paths)
     {
         if (QuarkusPaths.lastInstallJar(paths).toFile().exists())
@@ -281,9 +352,7 @@ class JBoss
                 , "-Dno-format"
             )
             , QuarkusPaths.root(paths)
-            , Stream.of(
-            LocalEnvs.Graal.graalJavaHome(paths)
-        )
+            , Stream.of(LocalEnvs.Graal.graalJavaHome(paths))
         );
     }
 
@@ -425,6 +494,13 @@ class Git
         static Git.URL of(String spec)
         {
             return of(URIs.of(spec));
+        }
+
+        static List<Git.URL> of(List<URI> uri)
+        {
+            return uri.stream()
+                .map(Git.URL::of)
+                .collect(Collectors.toList());
         }
     }
 
@@ -859,6 +935,19 @@ final class QuarkusPlatformPaths
     static Path pomXml(LocalPaths paths)
     {
         return root(paths).resolve("pom.xml");
+    }
+}
+
+final class ProjectPaths
+{
+    static Path root(Git.URL url, LocalPaths paths)
+    {
+        return paths.root().resolve(url.name());
+    }
+
+    static Path pomXml(Git.URL url, LocalPaths paths)
+    {
+        return root(url, paths).resolve("pom.xml");
     }
 }
 
