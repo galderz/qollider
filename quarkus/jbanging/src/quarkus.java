@@ -127,14 +127,14 @@ class QuarkusTest implements Runnable
     public void run()
     {
         LOG.info("Test the combo!");
-        final var paths = LocalPaths.newSystemPaths();
         final var options = new Options(
             quarkusTree
             , resumeFrom
             , clean
             , testSuites
-            , jdkTree
+            , Java.Vendor.of(jdkTree)
         );
+        final var paths = LocalPaths.newSystemPaths(options);
         LOG.info("Options: {}", options);
         if (options.clean())
             Sequential.clean(paths);
@@ -148,7 +148,7 @@ record Options(
     , String resumeFrom
     , boolean clean
     , TestSuite[]testSuites
-    , URI jdkTree
+    , Java.Vendor jdk
 ) {}
 
 class Sequential
@@ -189,12 +189,8 @@ class JBoss
         {
             switch (suite)
             {
-            case QUARKUS:
-                JBoss.testQuarkus(options, paths);
-                break;
-            case PLATFORM:
-                JBoss.testQuarkusPlatform(options, paths);
-                break;
+                case QUARKUS -> JBoss.testQuarkus(options, paths);
+                case PLATFORM -> JBoss.testQuarkusPlatform(options, paths);
             }
         }
     }
@@ -466,6 +462,35 @@ class Java
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
+    record Vendor(Java.Type type, URI tree, Path javaHome)
+    {
+        static Vendor of(URI tree)
+        {
+            final var type = Java.jdkType(tree);
+            final var javaHome = javaHome(type);
+            return new Vendor(type, tree, javaHome);
+        }
+
+        private static Path javaHome(Java.Type jdkType)
+        {
+            final var os = OperatingSystem.type().toString();
+            final var arch = OperatingSystem.arch().toString();
+
+            return switch (jdkType)
+                {
+                    case OPENJDK -> Path.of(
+                        "build"
+                        , String.format("%s-%s-normal-server-release", os, arch)
+                        , "images"
+                        , "graal-builder-jdk"
+                    );
+                    case LABSJDK -> Path.of(
+                        "java_home"
+                    );
+                };
+        }
+    }
+
     static void downloadJDK(Options options, LocalPaths paths)
     {
         if (JavaPaths.makefile(paths).toFile().exists())
@@ -488,7 +513,7 @@ class Java
         }
 
         final var steps =
-            switch (jdkType(options))
+            switch (options.jdk().type)
                 {
                     case OPENJDK -> OpenJDK.buildSteps(paths);
                     case LABSJDK -> LabsJDK.buildSteps(paths);
@@ -501,14 +526,14 @@ class Java
     {
         return paths ->
         {
-            var repo = options.jdkTree();
+            var repo = options.jdk().tree;
             return Git.clone("jdk", repo).apply(paths.root());
         };
     }
 
-    private static Java.Type jdkType(Options options)
+    private static Java.Type jdkType(URI jdkTree)
     {
-        final String provider = Path.of(options.jdkTree().getPath()).getName(0).toString();
+        final String provider = Path.of(jdkTree.getPath()).getName(0).toString();
         return switch (provider)
             {
                 case "openjdk" -> Type.OPENJDK;
@@ -643,12 +668,14 @@ record LocalPaths(
 {
     static final Logger logger = LogManager.getLogger(LocalPaths.class);
 
-    static LocalPaths newSystemPaths()
+    static LocalPaths newSystemPaths(Options options)
     {
         var root = OperatingSystem.mkdirs(rootPath());
 
         var bootJDK = Path.of(System.getenv("BOOT_JDK_HOME"));
-        var java = new JavaPaths(root.resolve("jdk"), bootJDK);
+        var jdkRoot = root.resolve("jdk");
+        var javaHome = jdkRoot.resolve(options.jdk().javaHome());
+        var java = new JavaPaths(jdkRoot, bootJDK, javaHome);
 
         var mx = new MxPaths(root.resolve("mx"));
         var quarkus = new QuarkusPaths(root.resolve("quarkus"));
@@ -682,11 +709,13 @@ final class JavaPaths
 {
     private final Path root;
     private final Path bootJDK;
+    private final Path javaHome;
 
-    JavaPaths(Path root, Path bootJDK)
+    JavaPaths(Path root, Path bootJDK, Path javaHome)
     {
         this.root = root;
         this.bootJDK = bootJDK;
+        this.javaHome = javaHome;
     }
 
     static Path root(LocalPaths paths)
@@ -701,23 +730,7 @@ final class JavaPaths
 
     static Path javaHome(LocalPaths paths)
     {
-        final var osArchName =
-            switch (OperatingSystem.type())
-                {
-                    case MAC_OS -> "macosx-x86_64";
-                    case LINUX -> "linux-x86_64";
-                    case WINDOWS -> "windows-x86_64";
-                    case OTHER -> throw new RuntimeException("NYI");
-                };
-
-        return paths.java().root.resolve(
-            Path.of(
-                "build"
-                , String.format("%s-normal-server-release", osArchName)
-                , "images"
-                , "graal-builder-jdk"
-            )
-        );
+        return paths.java().javaHome;
     }
 
     static Path javaBin(LocalPaths paths)
@@ -877,7 +890,13 @@ class OperatingSystem
 
     public enum Type
     {
-        WINDOWS, MAC_OS, LINUX, OTHER
+        WINDOWS, MACOSX, LINUX, OTHER
+    }
+
+    @SuppressWarnings("unused")
+    public enum Arch
+    {
+        X86_64, AMD64
     }
 
     static Function<Path, Void> deleteRecursive()
@@ -928,10 +947,10 @@ class OperatingSystem
 
     public static Type type()
     {
-        String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
+        String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
 
         if ((OS.contains("mac")) || (OS.contains("darwin")))
-            return Type.MAC_OS;
+            return Type.MACOSX;
 
         if (OS.contains("win"))
             return Type.WINDOWS;
@@ -940,6 +959,11 @@ class OperatingSystem
             return Type.LINUX;
 
         return Type.OTHER;
+    }
+
+    public static Arch arch()
+    {
+        return Arch.valueOf(System.getProperty("os.arch"));
     }
 
     static Function<Command, Void> exec()
