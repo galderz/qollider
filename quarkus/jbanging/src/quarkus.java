@@ -128,7 +128,7 @@ class QuarkusTest implements Runnable
     {
         LOG.info("Test the combo!");
         final var options = new Options(
-            quarkusTree
+            Git.URL.of(quarkusTree)
             , resumeFrom
             , clean
             , testSuites
@@ -144,7 +144,7 @@ class QuarkusTest implements Runnable
 }
 
 record Options(
-    URI quarkusTree
+    Git.URL quarkus
     , String resumeFrom
     , boolean clean
     , TestSuite[]testSuites
@@ -236,7 +236,7 @@ class JBoss
         }
 
         OperatingSystem.exec()
-            .compose(Git.clone(options.quarkusTree()))
+            .compose(Git.clone(options.quarkus()))
             .apply(paths.root());
     }
 
@@ -248,7 +248,7 @@ class JBoss
             return;
         }
 
-        final var tree = URIs.of(
+        final var tree = Git.URL.of(
             "https://github.com/quarkusio/quarkus-platform/tree/master"
         );
         OperatingSystem.exec()
@@ -368,7 +368,7 @@ class Graal
             return;
         }
 
-        var tree = URIs.of("https://github.com/oracle/graal/tree/master");
+        var tree = Git.URL.of("https://github.com/oracle/graal/tree/master");
         OperatingSystem.exec()
             .compose(Git.clone(tree))
             .apply(paths.root());
@@ -382,7 +382,7 @@ class Graal
             return;
         }
 
-        var tree = URIs.of("https://github.com/graalvm/mx/tree/master");
+        var tree = Git.URL.of("https://github.com/graalvm/mx/tree/master");
         OperatingSystem.exec()
             .compose(Git.clone(tree))
             .apply(paths.root());
@@ -405,52 +405,49 @@ class Graal
 
 class Git
 {
-    record Repository(String directory, URI uri, String branch)
+    record URL(
+        String organization
+        , String name
+        , String branch
+        , String url
+    )
     {
-        static Repository of(URI tree)
+        static Git.URL of(URI uri)
         {
-            final var path = Path.of(tree.getPath());
-            final var directory = path.getName(1).toString();
-            return Repository.of(directory, path, tree);
-        }
+            final var path = Path.of(uri.getPath());
 
-        static Repository of(String directory, URI tree)
-        {
-            final var path = Path.of(tree.getPath());
-            return Repository.of(directory, path, tree);
-        }
-
-        private static Repository of(String directory, Path path, URI tree)
-        {
-            final var repo = tree.resolve("..");
+            final var organization = path.getName(0).toString();
+            final var name = path.getName(1).toString();
             final var branch = path.getFileName().toString();
-            return new Repository(directory, repo, branch);
+            final var url = uri.resolve("..").toString();
+
+            return new URL(organization, name, branch, url);
+        }
+
+        static Git.URL of(String spec)
+        {
+            return of(URIs.of(spec));
         }
     }
 
-    static Function<Path, OperatingSystem.Command> clone(URI tree)
+    static Function<Path, OperatingSystem.Command> clone(Git.URL url)
     {
-        return clone(Repository.of(tree));
+        return clone(url.name, url);
     }
 
-    static Function<Path, OperatingSystem.Command> clone(String directory, URI tree)
-    {
-        return clone(Repository.of(directory, tree));
-    }
-
-    private static Function<Path, OperatingSystem.Command> clone(Repository repo)
+    static Function<Path, OperatingSystem.Command> clone(String dirName, Git.URL url)
     {
         return path ->
             new OperatingSystem.Command(
                 Stream.of(
-                    "git"
+                    "url"
                     , "clone"
                     , "-b"
-                    , repo.branch()
+                    , url.branch
                     , "--depth"
                     , "10"
-                    , repo.uri().toString()
-                    , repo.directory()
+                    , url.url
+                    , dirName
                 )
                 , path
                 , Stream.empty()
@@ -462,13 +459,14 @@ class Java
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
-    record Vendor(Java.Type type, URI tree, Path javaHome)
+    record Vendor(Java.Type type, Git.URL url, Path javaHome)
     {
         static Vendor of(URI tree)
         {
             final var type = Java.jdkType(tree);
             final var javaHome = javaHome(type);
-            return new Vendor(type, tree, javaHome);
+            final var url = Git.URL.of(tree);
+            return new Vendor(type, url, javaHome);
         }
 
         private static Path javaHome(Java.Type jdkType)
@@ -526,7 +524,7 @@ class Java
     {
         return paths ->
         {
-            var repo = options.jdk().tree;
+            var repo = options.jdk().url;
             return Git.clone("jdk", repo).apply(paths.root());
         };
     }
