@@ -963,7 +963,7 @@ class OperatingSystem
 
     public static Arch arch()
     {
-        return Arch.valueOf(System.getProperty("os.arch"));
+        return Arch.valueOf(System.getProperty("os.arch").toUpperCase());
     }
 
     static Function<Command, Void> exec()
