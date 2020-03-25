@@ -438,7 +438,7 @@ class Git
         return path ->
             new OperatingSystem.Command(
                 Stream.of(
-                    "url"
+                    "git"
                     , "clone"
                     , "-b"
                     , url.branch
