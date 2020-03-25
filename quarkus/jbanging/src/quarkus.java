@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -91,14 +92,15 @@ class QuarkusTest implements Runnable
 
     @Option(
         defaultValue = ""
-        , description = "Resume reactor from specified project"
+        , description = "Additional test arguments. Separated by comma(,) character."
         , names =
         {
-            "-rf"
-            , "--resume-from"
+            "-ata"
+            , "--additional-test-args"
         }
+        , split = ","
     )
-    String resumeFrom;
+    List<String> additionalTestArgs;
 
     @Option(
         defaultValue = "quarkus,platform"
@@ -129,7 +131,7 @@ class QuarkusTest implements Runnable
         LOG.info("Test the combo!");
         final var options = new Options(
             Git.URL.of(quarkusTree)
-            , resumeFrom
+            , additionalTestArgs
             , clean
             , testSuites
             , Java.Vendor.of(jdkTree)
@@ -145,7 +147,7 @@ class QuarkusTest implements Runnable
 
 record Options(
     Git.URL quarkus
-    , String resumeFrom
+    , List<String>additionalTestArgs
     , boolean clean
     , TestSuite[]testSuites
     , Java.Vendor jdk
@@ -287,10 +289,6 @@ class JBoss
 
     private static OperatingSystem.Command mvnTest(Suite suite)
     {
-        Stream<String> resumeFrom = suite.resumeFrom().isEmpty()
-            ? Stream.empty()
-            : Stream.of("-rf", suite.resumeFrom());
-
         return new OperatingSystem.Command(
             Stream.concat(
                 Stream.of(
@@ -299,7 +297,7 @@ class JBoss
                     , "-Dnative"
                     , "-Dno-format"
                 )
-                , resumeFrom
+                , suite.additionalTestArgs.stream()
             )
             , suite.root()
             , Stream.of(suite.javaHome())
@@ -315,7 +313,7 @@ class JBoss
 
     record Suite(
         Path root
-        , String resumeFrom
+        , List<String>additionalTestArgs
         , OperatingSystem.EnvVar javaHome
     )
     {
@@ -324,7 +322,7 @@ class JBoss
             return root ->
                 new Suite(
                     root
-                    , options.resumeFrom()
+                    , options.additionalTestArgs()
                     , LocalEnvs.Graal.graalJavaHome(paths)
                 );
         }
@@ -993,7 +991,7 @@ class OperatingSystem
 
             Process process = processBuilder.start();
 
-            if (process.waitFor() != 0)
+            if (process.waitFor()!=0)
             {
                 throw new RuntimeException(
                     "Failed, exit code: " + process.exitValue()
