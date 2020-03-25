@@ -457,20 +457,25 @@ class Java
 {
     static final Logger LOG = LogManager.getLogger(Java.class);
 
-    record Vendor(Java.Type type, Git.URL url, Path javaHome)
+    record Vendor(Java.Vendor.Type type, Git.URL url, Path javaHome)
     {
+        enum Type
+        {
+            OPENJDK, LABSJDK
+        }
+
         static Vendor of(URI tree)
         {
-            final var type = Java.jdkType(tree);
+            final var type = vendorType(tree);
             final var javaHome = javaHome(type);
             final var url = Git.URL.of(tree);
             return new Vendor(type, url, javaHome);
         }
 
-        private static Path javaHome(Java.Type jdkType)
+        private static Path javaHome(Java.Vendor.Type jdkType)
         {
-            final var os = OperatingSystem.type().toString();
-            final var arch = OperatingSystem.arch().toString();
+            final var os = OperatingSystem.type().toString().toLowerCase();
+            final var arch = OperatingSystem.arch().toString().toLowerCase();
 
             return switch (jdkType)
                 {
@@ -482,6 +487,19 @@ class Java
                     );
                     case LABSJDK -> Path.of(
                         "java_home"
+                    );
+                };
+        }
+
+        private static Java.Vendor.Type vendorType(URI jdkTree)
+        {
+            final String provider = Path.of(jdkTree.getPath()).getName(0).toString();
+            return switch (provider)
+                {
+                    case "openjdk" -> Type.OPENJDK;
+                    case "graalvm" -> Type.LABSJDK;
+                    default -> throw new IllegalStateException(
+                        "Unexpected value: " + provider
                     );
                 };
         }
@@ -525,24 +543,6 @@ class Java
             var repo = options.jdk().url;
             return Git.clone("jdk", repo).apply(paths.root());
         };
-    }
-
-    private static Java.Type jdkType(URI jdkTree)
-    {
-        final String provider = Path.of(jdkTree.getPath()).getName(0).toString();
-        return switch (provider)
-            {
-                case "openjdk" -> Type.OPENJDK;
-                case "graalvm" -> Type.LABSJDK;
-                default -> throw new IllegalStateException(
-                    "Unexpected value: " + provider
-                );
-            };
-    }
-
-    enum Type
-    {
-        OPENJDK, LABSJDK
     }
 
     private static final class OpenJDK
