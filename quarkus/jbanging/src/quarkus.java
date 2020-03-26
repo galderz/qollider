@@ -322,7 +322,7 @@ class JBoss
                     "mvn" // ?
                     , "install"
                     , "-DskipTests"
-                    , "-Dno-format"
+                    , "-Dformat.skip"
                 )
                 , ProjectPaths.root(url, paths)
                 , Stream.of(LocalEnvs.Graal.graalJavaHome(paths))
@@ -349,7 +349,7 @@ class JBoss
                 "mvn" // ?
                 , "install"
                 , "-DskipTests"
-                , "-Dno-format"
+                , "-Dformat.skip"
             )
             , QuarkusPaths.root(paths)
             , Stream.of(LocalEnvs.Graal.graalJavaHome(paths))
@@ -364,7 +364,7 @@ class JBoss
                     "mvn" // ?
                     , "install"
                     , "-Dnative"
-                    , "-Dno-format"
+                    , "-Dformat.skip"
                 )
                 , suite.additionalTestArgs.stream()
             )
