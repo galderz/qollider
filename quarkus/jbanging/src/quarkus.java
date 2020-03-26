@@ -92,6 +92,17 @@ class QuarkusTest implements Runnable
     URI quarkusTree;
 
     @Option(
+        defaultValue = "https://github.com/oracle/graal/tree/master"
+        , description = "Graal source tree URL"
+        , names =
+        {
+            "-gt"
+            , "--graal-tree"
+        }
+    )
+    URI graalTree;
+
+    @Option(
         defaultValue = ""
         , description = "Additional test arguments. Separated by comma(,) character."
         , names =
@@ -146,6 +157,7 @@ class QuarkusTest implements Runnable
         final var options = new Options(
             Git.URL.of(quarkusTree)
             , additionalTestArgs
+            , Git.URL.of(graalTree)
             , clean
             , testSuites
             , Java.Vendor.of(jdkTree)
@@ -163,6 +175,7 @@ class QuarkusTest implements Runnable
 record Options(
     Git.URL quarkus
     , List<String>additionalTestArgs
+    , Git.URL graal
     , boolean clean
     , TestSuite[]testSuites
     , Java.Vendor jdk
@@ -184,7 +197,7 @@ class Sequential
         Java.buildJDK(options, paths);
 
         Graal.installMx(paths);
-        Graal.downloadGraal(paths);
+        Graal.downloadGraal(options, paths);
         JBoss.downloadProjects(options, paths);
         JBoss.downloadQuarkus(options, paths);
         JBoss.downloadQuarkusPlatform(paths);
@@ -427,7 +440,7 @@ class Graal
         );
     }
 
-    static void downloadGraal(LocalPaths paths)
+    static void downloadGraal(Options options, LocalPaths paths)
     {
         if (GraalPaths.svm(paths).toFile().exists())
         {
@@ -435,9 +448,8 @@ class Graal
             return;
         }
 
-        var tree = Git.URL.of("https://github.com/oracle/graal/tree/master");
         OperatingSystem.exec()
-            .compose(Git.clone(tree))
+            .compose(Git.clone(options.graal()))
             .apply(paths.root());
     }
 
