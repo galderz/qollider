@@ -38,7 +38,7 @@ run() {
     source ${HOME}/.sdkman/bin/sdkman-init.sh
     JAVA_HOME=${SCRIPT_JDK_HOME}
         BOOT_JDK_HOME=${BOOT_JDK_HOME} \
-        jbang src/quarkus.java test "$@"
+        jbang src/quarkus.java "$@"
 }
 
 main() {

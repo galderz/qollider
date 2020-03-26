@@ -35,7 +35,8 @@ import java.util.stream.Stream;
 
 @Command(
     subcommands = {
-        QuarkusTest.class
+        QuarkusClean.class
+        , QuarkusTest.class
     }
     , synopsisSubcommandLabel = "COMMAND"
 )
@@ -66,6 +67,28 @@ public class quarkus implements Runnable
 }
 
 @Command(
+    name = "clean"
+    , aliases = {"c"}
+    , description = "Clean quarkus."
+)
+class QuarkusClean implements Runnable
+{
+    static final Logger LOG = LogManager.getLogger(QuarkusClean.class);
+
+    @Override
+    public void run()
+    {
+        LOG.info("Clean!");
+        clean(RootPath.path());
+    }
+
+    static void clean(Path rootPath)
+    {
+        OperatingSystem.deleteRecursive().apply(rootPath);
+    }
+}
+
+@Command(
     name = "test"
     , aliases = {"t"}
     , description = "Test quarkus."
@@ -73,12 +96,6 @@ public class quarkus implements Runnable
 class QuarkusTest implements Runnable
 {
     static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
-
-    @Option(
-        description = "Clean files and directories"
-        , names = "clean"
-    )
-    boolean clean;
 
     @Option(
         defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
@@ -158,16 +175,12 @@ class QuarkusTest implements Runnable
             Git.URL.of(quarkusTree)
             , additionalTestArgs
             , Git.URL.of(graalTree)
-            , clean
             , testSuites
             , Java.Vendor.of(jdkTree)
             , Git.URL.of(alsoBuild)
         );
         final var paths = LocalPaths.newSystemPaths(options);
-        LOG.info("Options: {}", options);
-        if (options.clean())
-            Sequential.clean(paths);
-
+        LOG.info(options);
         Sequential.test(options, paths);
     }
 }
@@ -176,7 +189,6 @@ record Options(
     Git.URL quarkus
     , List<String>additionalTestArgs
     , Git.URL graal
-    , boolean clean
     , TestSuite[]testSuites
     , Java.Vendor jdk
     , List<Git.URL> alsoBuilds
@@ -184,13 +196,6 @@ record Options(
 
 class Sequential
 {
-    static void clean(LocalPaths paths)
-    {
-        Graal.cleanMx(paths);
-        Graal.cleanGraal(paths);
-        JBoss.cleanQuarkus(paths);
-    }
-
     static void test(Options options, LocalPaths paths)
     {
         Java.downloadJDK(options, paths);
@@ -386,13 +391,6 @@ class JBoss
         );
     }
 
-    public static void cleanQuarkus(LocalPaths paths)
-    {
-        OperatingSystem.deleteRecursive()
-            .compose(QuarkusPaths::root)
-            .apply(paths);
-    }
-
     record Suite(
         Path root
         , List<String>additionalTestArgs
@@ -465,20 +463,6 @@ class Graal
         OperatingSystem.exec()
             .compose(Git.clone(tree))
             .apply(paths.root());
-    }
-
-    public static void cleanMx(LocalPaths paths)
-    {
-        OperatingSystem.deleteRecursive()
-            .compose(MxPaths::root)
-            .apply(paths);
-    }
-
-    public static void cleanGraal(LocalPaths paths)
-    {
-        OperatingSystem.deleteRecursive()
-            .compose(GraalPaths::root)
-            .apply(paths);
     }
 }
 
@@ -728,6 +712,35 @@ class LocalEnvs
 
 }
 
+final class RootPath
+{
+    private static final Logger LOG = LogManager.getLogger(LocalPaths.class);
+
+    static Path path()
+    {
+        var date = LocalDate.now();
+        var formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+        var today = date.format(formatter);
+        LOG.info("Today is {}", today);
+
+        var baseDir = Path.of(
+            System.getProperty("user.home")
+            , "target"
+            , "quarkus-with-graal"
+        );
+        LOG.info("Base directory: {}", baseDir);
+
+        final var root = baseDir.resolve(today);
+        LOG.info("Root path: {}", root);
+
+        return root;
+    }
+
+    private RootPath()
+    {
+    }
+}
+
 record LocalPaths(
     Path root
     , JavaPaths java
@@ -737,11 +750,9 @@ record LocalPaths(
     , QuarkusPlatformPaths quarkusPlatform
 )
 {
-    static final Logger logger = LogManager.getLogger(LocalPaths.class);
-
     static LocalPaths newSystemPaths(Options options)
     {
-        var root = OperatingSystem.mkdirs(rootPath());
+        var root = OperatingSystem.mkdirs(RootPath.path());
 
         var bootJDK = Path.of(System.getenv("BOOT_JDK_HOME"));
         var jdkRoot = root.resolve("jdk");
@@ -753,26 +764,6 @@ record LocalPaths(
         var graal = new GraalPaths(root.resolve("graal"));
         var quarkusPlatform = new QuarkusPlatformPaths(root.resolve("quarkus-platform"));
         return new LocalPaths(root, java, mx, graal, quarkus, quarkusPlatform);
-    }
-
-    private static Path rootPath()
-    {
-        var date = LocalDate.now();
-        var formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
-        var today = date.format(formatter);
-        logger.info("Today is {}", today);
-
-        var baseDir = Path.of(
-            System.getProperty("user.home")
-            , "target"
-            , "quarkus-with-graal"
-        );
-        logger.info("Base directory: {}", baseDir);
-
-        final var root = baseDir.resolve(today);
-        logger.info("Root path: {}", root);
-
-        return root;
     }
 }
 
@@ -836,7 +827,7 @@ final class MxPaths
 
     static Path mx(LocalPaths paths)
     {
-        return paths.mx().root.resolve("mx");
+        return root(paths).resolve("mx");
     }
 }
 
