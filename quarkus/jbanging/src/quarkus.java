@@ -25,11 +25,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -146,7 +144,7 @@ class QuarkusBuild implements Runnable
         }
         , split = ","
     )
-    List<URI> alsoBuild;
+    List<URI> alsoBuild = new ArrayList<>();
 
     @Option(
         defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
@@ -872,9 +870,6 @@ class Git
 
         static List<Git.URL> of(List<URI> uris)
         {
-            if (Objects.isNull(uris))
-                return Collections.emptyList();
-
             return uris.stream()
                 .map(Git.URL::of)
                 .collect(Collectors.toList());
