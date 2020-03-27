@@ -27,6 +27,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -523,7 +524,7 @@ class QuarkusTest implements Runnable
         }
         , split = ","
     )
-    Map<String, String> additionalTestArgs;
+    Map<String, String> additionalTestArgs = new HashMap<>();
 
     @Override
     public void run()
