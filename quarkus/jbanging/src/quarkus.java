@@ -239,15 +239,15 @@ class QuarkusBuild implements Runnable
         {
             final var javaType = type(java.url);
 
-            final var sourceJavaHome =
+            final var target =
                 switch (javaType)
                     {
                         case OPENJDK -> Java.OpenJDK.javaHome(java, root);
                         case LABSJDK -> Java.LabsJDK.javaHome(java, root);
                     };
 
-            final var targetJavaHome = Homes.java(root);
-            OperatingSystem.symlink(sourceJavaHome, targetJavaHome);
+            final var link = Homes.java(root);
+            OperatingSystem.symlink(link, target);
         }
 
         static Path root(Java java, Root root)
@@ -390,15 +390,15 @@ class QuarkusBuild implements Runnable
 
         static void link(Graal graal, Root root)
         {
-            final var sourceGraalHome = root.path().resolve(
+            final var target = root.path().resolve(
                 Path.of(
                     graal.graalURL.name()
                     , "sdk"
                     , "latest_graalvm_home"
                 )
             );
-            final var targetGraalHome = Homes.graal(root);
-            OperatingSystem.symlink(sourceGraalHome, targetGraalHome);
+            final var link = Homes.graal(root);
+            OperatingSystem.symlink(link, target);
         }
 
         static Path mx(Graal graal, Root root)
@@ -1386,11 +1386,14 @@ class OperatingSystem
         WINDOWS, MACOSX, LINUX, OTHER
     }
 
-    static void symlink(Path source, Path target)
+    static void symlink(Path link, Path target)
     {
         try
         {
-            Files.createSymbolicLink(target, source);
+            if (Files.exists(link))
+                Files.delete(link);
+
+            Files.createSymbolicLink(link, target);
         }
         catch (IOException e)
         {
