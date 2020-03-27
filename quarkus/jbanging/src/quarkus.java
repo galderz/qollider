@@ -25,9 +25,11 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -99,6 +101,9 @@ class QuarkusClean implements Runnable
 )
 class QuarkusBuild implements Runnable
 {
+    // TODO add namespace info
+    static final Logger LOG = LogManager.getLogger(QuarkusClean.class);
+
     @Option(
         defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.0-b02"
         , description = "JDK source tree URL"
@@ -133,8 +138,7 @@ class QuarkusBuild implements Runnable
     URI graalTree;
 
     @Option(
-        defaultValue = ""
-        , description = "Additional projects to build. Separated by comma(,) character."
+        description = "Additional projects to build. Separated by comma(,) character."
         , names =
         {
             "-ab"
@@ -166,6 +170,7 @@ class QuarkusBuild implements Runnable
             , Git.URL.of(alsoBuild)
             , Git.URL.of(quarkusTree)
         );
+        LOG.info(options);
 
         final var urls = Options.urls(options);
         Git.download(urls, root);
@@ -865,9 +870,12 @@ class Git
 //            return of(URIs.of(spec));
 //        }
 
-        static List<Git.URL> of(List<URI> uri)
+        static List<Git.URL> of(List<URI> uris)
         {
-            return uri.stream()
+            if (Objects.isNull(uris))
+                return Collections.emptyList();
+
+            return uris.stream()
                 .map(Git.URL::of)
                 .collect(Collectors.toList());
         }
