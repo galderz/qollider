@@ -611,6 +611,13 @@ class QuarkusTest implements Runnable
             };
         }
 
+        private static Path suitePath(String suite)
+        {
+            return suite.equals("quarkus")
+                ? Path.of("quarkus", "integration-tests")
+                : Path.of(suite);
+        }
+
         private static Function<Root, OperatingSystem.Command> mvnTest(String suite, Arguments args)
         {
             return root ->
@@ -626,7 +633,7 @@ class QuarkusTest implements Runnable
                             ? Stream.empty()
                             : args.arguments.stream()
                     )
-                    , root.path().resolve(suite)
+                    , root.path().resolve(suitePath(suite))
                     , Stream.of(Homes.EnvVars.graal(root))
                 );
         }
