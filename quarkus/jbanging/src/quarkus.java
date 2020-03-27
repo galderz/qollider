@@ -25,9 +25,12 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -38,7 +41,7 @@ import java.util.stream.Stream;
     subcommands = {
         QuarkusClean.class
         , QuarkusBuild.class
-        // , QuarkusTest.class
+        , QuarkusTest.class
     }
     , synopsisSubcommandLabel = "COMMAND"
 )
@@ -160,6 +163,7 @@ class QuarkusBuild implements Runnable
     @Override
     public void run()
     {
+        LOG.info("Build");
         final var root = Root.newSystemRoot();
         final var options = new Options(
             Git.URL.of(jdkTree)
@@ -185,7 +189,7 @@ class QuarkusBuild implements Runnable
         Maven.build(maven, root);
     }
 
-    record Options(
+    private record Options(
         Git.URL jdk
         , Git.URL mx
         , Git.URL graal
@@ -205,7 +209,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    record Java(Git.URL url, Path bootJdk)
+    private record Java(Git.URL url, Path bootJdk)
     {
         static Java newSystemJava(Git.URL url)
         {
@@ -279,7 +283,7 @@ class QuarkusBuild implements Runnable
                 final var arch = "x86_64";
                 final var subpath = Path.of(
                     java.url.name()
-                    ,"build"
+                    , "build"
                     , String.format("%s-%s-normal-server-release", os, arch)
                     , "images"
                     , "graal-builder-jdk"
@@ -364,7 +368,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    record Graal(Git.URL graalURL, Git.URL mxURL)
+    private record Graal(Git.URL graalURL, Git.URL mxURL)
     {
         static Graal of(Options options)
         {
@@ -427,7 +431,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    record Maven(List<Git.URL> projects)
+    private record Maven(List<Git.URL>projects)
     {
         static Maven of(Options options)
         {
@@ -467,39 +471,164 @@ class QuarkusBuild implements Runnable
     }
 }
 
-//@Command(
-//    name = "test"
-//    , aliases = {"t"}
-//    , description = "Test quarkus."
-//)
-//class QuarkusTest implements Runnable
-//{
-//    static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
-//
-//    @Option(
-//        defaultValue = ""
-//        , description = "Additional test arguments. Separated by comma(,) character."
-//        , names =
-//        {
-//            "-ata"
-//            , "--additional-test-args"
-//        }
-//        , split = ","
-//    )
-//    List<String> additionalTestArgs;
-//
-//    @Option(
-//        defaultValue = "quarkus,platform"
-//        , description = "Test suites to run. Valid values: ${COMPLETION-CANDIDATES}"
-//        , names =
-//        {
-//            "-ts"
-//            , "--test-suites"
-//        }
-//        , split = ","
-//    )
-//    TestSuite[] testSuites; // TODO switch to List
-//
+@Command(
+    name = "test"
+    , aliases = {"t"}
+    , description = "Test quarkus."
+)
+class QuarkusTest implements Runnable
+{
+    private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
+
+    @Option(
+        description = """
+            Test suites to only run. By default only quarkus.
+            If suites provided, only those provided in the list are executed.
+            Other suites can be referenced using the repository name, e.g quarkus-platform.
+            The order of suites represents the order test execution.
+            """
+        , names =
+        {
+            "-s"
+            , "--suites"
+        }
+        , split = ","
+    )
+    List<String> suites = new ArrayList<>();
+
+    @Option(
+        description = """
+            Additional test URLs to download and run.
+            The order of URLs determines the order of test execution.
+            """
+        , names =
+        {
+            "-at"
+            , "--also-test"
+        }
+        , split = ","
+    )
+    List<URI> alsoTest = new ArrayList<>();
+
+    @Option(
+        description = """
+             Additional test arguments, each argument separated by comma (',') per suite.
+             Each suite is separated by vertical slash ('|').
+             Example: quarkus=-rf,:tika|quarkus-platform=-rf,:aws
+            """
+        , names =
+        {
+            "-ata"
+            , "--additional-test-args"
+        }
+        , split = ","
+    )
+    Map<String, String> additionalTestArgs;
+
+    @Override
+    public void run()
+    {
+        LOG.info("Test");
+        final var root = Root.newSystemRoot();
+        final var options = new Options(
+            suites
+            , Git.URL.of(alsoTest)
+            , Arguments.to(additionalTestArgs)
+        );
+        LOG.info(options);
+
+        Git.download(options.alsoTest, root);
+
+        final var maven = Maven.of(options);
+        Maven.test(maven, root);
+    }
+
+    record Options(
+        List<String>suites
+        , List<Git.URL>alsoTest
+        , Map<String, Arguments>testArgs
+    ) {}
+
+    record Arguments(List<String>arguments)
+    {
+        static Map<String, Arguments> to(Map<String, String> arguments)
+        {
+            return arguments.entrySet().stream()
+                .collect(
+                    Collectors.toMap(
+                        Entry::getValue
+                        , Arguments::of
+                    )
+                );
+        }
+
+        private static Arguments of(Map.Entry<String, String> e)
+        {
+            return new Arguments(Arrays.asList(e.getValue().split(",")));
+        }
+    }
+
+    record Maven(List<String>suites, Map<String, Arguments>testArgs)
+    {
+        static Maven of(Options options)
+        {
+            final var suites = suites(options);
+            final var testArgs = options.testArgs();
+            return new Maven(suites, testArgs);
+        }
+
+        private static List<String> suites(Options options)
+        {
+            if (!options.suites.isEmpty())
+                return options.suites;
+
+            final var suites = new ArrayList<>(List.of("quarkus"));
+            final var alsoTestSuites = options.alsoTest.stream()
+                .map(Git.URL::name)
+                .collect(Collectors.toList());
+            suites.addAll(alsoTestSuites);
+            return suites;
+        }
+
+        static void test(Maven maven, Root root)
+        {
+            maven.suites.forEach(
+                Maven.mvnTest(maven, root)
+            );
+        }
+
+        private static Consumer<String> mvnTest(Maven maven, Root root)
+        {
+            return suite ->
+            {
+                final var args = maven.testArgs.get(suite);
+
+                OperatingSystem.exec()
+                    .compose(Maven.mvnTest(suite, args))
+                    .apply(root);
+            };
+        }
+
+        private static Function<Root, OperatingSystem.Command> mvnTest(String suite, Arguments args)
+        {
+            return root ->
+                new OperatingSystem.Command(
+                    Stream.concat(
+                        Stream.of(
+                            "mvn" // ?
+                            , "install"
+                            , "-Dnative"
+                            , "-Dformat.skip"
+                        )
+                        , args.arguments.stream()
+                    )
+                    , root.path().resolve(suite)
+                    , Stream.of(Homes.EnvVars.graal(root))
+                );
+        }
+    }
+}
+
 //    @Override
 //    public void run()
 //    {
