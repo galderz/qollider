@@ -26,7 +26,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -554,11 +553,6 @@ class QuarkusTest implements Runnable
 
     record Arguments(List<String>arguments)
     {
-        static Arguments empty()
-        {
-            return new Arguments(Collections.emptyList());
-        }
-
         static Map<String, Arguments> to(Map<String, String> arguments)
         {
             return arguments.entrySet().stream()
@@ -582,15 +576,6 @@ class QuarkusTest implements Runnable
         {
             final var suites = suites(options);
             final var testArgs = options.testArgs();
-
-            // Fill in missing test arguments
-            suites.stream()
-                .filter(suite -> Objects.isNull(testArgs.get(suite)))
-                .map(suite -> Map.entry(suite, Arguments.empty()))
-                .forEach(entry ->
-                    testArgs.put(entry.getKey(), entry.getValue())
-                );
-
             return new Maven(suites, testArgs);
         }
 
@@ -637,7 +622,9 @@ class QuarkusTest implements Runnable
                             , "-Dnative"
                             , "-Dformat.skip"
                         )
-                        , args.arguments.stream()
+                        , Objects.isNull(args)
+                            ? Stream.empty()
+                            : args.arguments.stream()
                     )
                     , root.path().resolve(suite)
                     , Stream.of(Homes.EnvVars.graal(root))
