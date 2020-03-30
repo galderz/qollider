@@ -526,7 +526,7 @@ class QuarkusTest implements Runnable
             "-ata"
             , "--additional-test-args"
         }
-        , split = ","
+        , split = "|"
     )
     Map<String, String> additionalTestArgs = new HashMap<>();
 
