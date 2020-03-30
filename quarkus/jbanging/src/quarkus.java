@@ -39,14 +39,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@Command(
-    subcommands = {
-        QuarkusClean.class
-        , QuarkusBuild.class
-        , QuarkusTest.class
-    }
-    , synopsisSubcommandLabel = "COMMAND"
-)
+@Command
 public class quarkus implements Runnable
 {
     @Spec
@@ -58,6 +51,9 @@ public class quarkus implements Runnable
         Configurator.setRootLevel(Level.DEBUG);
 
         int exitCode = new CommandLine(new quarkus())
+            .addSubcommand("clean", new QuarkusClean())
+            .addSubcommand("build", new QuarkusBuild())
+            .addSubcommand("test", new QuarkusTest())
             .setCaseInsensitiveEnumValuesAllowed(true)
             .execute(args);
         System.exit(exitCode);
