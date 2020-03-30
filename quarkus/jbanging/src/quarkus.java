@@ -77,6 +77,7 @@ public class quarkus implements Runnable
     name = "clean"
     , aliases = {"c"}
     , description = "Clean quarkus."
+    , mixinStandardHelpOptions = true
 )
 class QuarkusClean implements Runnable
 {
@@ -101,6 +102,7 @@ class QuarkusClean implements Runnable
     name = "build"
     , aliases = {"b"}
     , description = "Build quarkus."
+    , mixinStandardHelpOptions = true
 )
 class QuarkusBuild implements Runnable
 {
@@ -477,6 +479,7 @@ class QuarkusBuild implements Runnable
     name = "test"
     , aliases = {"t"}
     , description = "Test quarkus."
+    , mixinStandardHelpOptions = true
 )
 class QuarkusTest implements Runnable
 {
