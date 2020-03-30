@@ -42,7 +42,7 @@ In the `build` step, the script first downloads the source code for:
 Then, it builds them in the order above.
 
 Each of these source dependencies can be tailored to download different repositories and branches.
-As an example, the default JDK source tree downloaded is the one for the latest tag for Oracle Labs JDK.
+As an example, the default JDK source tree downloaded is the one for the latest tag for Oracle Labs JDK 11.
 Alternatively, you could use OpenJDK 11 update repository by calling:
 
 ```bash
