@@ -59,7 +59,7 @@ You can provide alternative repository links for them by doing:
     --quarkus-tree https://github.com/galderz/quarkus/tree/t_7422_8081 
 ```
 
-Finally, there might situations where you need a fix for one, or several,
+There might situations where you need a fix for one, or several,
 dependencies of Quarkus.
 To handle this situation, you can instruct the script to build a set of projects,
 before building Quarkus:
@@ -67,10 +67,18 @@ before building Quarkus:
 ```bash
 ./quarkus.sh build 
     --quarkus-tree https://github.com/galderz/quarkus/tree/t_7422_8081
-    --also-build https://github.com/quarkusio/quarkus-spring-api/tree/http-method-again
+    --pre-build https://github.com/quarkusio/quarkus-spring-api/tree/http-method-again
 ```
 
 In the above case, the given `quarkus-spring-api` branch should be built before Quarkus.
+
+Another common situation is to build extra projects after building Quarkus, e.g. Camel Quarkus.
+You can instruct the script to build additional projects via:
+
+```bash
+./quarkus.sh build 
+    --post-build https://github.com/apache/camel-quarkus/tree/master
+```
 
 More options might be added in the future.
 You can find out about new options by caling:

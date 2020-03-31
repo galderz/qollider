@@ -139,15 +139,26 @@ class QuarkusBuild implements Runnable
     URI graalTree;
 
     @Option(
-        description = "Additional projects to build. Separated by comma(,) character."
+        description = "Additional projects to build before Quarkus. Separated by comma(,) character."
         , names =
         {
-            "-ab"
-            , "--also-build"
+            "-prb"
+            , "--pre-build"
         }
         , split = ","
     )
-    List<URI> alsoBuild = new ArrayList<>();
+    List<URI> preBuild = new ArrayList<>();
+
+    @Option(
+        description = "Additional projects to build after Quarkus. Separated by comma(,) character."
+        , names =
+        {
+            "-pob"
+            , "--post-build"
+        }
+        , split = ","
+    )
+    List<URI> postBuild = new ArrayList<>();
 
     @Option(
         defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
@@ -169,8 +180,9 @@ class QuarkusBuild implements Runnable
             Git.URL.of(jdkTree)
             , Git.URL.of(mxTree)
             , Git.URL.of(graalTree)
-            , Git.URL.of(alsoBuild)
+            , Git.URL.of(preBuild)
             , Git.URL.of(quarkusTree)
+            , Git.URL.of(postBuild)
         );
         LOG.info(options);
 
@@ -193,8 +205,9 @@ class QuarkusBuild implements Runnable
         Git.URL jdk
         , Git.URL mx
         , Git.URL graal
-        , List<Git.URL>alsoBuilds
+        , List<Git.URL>preBuild
         , Git.URL quarkus
+        , List<Git.URL>postBuild
     )
     {
         static List<Git.URL> urls(Options options)
@@ -203,7 +216,7 @@ class QuarkusBuild implements Runnable
             merged.add(options.jdk);
             merged.add(options.mx);
             merged.add(options.graal);
-            merged.addAll(options.alsoBuilds);
+            merged.addAll(options.preBuild);
             merged.add(options.quarkus);
             return merged;
         }
@@ -435,8 +448,9 @@ class QuarkusBuild implements Runnable
     {
         static Maven of(Options options)
         {
-            final var projects = new ArrayList<>(options.alsoBuilds);
+            final var projects = new ArrayList<>(options.preBuild);
             projects.add(options.quarkus);
+            projects.addAll(options.postBuild);
             return new Maven(projects);
         }
 
