@@ -218,6 +218,7 @@ class QuarkusBuild implements Runnable
             merged.add(options.graal);
             merged.addAll(options.preBuild);
             merged.add(options.quarkus);
+            merged.addAll(options.postBuild);
             return merged;
         }
     }
