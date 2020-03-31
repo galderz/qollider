@@ -79,18 +79,40 @@ class QuarkusClean implements Runnable
 {
     static final Logger LOG = LogManager.getLogger(QuarkusClean.class);
 
+    @Option(
+        description = "Individual projects to clean."
+        , names =
+        {
+            "-p"
+            , "--projects"
+        }
+        , split = ","
+    )
+    List<String> projects = new ArrayList<>();
+
     @Override
     public void run()
     {
         LOG.info("Clean!");
-        clean(Root.newSystemRoot());
+        clean(projects, Root.newSystemRoot());
     }
 
-    static void clean(Root root)
+    static void clean(List<String> projects, Root root)
     {
-        OperatingSystem.deleteRecursive()
-            .compose(Root::path)
-            .apply(root);
+        if (projects.isEmpty())
+        {
+            OperatingSystem.deleteRecursive()
+                .compose(Root::path)
+                .apply(root);
+        }
+        else
+        {
+            projects.forEach(projectName ->
+                OperatingSystem.deleteRecursive()
+                    .compose((Path path) -> path.resolve(projectName))
+                    .compose(Root::path)
+                    .apply(root));
+        }
     }
 }
 
