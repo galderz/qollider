@@ -557,7 +557,7 @@ class QuarkusTest implements Runnable
             return arguments.entrySet().stream()
                 .collect(
                     Collectors.toMap(
-                        Entry::getValue
+                        Entry::getKey
                         , Arguments::of
                     )
                 );
