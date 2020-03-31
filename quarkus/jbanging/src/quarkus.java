@@ -464,9 +464,17 @@ class QuarkusBuild implements Runnable
         static Consumer<Git.URL> build(Root root)
         {
             return url ->
+            {
+                final var marker = Marker.build(url.name(), root);
+                if (Marker.skip(marker))
+                    return;
+
                 OperatingSystem.exec()
                     .compose(Maven.mvnInstall(url))
                     .apply(root);
+
+                Marker.touch(marker);
+            };
         }
 
         private static Function<Root, OperatingSystem.Command> mvnInstall(Git.URL url)
