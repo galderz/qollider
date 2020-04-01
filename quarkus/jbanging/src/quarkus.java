@@ -3,6 +3,7 @@
 //JAVA_OPTIONS --enable-preview
 //DEPS info.picocli:picocli:4.2.0
 //DEPS org.apache.logging.log4j:log4j-core:2.13.0
+//DEPS org.hamcrest:hamcrest:2.2
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -39,6 +40,9 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+
 @Command
 public class quarkus implements Runnable
 {
@@ -49,6 +53,9 @@ public class quarkus implements Runnable
     {
         Configurator.initialize(new DefaultConfiguration());
         Configurator.setRootLevel(Level.DEBUG);
+
+        // Run checks
+        QuarkusCheck.check();
 
         final var fs = FileSystem.ofSystem();
         final var quarkusTest = new QuarkusTest(fs, new OperatingSystem(fs));
@@ -577,6 +584,8 @@ class QuarkusTest implements Runnable
     )
     Map<String, String> additionalTestArgs = new HashMap<>();
 
+    Options options;
+
     QuarkusTest(FileSystem fs, OperatingSystem os)
     {
         this.fs = fs;
@@ -586,7 +595,7 @@ class QuarkusTest implements Runnable
     @Override
     public void run()
     {
-        final var options = new Options(
+        options = new Options(
             suites
             , Git.URL.of(alsoTest)
             , Arguments.to(additionalTestArgs)
@@ -670,7 +679,8 @@ class QuarkusTest implements Runnable
 
         private static Function<String, OperatingSystem.Task> suiteTest(Maven maven)
         {
-            return suite -> {
+            return suite ->
+            {
                 final var args = maven.testArgs.get(suite);
 
                 return new OperatingSystem.Task(
@@ -829,7 +839,7 @@ class Git
         return url -> Predicate.not(exists).test(url.marker());
     }
 
-     static Stream<String> toClone(Git.URL url)
+    static Stream<String> toClone(Git.URL url)
     {
         return Stream.of(
             "git"
@@ -1137,11 +1147,11 @@ class OperatingSystem
         }
     }
 
-    record Task(Stream<String> task, Path directory, Stream<EnvVar> envVars) {}
+    record Task(Stream<String>task, Path directory, Stream<EnvVar>envVars) {}
 
     record MarkerTask(Task task, Marker marker) {}
 
-    record EnvVar(String name, Function<Path, Path> value) {}
+    record EnvVar(String name, Function<Path, Path>value) {}
 }
 
 class DeprecatedOperatingSystem
@@ -1310,4 +1320,102 @@ class DeprecatedOperatingSystem
 
     record EnvVar(String name, String value) {}
 
+}
+
+class QuarkusCheck
+{
+    static final Logger LOG = LogManager.getLogger(QuarkusCheck.class);
+
+    static void check()
+    {
+        LOG.info("Run checks");
+        Test.checkCliOptions();
+        LOG.info("Checks successful");
+    }
+
+    static class Test
+    {
+        static final Logger LOG = LogManager.getLogger(
+            String.format("%s.%s"
+                , QuarkusCheck.class.getSimpleName()
+                , Test.class.getSimpleName()
+            ));
+
+        static void checkCliOptions()
+        {
+            Test.checkCliEmptyOptions();
+            Test.checkCliSuiteOptions();
+            Test.checkCliAlsoTestOptions();
+            Test.checkCliAdditionalTestArgsOptions();
+        }
+
+        private static void checkCliAdditionalTestArgsOptions()
+        {
+            LOG.info("Check cli --additional-test-args options");
+            assertThat(
+                execute("-ata", "a=b,:c|z=y").additionalTestArgs
+                , is(equalTo(Map.of("a", "b,:c", "z", "y")))
+            );
+            assertThat(
+                execute("--additional-test-args", "a=b,:c|z=y").additionalTestArgs
+                , is(equalTo(Map.of("a", "b,:c", "z", "y")))
+            );
+        }
+
+        private static void checkCliAlsoTestOptions()
+        {
+            LOG.info("Check cli --also-test options");
+            assertThat(
+                execute("-at", "h://g/a/b,h://g/b/c").alsoTest
+                , is(equalTo(List.of(URI.create("h://g/a/b"), URI.create("h://g/b/c"))))
+            );
+            assertThat(
+                execute("--also-test", "h://g/w/x,h://g/y/z").alsoTest
+                , is(equalTo(List.of(URI.create("h://g/w/x"), URI.create("h://g/y/z"))))
+            );
+        }
+
+        private static void checkCliSuiteOptions()
+        {
+            LOG.info("Check cli --suite options");
+            assertThat(
+                execute("-s", "a,b").suites
+                , is(equalTo(List.of("a", "b")))
+            );
+            assertThat(
+                execute("--suites", "y,z").suites
+                , is(equalTo(List.of("y", "z")))
+            );
+        }
+
+        private static void checkCliEmptyOptions()
+        {
+            LOG.info("Check cli empty options");
+            final var command = execute();
+            assertThat(command.suites, is(empty()));
+            assertThat(command.alsoTest, is(empty()));
+            assertThat(command.additionalTestArgs, is(anEmptyMap()));
+        }
+
+        private static QuarkusTest execute(String... extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("test");
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var quarkusTest = new QuarkusTest(null, null);
+            new CommandLine(new quarkus())
+                .addSubcommand("test", quarkusTest)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+            return quarkusTest;
+        }
+    }
+
+    public static void main(String[] args)
+    {
+        QuarkusCheck.check();
+    }
 }
