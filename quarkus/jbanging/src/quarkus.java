@@ -50,10 +50,13 @@ public class quarkus implements Runnable
         Configurator.initialize(new DefaultConfiguration());
         Configurator.setRootLevel(Level.DEBUG);
 
+        final var fs = FileSystem.ofSystem();
+        final var quarkusTest = new QuarkusTest(fs, new OperatingSystem(fs));
+
         int exitCode = new CommandLine(new quarkus())
             .addSubcommand("clean", new QuarkusClean())
             .addSubcommand("build", new QuarkusBuild())
-            .addSubcommand("test", new QuarkusTest())
+            .addSubcommand("test", quarkusTest)
             .setCaseInsensitiveEnumValuesAllowed(true)
             .execute(args);
         System.exit(exitCode);
@@ -101,14 +104,14 @@ class QuarkusClean implements Runnable
     {
         if (projects.isEmpty())
         {
-            OperatingSystem.deleteRecursive()
+            DeprecatedOperatingSystem.deleteRecursive()
                 .compose(Root::path)
                 .apply(root);
         }
         else
         {
             projects.forEach(projectName ->
-                OperatingSystem.deleteRecursive()
+                DeprecatedOperatingSystem.deleteRecursive()
                     .compose((Path path) -> path.resolve(projectName))
                     .compose(Root::path)
                     .apply(root));
@@ -199,17 +202,17 @@ class QuarkusBuild implements Runnable
         LOG.info("Build");
         final var root = Root.newSystemRoot();
         final var options = new Options(
-            Git.URL.of(jdkTree)
-            , Git.URL.of(mxTree)
-            , Git.URL.of(graalTree)
-            , Git.URL.of(preBuild)
-            , Git.URL.of(quarkusTree)
-            , Git.URL.of(postBuild)
+            DeprecatedGit.URL.of(jdkTree)
+            , DeprecatedGit.URL.of(mxTree)
+            , DeprecatedGit.URL.of(graalTree)
+            , DeprecatedGit.URL.of(preBuild)
+            , DeprecatedGit.URL.of(quarkusTree)
+            , DeprecatedGit.URL.of(postBuild)
         );
         LOG.info(options);
 
         final var urls = Options.urls(options);
-        Git.download(urls, root);
+        DeprecatedGit.download(urls, root);
 
         final var java = Java.newSystemJava(options.jdk);
         Java.build(java, root);
@@ -224,17 +227,17 @@ class QuarkusBuild implements Runnable
     }
 
     private record Options(
-        Git.URL jdk
-        , Git.URL mx
-        , Git.URL graal
-        , List<Git.URL>preBuild
-        , Git.URL quarkus
-        , List<Git.URL>postBuild
+        DeprecatedGit.URL jdk
+        , DeprecatedGit.URL mx
+        , DeprecatedGit.URL graal
+        , List<DeprecatedGit.URL>preBuild
+        , DeprecatedGit.URL quarkus
+        , List<DeprecatedGit.URL>postBuild
     )
     {
-        static List<Git.URL> urls(Options options)
+        static List<DeprecatedGit.URL> urls(Options options)
         {
-            final var merged = new ArrayList<Git.URL>();
+            final var merged = new ArrayList<DeprecatedGit.URL>();
             merged.add(options.jdk);
             merged.add(options.mx);
             merged.add(options.graal);
@@ -245,9 +248,9 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Java(Git.URL url, Path bootJdk)
+    private record Java(DeprecatedGit.URL url, Path bootJdk)
     {
-        static Java newSystemJava(Git.URL url)
+        static Java newSystemJava(DeprecatedGit.URL url)
         {
             var bootJDK = Path.of(System.getenv("BOOT_JDK_HOME"));
             return new Java(url, bootJDK);
@@ -255,8 +258,8 @@ class QuarkusBuild implements Runnable
 
         static void build(Java java, Root root)
         {
-            final var marker = Marker.build(java.url.name(), root);
-            if (Marker.skip(marker))
+            final var marker = DeprecatedMarker.build(java.url.name(), root);
+            if (DeprecatedMarker.skip(marker))
                 return;
 
             final var javaType = type(java.url);
@@ -268,9 +271,9 @@ class QuarkusBuild implements Runnable
                         case LABSJDK -> Java.LabsJDK.buildSteps(java, root);
                     };
 
-            steps.forEach(OperatingSystem::exec);
+            steps.forEach(DeprecatedOperatingSystem::exec);
 
-            Marker.touch(marker);
+            DeprecatedMarker.touch(marker);
         }
 
         static void link(Java java, Root root)
@@ -285,7 +288,7 @@ class QuarkusBuild implements Runnable
                     };
 
             final var link = Homes.java(root);
-            OperatingSystem.symlink(link, target);
+            DeprecatedOperatingSystem.symlink(link, target);
         }
 
         static Path root(Java java, Root root)
@@ -295,9 +298,9 @@ class QuarkusBuild implements Runnable
             );
         }
 
-        static OperatingSystem.EnvVar bootJdkEnvVar(Java java)
+        static DeprecatedOperatingSystem.EnvVar bootJdkEnvVar(Java java)
         {
-            return new OperatingSystem.EnvVar(
+            return new DeprecatedOperatingSystem.EnvVar(
                 "JAVA_HOME"
                 , java.bootJdk.toString()
             );
@@ -305,7 +308,7 @@ class QuarkusBuild implements Runnable
 
         private static final class OpenJDK
         {
-            static Stream<OperatingSystem.Command> buildSteps(Java java, Root root)
+            static Stream<DeprecatedOperatingSystem.Command> buildSteps(Java java, Root root)
             {
                 return Stream.of(
                     configureSh(java, root)
@@ -315,7 +318,7 @@ class QuarkusBuild implements Runnable
 
             static Path javaHome(Java java, Root root)
             {
-                final var os = OperatingSystem.type().toString().toLowerCase();
+                final var os = DeprecatedOperatingSystem.type().toString().toLowerCase();
                 final var arch = "x86_64";
                 final var subpath = Path.of(
                     java.url.name()
@@ -327,9 +330,9 @@ class QuarkusBuild implements Runnable
                 return root.path().resolve(subpath);
             }
 
-            private static OperatingSystem.Command configureSh(Java java, Root root)
+            private static DeprecatedOperatingSystem.Command configureSh(Java java, Root root)
             {
-                return new OperatingSystem.Command(
+                return new DeprecatedOperatingSystem.Command(
                     Stream.of(
                         "sh"
                         , "configure"
@@ -344,9 +347,9 @@ class QuarkusBuild implements Runnable
                 );
             }
 
-            private static OperatingSystem.Command makeGraalJDK(Java java, Root root)
+            private static DeprecatedOperatingSystem.Command makeGraalJDK(Java java, Root root)
             {
-                return new OperatingSystem.Command(
+                return new DeprecatedOperatingSystem.Command(
                     Stream.of(
                         "make"
                         , "graal-builder-image"
@@ -359,7 +362,7 @@ class QuarkusBuild implements Runnable
 
         private static final class LabsJDK
         {
-            static Stream<OperatingSystem.Command> buildSteps(Java java, Root root)
+            static Stream<DeprecatedOperatingSystem.Command> buildSteps(Java java, Root root)
             {
                 return Stream.of(buildJDK(java, root));
             }
@@ -373,9 +376,9 @@ class QuarkusBuild implements Runnable
                 return root.path().resolve(subpath);
             }
 
-            private static OperatingSystem.Command buildJDK(Java java, Root root)
+            private static DeprecatedOperatingSystem.Command buildJDK(Java java, Root root)
             {
-                return new OperatingSystem.Command(
+                return new DeprecatedOperatingSystem.Command(
                     Stream.of(
                         "python"
                         , "build_labsjdk.py"
@@ -386,7 +389,7 @@ class QuarkusBuild implements Runnable
             }
         }
 
-        private static Java.Type type(Git.URL url)
+        private static Java.Type type(DeprecatedGit.URL url)
         {
             return switch (url.organization())
                 {
@@ -404,7 +407,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Graal(Git.URL graalURL, Git.URL mxURL)
+    private record Graal(DeprecatedGit.URL graalURL, DeprecatedGit.URL mxURL)
     {
         static Graal of(Options options)
         {
@@ -415,15 +418,15 @@ class QuarkusBuild implements Runnable
 
         static void build(Graal graal, Root root)
         {
-            final var marker = Marker.build(graal.graalURL.name(), root);
-            if (Marker.skip(marker))
+            final var marker = DeprecatedMarker.build(graal.graalURL.name(), root);
+            if (DeprecatedMarker.skip(marker))
                 return;
 
-            OperatingSystem.exec()
+            DeprecatedOperatingSystem.exec()
                 .compose(Graal.mxbuild(graal))
                 .apply(root);
 
-            Marker.touch(marker);
+            DeprecatedMarker.touch(marker);
         }
 
         static void link(Graal graal, Root root)
@@ -436,7 +439,7 @@ class QuarkusBuild implements Runnable
                 )
             );
             final var link = Homes.graal(root);
-            OperatingSystem.symlink(link, target);
+            DeprecatedOperatingSystem.symlink(link, target);
         }
 
         static Path mx(Graal graal, Root root)
@@ -453,10 +456,10 @@ class QuarkusBuild implements Runnable
             );
         }
 
-        private static Function<Root, OperatingSystem.Command> mxbuild(Graal graal)
+        private static Function<Root, DeprecatedOperatingSystem.Command> mxbuild(Graal graal)
         {
             return root ->
-                new OperatingSystem.Command(
+                new DeprecatedOperatingSystem.Command(
                     Stream.of(
                         Graal.mx(graal, root).toString()
                         , "build"
@@ -467,7 +470,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Maven(List<Git.URL>projects)
+    private record Maven(List<DeprecatedGit.URL>projects)
     {
         static Maven of(Options options)
         {
@@ -483,26 +486,26 @@ class QuarkusBuild implements Runnable
                 .forEach(Maven.build(root));
         }
 
-        static Consumer<Git.URL> build(Root root)
+        static Consumer<DeprecatedGit.URL> build(Root root)
         {
             return url ->
             {
-                final var marker = Marker.build(url.name(), root);
-                if (Marker.skip(marker))
+                final var marker = DeprecatedMarker.build(url.name(), root);
+                if (DeprecatedMarker.skip(marker))
                     return;
 
-                OperatingSystem.exec()
+                DeprecatedOperatingSystem.exec()
                     .compose(Maven.mvnInstall(url))
                     .apply(root);
 
-                Marker.touch(marker);
+                DeprecatedMarker.touch(marker);
             };
         }
 
-        private static Function<Root, OperatingSystem.Command> mvnInstall(Git.URL url)
+        private static Function<Root, DeprecatedOperatingSystem.Command> mvnInstall(DeprecatedGit.URL url)
         {
             return root ->
-                new OperatingSystem.Command(
+                new DeprecatedOperatingSystem.Command(
                     Stream.of(
                         "mvn" // ?
                         , "install"
@@ -510,7 +513,7 @@ class QuarkusBuild implements Runnable
                         , "-Dformat.skip"
                     )
                     , root.path().resolve(url.name())
-                    , Stream.of(Homes.EnvVars.graal(root))
+                    , Stream.of(Homes.EnvVars.deprecatedGraal(root))
                 );
         }
     }
@@ -525,6 +528,9 @@ class QuarkusBuild implements Runnable
 class QuarkusTest implements Runnable
 {
     private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
+
+    final FileSystem fs;
+    final OperatingSystem os;
 
     @Option(
         description = """
@@ -571,11 +577,15 @@ class QuarkusTest implements Runnable
     )
     Map<String, String> additionalTestArgs = new HashMap<>();
 
+    QuarkusTest(FileSystem fs, OperatingSystem os)
+    {
+        this.fs = fs;
+        this.os = os;
+    }
+
     @Override
     public void run()
     {
-        LOG.info("Test");
-        final var root = Root.newSystemRoot();
         final var options = new Options(
             suites
             , Git.URL.of(alsoTest)
@@ -583,10 +593,11 @@ class QuarkusTest implements Runnable
         );
         LOG.info(options);
 
-        Git.download(options.alsoTest, root);
-
-        final var maven = Maven.of(options);
-        Maven.test(maven, root);
+        if (Objects.nonNull(fs) && Objects.nonNull(os))
+        {
+            Git.clone(options.alsoTest, fs::exists, os::exec, fs::touch);
+            Maven.test(options, os::exec);
+        }
     }
 
     record Options(
@@ -636,36 +647,33 @@ class QuarkusTest implements Runnable
             return suites;
         }
 
-        static void test(Maven maven, Root root)
+        static void test(Options options, Consumer<OperatingSystem.Task> exec)
         {
-            maven.suites.forEach(
-                Maven.mvnTest(maven, root)
-            );
+            final var tasks = Maven.toTest(options);
+            Maven.doTest(tasks, exec);
         }
 
-        private static Consumer<String> mvnTest(Maven maven, Root root)
+        static void doTest(
+            Stream<OperatingSystem.Task> tasks
+            , Consumer<OperatingSystem.Task> exec
+        )
         {
-            return suite ->
-            {
+            tasks.forEach(exec);
+        }
+
+        private static Stream<OperatingSystem.Task> toTest(Options options)
+        {
+            final var maven = Maven.of(options);
+            return maven.suites.stream()
+                .map(suiteTest(maven));
+        }
+
+        private static Function<String, OperatingSystem.Task> suiteTest(Maven maven)
+        {
+            return suite -> {
                 final var args = maven.testArgs.get(suite);
 
-                OperatingSystem.exec()
-                    .compose(Maven.mvnTest(suite, args))
-                    .apply(root);
-            };
-        }
-
-        private static Path suitePath(String suite)
-        {
-            return suite.equals("quarkus")
-                ? Path.of("quarkus", "integration-tests")
-                : Path.of(suite);
-        }
-
-        private static Function<Root, OperatingSystem.Command> mvnTest(String suite, Arguments args)
-        {
-            return root ->
-                new OperatingSystem.Command(
+                return new OperatingSystem.Task(
                     Stream.concat(
                         Stream.of(
                             "mvn" // ?
@@ -677,37 +685,45 @@ class QuarkusTest implements Runnable
                             ? Stream.empty()
                             : args.arguments.stream()
                     )
-                    , root.path().resolve(suitePath(suite))
-                    , Stream.of(Homes.EnvVars.graal(root))
+                    , Maven.suitePath(suite)
+                    , Stream.of(Homes.EnvVars.graal())
                 );
+            };
+        }
+
+        static Path suitePath(String suite)
+        {
+            return suite.equals("quarkus")
+                ? Path.of("quarkus", "integration-tests")
+                : Path.of(suite);
         }
     }
 }
 
-record Marker(Path path)
+record DeprecatedMarker(Path path)
 {
-    private static final Logger LOG = LogManager.getLogger(Marker.class);
+    private static final Logger LOG = LogManager.getLogger(DeprecatedMarker.class);
 
-    static Marker download(String dirName, Root root)
+    static DeprecatedMarker download(String dirName, Root root)
     {
-        return Marker.of("download.marker", dirName, root);
+        return DeprecatedMarker.of("download.marker", dirName, root);
     }
 
-    static Marker build(String dirName, Root root)
+    static DeprecatedMarker build(String dirName, Root root)
     {
-        return Marker.of("build.marker", dirName, root);
+        return DeprecatedMarker.of("build.marker", dirName, root);
     }
 
-    private static Marker of(String markerName, String dirName, Root root)
+    private static DeprecatedMarker of(String markerName, String dirName, Root root)
     {
-        return new Marker(
+        return new DeprecatedMarker(
             root.path().resolve(
                 Path.of(dirName, markerName)
             )
         );
     }
 
-    static boolean skip(Marker marker)
+    static boolean skip(DeprecatedMarker marker)
     {
         final var path = marker.path;
         final var projectName = path.getParent().getFileName();
@@ -721,9 +737,9 @@ record Marker(Path path)
         return false;
     }
 
-    static void touch(Marker marker)
+    static void touch(DeprecatedMarker marker)
     {
-        OperatingSystem.touch(marker.path);
+        DeprecatedOperatingSystem.touch(marker.path);
     }
 }
 
@@ -756,31 +772,131 @@ class Git
         }
     }
 
-    static void download(List<Git.URL> urls, Root root)
+    record MarkerURL(URL url, Marker marker) {}
+
+    static void clone(
+        List<Git.URL> urls
+        , Predicate<Marker> exists
+        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Function<Marker, Boolean> touch
+    )
+    {
+        final var tasks = Git.toClone(urls, exists);
+        Git.doClone(tasks, exec, touch);
+    }
+
+    private static List<Boolean> doClone(
+        Stream<OperatingSystem.MarkerTask> tasks
+        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Function<Marker, Boolean> touch
+    )
+    {
+        return tasks
+            .map(exec)
+            .map(touch)
+            .collect(Collectors.toList());
+    }
+
+    static Stream<OperatingSystem.MarkerTask> toClone(
+        List<Git.URL> urls
+        , Predicate<Marker> exists
+    )
+    {
+        return urls.stream()
+            .map(Git::markerURL)
+            .filter(Git.needsDownload(exists))
+            .map(Git::cloneTask);
+    }
+
+    private static Git.MarkerURL markerURL(Git.URL url)
+    {
+        return new Git.MarkerURL(url, Marker.download(url.name()));
+    }
+
+    private static OperatingSystem.MarkerTask cloneTask(Git.MarkerURL url)
+    {
+        return new OperatingSystem.MarkerTask(
+            new OperatingSystem.Task(
+                Git.toClone(url.url())
+                , Path.of("")
+                , Stream.empty())
+            , url.marker()
+        );
+    }
+
+    private static Predicate<Git.MarkerURL> needsDownload(Predicate<Marker> exists)
+    {
+        return url -> Predicate.not(exists).test(url.marker());
+    }
+
+     static Stream<String> toClone(Git.URL url)
+    {
+        return Stream.of(
+            "git"
+            , "clone"
+            , "-b"
+            , url.branch
+            , "--depth"
+            , "10"
+            , url.url
+        );
+    }
+}
+
+class DeprecatedGit
+{
+    record URL(
+        String organization
+        , String name // TODO refactor to repoName or repository
+        , String branch
+        , String url
+    )
+    {
+        static DeprecatedGit.URL of(URI uri)
+        {
+            final var path = Path.of(uri.getPath());
+
+            final var organization = path.getName(0).toString();
+            final var name = path.getName(1).toString();
+            final var branch = path.getFileName().toString();
+            final var url = uri.resolve("..").toString();
+
+            return new URL(organization, name, branch, url);
+        }
+
+        static List<DeprecatedGit.URL> of(List<URI> uris)
+        {
+            return uris.stream()
+                .map(DeprecatedGit.URL::of)
+                .collect(Collectors.toList());
+        }
+    }
+
+    static void download(List<DeprecatedGit.URL> urls, Root root)
     {
         urls.forEach(download(root));
     }
 
-    private static Consumer<Git.URL> download(Root root)
+    private static Consumer<DeprecatedGit.URL> download(Root root)
     {
         return url ->
         {
-            final var marker = Marker.download(url.name, root);
-            if (Marker.skip(marker))
+            final var marker = DeprecatedMarker.download(url.name, root);
+            if (DeprecatedMarker.skip(marker))
                 return;
 
-            OperatingSystem.exec()
-                .compose(Git.clone(url))
+            DeprecatedOperatingSystem.exec()
+                .compose(DeprecatedGit.deprecatedClone(url))
                 .apply(root.path());
 
-            Marker.touch(marker);
+            DeprecatedMarker.touch(marker);
         };
     }
 
-    static Function<Path, OperatingSystem.Command> clone(Git.URL url)
+    static Function<Path, DeprecatedOperatingSystem.Command> deprecatedClone(DeprecatedGit.URL url)
     {
         return path ->
-            new OperatingSystem.Command(
+            new DeprecatedOperatingSystem.Command(
                 Stream.of(
                     "git"
                     , "clone"
@@ -794,6 +910,20 @@ class Git
                 , path
                 , Stream.empty()
             );
+    }
+
+    static Stream<String> clone(DeprecatedGit.URL url)
+    {
+        return Stream.of(
+            "git"
+            , "clone"
+            , "-b"
+            , url.branch
+            , "--depth"
+            , "10"
+            , url.url
+            , url.name
+        );
     }
 }
 
@@ -811,19 +941,27 @@ class Homes
 
     static class EnvVars
     {
-        static OperatingSystem.EnvVar java(Root root)
+        static DeprecatedOperatingSystem.EnvVar java(Root root)
         {
-            return new OperatingSystem.EnvVar(
+            return new DeprecatedOperatingSystem.EnvVar(
                 "JAVA_HOME"
                 , Homes.java(root).toString()
             );
         }
 
-        static OperatingSystem.EnvVar graal(Root root)
+        static DeprecatedOperatingSystem.EnvVar deprecatedGraal(Root root)
+        {
+            return new DeprecatedOperatingSystem.EnvVar(
+                "JAVA_HOME"
+                , Homes.graal(root).toString()
+            );
+        }
+
+        static OperatingSystem.EnvVar graal()
         {
             return new OperatingSystem.EnvVar(
                 "JAVA_HOME"
-                , Homes.graal(root).toString()
+                , root -> root.resolve("graal_home")
             );
         }
     }
@@ -850,13 +988,165 @@ record Root(Path path)
         final var path = baseDir.resolve(today);
         LOG.info("Root path: {}", path);
 
-        return new Root(OperatingSystem.mkdirs(path));
+        return new Root(DeprecatedOperatingSystem.mkdirs(path));
     }
 }
 
+// Boundary value
+record Marker(Path path)
+{
+    static Marker download(String dirName)
+    {
+        return new Marker(Path.of(dirName, "download.marker"));
+    }
+}
+
+// Dependency
+class FileSystem
+{
+    static final Logger LOG = LogManager.getLogger(FileSystem.class);
+
+    final Path root;
+
+    static FileSystem ofSystem()
+    {
+        var date = LocalDate.now();
+        var formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+        var today = date.format(formatter);
+        LOG.info("Today is {}", today);
+
+        var baseDir = Path.of(
+            System.getProperty("user.home")
+            , "target"
+            , "quarkus-with-graal"
+        );
+        LOG.info("Base directory: {}", baseDir);
+
+        final var path = baseDir.resolve(today);
+        LOG.info("Root path: {}", path);
+
+        return new FileSystem(mkdirs(path));
+    }
+
+    private static Path mkdirs(Path path)
+    {
+        final var directory = path.toFile();
+        if (!directory.exists() && !directory.mkdirs())
+        {
+            throw new RuntimeException(String.format(
+                "Unable to create path: %s"
+                , path)
+            );
+        }
+
+        return path;
+    }
+
+    private FileSystem(Path root)
+    {
+        this.root = root;
+    }
+
+    boolean exists(Marker marker)
+    {
+        return root.resolve(marker.path()).toFile().exists();
+    }
+
+    boolean touch(Marker marker)
+    {
+        long timestamp = System.currentTimeMillis();
+        final var path = root.resolve(marker.path());
+        final var file = path.toFile();
+        if (!file.exists())
+        {
+            try
+            {
+                new FileOutputStream(file).close();
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+
+        boolean success = file.setLastModified(timestamp);
+        if (!success)
+        {
+            throw new RuntimeException(
+                String.format(
+                    "Unable to update last modified time for: %s"
+                    , path
+                )
+            );
+        }
+
+        LOG.debug("Touched {}", path);
+        return success;
+    }
+}
+
+// Dependency
 class OperatingSystem
 {
-    static final Logger LOG = LogManager.getLogger(OperatingSystem.class);
+    static final Logger LOG = LogManager.getLogger(FileSystem.class);
+
+    final FileSystem fs;
+
+    OperatingSystem(FileSystem fs)
+    {
+        this.fs = fs;
+    }
+
+    Marker exec(MarkerTask task)
+    {
+        exec(task.task);
+        return task.marker;
+    }
+
+    void exec(Task task)
+    {
+        final var taskList = task.task
+            .filter(Predicate.not(String::isEmpty))
+            .collect(Collectors.toList());
+
+        final var directory = fs.root.resolve(task.directory);
+        LOG.debug("Execute {} in {}", taskList, directory);
+        try
+        {
+            var processBuilder = new ProcessBuilder(taskList)
+                .directory(directory.toFile())
+                .inheritIO();
+
+            task.envVars.forEach(
+                envVar -> processBuilder.environment()
+                    .put(envVar.name, envVar.value.apply(fs.root).toString())
+            );
+
+            Process process = processBuilder.start();
+
+            if (process.waitFor()!=0)
+            {
+                throw new RuntimeException(
+                    "Failed, exit code: " + process.exitValue()
+                );
+            }
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    record Task(Stream<String> task, Path directory, Stream<EnvVar> envVars) {}
+
+    record MarkerTask(Task task, Marker marker) {}
+
+    record EnvVar(String name, Function<Path, Path> value) {}
+}
+
+class DeprecatedOperatingSystem
+{
+    static final Logger LOG = LogManager.getLogger(DeprecatedOperatingSystem.class);
 
     public enum Type
     {
@@ -910,7 +1200,7 @@ class OperatingSystem
 
     static Function<Path, Void> deleteRecursive()
     {
-        return OperatingSystem::deleteRecursive;
+        return DeprecatedOperatingSystem::deleteRecursive;
     }
 
     private static Void deleteRecursive(Path path)
