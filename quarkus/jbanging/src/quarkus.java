@@ -31,7 +31,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -799,7 +798,7 @@ class Git
 
     record MarkerURL(Git.URL url, Marker marker) {}
 
-    static List<Boolean> clone(
+    static List<Marker> clone(
         List<Git.URL> urls
         , Predicate<Marker> exists
         , Function<OperatingSystem.MarkerTask, Marker> exec
@@ -810,7 +809,7 @@ class Git
         return Git.doClone(tasks, exec, touch);
     }
 
-    private static List<Boolean> doClone(
+    private static List<Marker> doClone(
         Stream<OperatingSystem.MarkerTask> tasks
         , Function<OperatingSystem.MarkerTask, Marker> exec
         , Function<Marker, Boolean> touch
@@ -818,7 +817,7 @@ class Git
     {
         return tasks
             .map(exec)
-            .map(touch)
+            .map(marker -> touch.apply(marker) ? marker.touch() : marker)
             .collect(Collectors.toList());
     }
 
@@ -1018,11 +1017,16 @@ record Root(Path path)
 }
 
 // Boundary value
-record Marker(Path path)
+record Marker(boolean touched, Path path)
 {
+    Marker touch()
+    {
+        return new Marker(true, path);
+    }
+
     static Marker download(String dirName)
     {
-        return new Marker(Path.of(dirName, "download.marker"));
+        return new Marker(false, Path.of(dirName, "download.marker"));
     }
 }
 
@@ -1344,25 +1348,66 @@ class QuarkusCheck
     static void check()
     {
         LOG.info("Run checks");
-        Test.checkCliOptions();
-        Test.checkTest();
+        CheckGit.checkClone();
+        CheckTest.checkCliOptions();
+        CheckTest.checkTest();
         LOG.info("Checks successful");
     }
 
-    static class Test
+    static class CheckGit
+    {
+        public static void checkClone()
+        {
+            CheckGit.checkCloneDefault();
+            CheckGit.checkCloneSelective();
+        }
+
+        private static void checkCloneDefault()
+        {
+            final var os = new RecordingOperatingSystem();
+            final List<Git.URL> urls = Collections.emptyList();
+            final var cloned = Git.clone(urls, m -> false, os::record, m -> false);
+            os.assertSize(0);
+            assertThat(cloned.size(), is(0));
+        }
+
+        private static void checkCloneSelective()
+        {
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("repo-a"), true
+                    , Marker.download("repo-b"), false
+                )
+            );
+            final var os = new RecordingOperatingSystem();
+            final List<Git.URL> urls = Git.URL.of(
+                List.of(
+                    URI.create("h://_/_/repo-a")
+                    , URI.create("h:/_/_/repo-b")
+                )
+            );
+            final var cloned = Git.clone(urls, fs::exists, os::record, fs::touch);
+            os.assertSize(1);
+            os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
+            assertThat(cloned.size(), is(1));
+            assertThat(cloned.get(0).touched(), is(true));
+        }
+    }
+
+    static class CheckTest
     {
         static final Logger LOG = LogManager.getLogger(
             String.format("%s.%s"
                 , QuarkusCheck.class.getSimpleName()
-                , Test.class.getSimpleName()
+                , CheckTest.class.getSimpleName()
             ));
 
         static void checkCliOptions()
         {
-            Test.checkCliEmptyOptions();
-            Test.checkCliSuiteOptions();
-            Test.checkCliAlsoTestOptions();
-            Test.checkCliAdditionalTestArgsOptions();
+            CheckTest.checkCliEmptyOptions();
+            CheckTest.checkCliSuiteOptions();
+            CheckTest.checkCliAlsoTestOptions();
+            CheckTest.checkCliAdditionalTestArgsOptions();
         }
 
         private static void checkCliAdditionalTestArgsOptions()
@@ -1431,9 +1476,9 @@ class QuarkusCheck
 
         static void checkTest()
         {
-            Test.checkTestDefault();
-            Test.checkTestSuites();
-            Test.checkTestArguments();
+            CheckTest.checkTestDefault();
+            CheckTest.checkTestSuites();
+            CheckTest.checkTestArguments();
         }
 
         private static void checkTestArguments()
@@ -1499,14 +1544,46 @@ class QuarkusCheck
         }
     }
 
-    private static class RecordingOperatingSystem
+    private static final class InMemoryFileSystem
     {
-        private Queue<Object> tasks = new ArrayDeque<>();
+        final Map<Marker, Boolean> exists;
+
+        private InMemoryFileSystem(Map<Marker, Boolean> exists)
+        {
+            this.exists = exists;
+        }
+
+        boolean exists(Marker marker)
+        {
+            final var doesExist = exists.get(marker);
+            return doesExist == null ? false : doesExist;
+        }
+
+        boolean touch(Marker marker)
+        {
+            return true;
+        }
+    }
+
+    private static final class RecordingOperatingSystem
+    {
+        private final Queue<Object> tasks = new ArrayDeque<>();
 
         void record(OperatingSystem.Task task)
         {
+            offer(task);
+        }
+
+        private void offer(Object task)
+        {
             final var success = tasks.offer(task);
             assertThat(success, is(true));
+        }
+
+        Marker record(OperatingSystem.MarkerTask task)
+        {
+            offer(task);
+            return task.marker();
         }
 
         void assertSize(int size)
@@ -1516,7 +1593,13 @@ class QuarkusCheck
 
         void assertTask(Consumer<OperatingSystem.Task> asserts)
         {
-            final var head = peekTask();
+            final OperatingSystem.Task head = peekTask();
+            asserts.accept(head);
+        }
+
+        void assertMarkerTask(Consumer<OperatingSystem.MarkerTask> asserts)
+        {
+            final OperatingSystem.MarkerTask head = peekTask();
             asserts.accept(head);
         }
 
@@ -1536,9 +1619,10 @@ class QuarkusCheck
             tasks.remove();
         }
 
-        private OperatingSystem.Task peekTask()
+        @SuppressWarnings("unchecked")
+        private <T> T peekTask()
         {
-            return (OperatingSystem.Task) tasks.peek();
+            return (T) tasks.peek();
         }
     }
 
