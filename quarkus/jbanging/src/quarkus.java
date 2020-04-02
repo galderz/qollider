@@ -25,15 +25,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Queue;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -595,11 +600,7 @@ class QuarkusTest implements Runnable
     @Override
     public void run()
     {
-        options = new Options(
-            suites
-            , Git.URL.of(alsoTest)
-            , Arguments.to(additionalTestArgs)
-        );
+        options = Options.of(suites, alsoTest, additionalTestArgs);
         LOG.info(options);
 
         if (Objects.nonNull(fs) && Objects.nonNull(os))
@@ -613,7 +614,21 @@ class QuarkusTest implements Runnable
         List<String>suites
         , List<Git.URL>alsoTest
         , Map<String, Arguments>testArgs
-    ) {}
+    )
+    {
+        static Options of(
+            List<String> suites
+            , List<URI> alsoTest
+            , Map<String, String> additionalTestArgs
+        )
+        {
+            return new Options(
+                suites
+                , Git.URL.of(alsoTest)
+                , Arguments.to(additionalTestArgs)
+            );
+        }
+    }
 
     record Arguments(List<String>arguments)
     {
@@ -662,7 +677,7 @@ class QuarkusTest implements Runnable
             Maven.doTest(tasks, exec);
         }
 
-        static void doTest(
+        private static void doTest(
             Stream<OperatingSystem.Task> tasks
             , Consumer<OperatingSystem.Task> exec
         )
@@ -782,9 +797,9 @@ class Git
         }
     }
 
-    record MarkerURL(URL url, Marker marker) {}
+    record MarkerURL(Git.URL url, Marker marker) {}
 
-    static void clone(
+    static List<Boolean> clone(
         List<Git.URL> urls
         , Predicate<Marker> exists
         , Function<OperatingSystem.MarkerTask, Marker> exec
@@ -792,7 +807,7 @@ class Git
     )
     {
         final var tasks = Git.toClone(urls, exists);
-        Git.doClone(tasks, exec, touch);
+        return Git.doClone(tasks, exec, touch);
     }
 
     private static List<Boolean> doClone(
@@ -807,7 +822,7 @@ class Git
             .collect(Collectors.toList());
     }
 
-    static Stream<OperatingSystem.MarkerTask> toClone(
+    private static Stream<OperatingSystem.MarkerTask> toClone(
         List<Git.URL> urls
         , Predicate<Marker> exists
     )
@@ -1330,6 +1345,7 @@ class QuarkusCheck
     {
         LOG.info("Run checks");
         Test.checkCliOptions();
+        Test.checkTest();
         LOG.info("Checks successful");
     }
 
@@ -1353,12 +1369,12 @@ class QuarkusCheck
         {
             LOG.info("Check cli --additional-test-args options");
             assertThat(
-                execute("-ata", "a=b,:c|z=y").additionalTestArgs
-                , is(equalTo(Map.of("a", "b,:c", "z", "y")))
+                execute("-ata", "a=b,:c|z=-y").additionalTestArgs
+                , is(equalTo(Map.of("a", "b,:c", "z", "-y")))
             );
             assertThat(
-                execute("--additional-test-args", "a=b,:c|z=y").additionalTestArgs
-                , is(equalTo(Map.of("a", "b,:c", "z", "y")))
+                execute("--additional-test-args", "a=b,:c|z=-y").additionalTestArgs
+                , is(equalTo(Map.of("a", "b,:c", "z", "-y")))
             );
         }
 
@@ -1411,6 +1427,118 @@ class QuarkusCheck
                 .setCaseInsensitiveEnumValuesAllowed(true)
                 .execute(args);
             return quarkusTest;
+        }
+
+        static void checkTest()
+        {
+            Test.checkTestDefault();
+            Test.checkTestSuites();
+            Test.checkTestArguments();
+        }
+
+        private static void checkTestArguments()
+        {
+            final var options = QuarkusTest.Options.of(
+                List.of("suite-a", "suite-b")
+                , Collections.emptyList()
+                , Map.of("suite-a", "p1,:p2", "suite-b", ":p3,-p4")
+            );
+            final var os = test(options);
+            os.assertSize(2);
+            os.assertTask(t ->
+                assertThat(
+                    t.task().collect(Collectors.joining(" "))
+                    , is(equalTo("mvn install -Dnative -Dformat.skip p1 :p2"))
+                )
+            );
+            os.forward();
+            os.assertTask(t ->
+                assertThat(
+                    t.task().collect(Collectors.joining(" "))
+                    , is(equalTo("mvn install -Dnative -Dformat.skip :p3 -p4"))
+                )
+            );
+        }
+
+        private static void checkTestSuites()
+        {
+            final var options = QuarkusTest.Options.of(
+                List.of("suite-a", "suite-b")
+                , Collections.emptyList()
+                , Collections.emptyMap()
+            );
+            final var os = test(options);
+            os.assertSize(2);
+            os.assertAllTasks(t -> assertThat(t.task().findFirst(), is(Optional.of("mvn"))));
+            os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
+            os.forward();
+            os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-b"))));
+        }
+
+        private static void checkTestDefault()
+        {
+            final var options = QuarkusTest.Options.of(
+                Collections.emptyList()
+                , Collections.emptyList()
+                , Collections.emptyMap()
+            );
+            final var os = test(options);
+            os.assertSize(1);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("mvn")));
+                assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
+            });
+        }
+
+        private static RecordingOperatingSystem test(QuarkusTest.Options options)
+        {
+            final var os = new RecordingOperatingSystem();
+            QuarkusTest.Maven.test(options, os::record);
+            return os;
+        }
+    }
+
+    private static class RecordingOperatingSystem
+    {
+        private Queue<Object> tasks = new ArrayDeque<>();
+
+        void record(OperatingSystem.Task task)
+        {
+            final var success = tasks.offer(task);
+            assertThat(success, is(true));
+        }
+
+        void assertSize(int size)
+        {
+            assertThat(tasks.size(), is(size));
+        }
+
+        void assertTask(Consumer<OperatingSystem.Task> asserts)
+        {
+            final var head = peekTask();
+            asserts.accept(head);
+        }
+
+        void assertAllTasks(Consumer<OperatingSystem.Task> asserts)
+        {
+            for (Object object : tasks)
+            {
+                if (object instanceof OperatingSystem.Task task)
+                {
+                    asserts.accept(task);
+                }
+            }
+        }
+
+        void forward()
+        {
+            tasks.remove();
+        }
+
+        private OperatingSystem.Task peekTask()
+        {
+            return (OperatingSystem.Task) tasks.peek();
         }
     }
 
