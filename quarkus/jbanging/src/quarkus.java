@@ -4,12 +4,20 @@
 //DEPS info.picocli:picocli:4.2.0
 //DEPS org.apache.logging.log4j:log4j-core:2.13.0
 //DEPS org.hamcrest:hamcrest:2.2
+//DEPS org.junit.jupiter:junit-jupiter-engine:5.6.1
+//DEPS org.junit.platform:junit-platform-launcher:1.6.1
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.DefaultConfiguration;
+import org.junit.jupiter.api.Test;
+import org.junit.platform.launcher.Launcher;
+import org.junit.platform.launcher.LauncherDiscoveryRequest;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
+import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
@@ -20,6 +28,7 @@ import picocli.CommandLine.Spec;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +55,7 @@ import java.util.stream.Stream;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 @Command
 public class quarkus implements Runnable
@@ -1343,26 +1353,27 @@ class DeprecatedOperatingSystem
 
 class QuarkusCheck
 {
-    static final Logger LOG = LogManager.getLogger(QuarkusCheck.class);
-
     static void check()
     {
-        LOG.info("Run checks");
-        CheckGit.checkClone();
-        CheckTest.checkCliOptions();
-        CheckTest.checkTest();
-        LOG.info("Checks successful");
+        SummaryGeneratingListener listener = new SummaryGeneratingListener();
+
+        LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
+            .selectors(
+                selectClass(CheckGit.class)
+                , selectClass(CheckTest.class)
+            )
+            .build();
+        Launcher launcher = LauncherFactory.create();
+        launcher.registerTestExecutionListeners(listener);
+        launcher.execute(request);
+        listener.getSummary().printTo(new PrintWriter(System.out));
+        listener.getSummary().printFailuresTo(new PrintWriter(System.err));
     }
 
     static class CheckGit
     {
-        public static void checkClone()
-        {
-            CheckGit.checkCloneDefault();
-            CheckGit.checkCloneSelective();
-        }
-
-        private static void checkCloneDefault()
+        @Test
+        void cloneDefault()
         {
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Collections.emptyList();
@@ -1371,7 +1382,8 @@ class QuarkusCheck
             assertThat(cloned.size(), is(0));
         }
 
-        private static void checkCloneSelective()
+        @Test
+        void cloneSelective()
         {
             final var fs = new InMemoryFileSystem(
                 Map.of(
@@ -1396,23 +1408,9 @@ class QuarkusCheck
 
     static class CheckTest
     {
-        static final Logger LOG = LogManager.getLogger(
-            String.format("%s.%s"
-                , QuarkusCheck.class.getSimpleName()
-                , CheckTest.class.getSimpleName()
-            ));
-
-        static void checkCliOptions()
+        @Test
+        void cliAdditionalTestArgsOptions()
         {
-            CheckTest.checkCliEmptyOptions();
-            CheckTest.checkCliSuiteOptions();
-            CheckTest.checkCliAlsoTestOptions();
-            CheckTest.checkCliAdditionalTestArgsOptions();
-        }
-
-        private static void checkCliAdditionalTestArgsOptions()
-        {
-            LOG.info("Check cli --additional-test-args options");
             assertThat(
                 execute("-ata", "a=b,:c|z=-y").additionalTestArgs
                 , is(equalTo(Map.of("a", "b,:c", "z", "-y")))
@@ -1423,9 +1421,9 @@ class QuarkusCheck
             );
         }
 
-        private static void checkCliAlsoTestOptions()
+        @Test
+        void cliAlsoTestOptions()
         {
-            LOG.info("Check cli --also-test options");
             assertThat(
                 execute("-at", "h://g/a/b,h://g/b/c").alsoTest
                 , is(equalTo(List.of(URI.create("h://g/a/b"), URI.create("h://g/b/c"))))
@@ -1436,9 +1434,9 @@ class QuarkusCheck
             );
         }
 
-        private static void checkCliSuiteOptions()
+        @Test
+        void cliSuiteOptions()
         {
-            LOG.info("Check cli --suite options");
             assertThat(
                 execute("-s", "a,b").suites
                 , is(equalTo(List.of("a", "b")))
@@ -1449,9 +1447,9 @@ class QuarkusCheck
             );
         }
 
-        private static void checkCliEmptyOptions()
+        @Test
+        void cliEmptyOptions()
         {
-            LOG.info("Check cli empty options");
             final var command = execute();
             assertThat(command.suites, is(empty()));
             assertThat(command.alsoTest, is(empty()));
@@ -1474,14 +1472,8 @@ class QuarkusCheck
             return quarkusTest;
         }
 
-        static void checkTest()
-        {
-            CheckTest.checkTestDefault();
-            CheckTest.checkTestSuites();
-            CheckTest.checkTestArguments();
-        }
-
-        private static void checkTestArguments()
+        @Test
+        void testArguments()
         {
             final var options = QuarkusTest.Options.of(
                 List.of("suite-a", "suite-b")
@@ -1505,7 +1497,8 @@ class QuarkusCheck
             );
         }
 
-        private static void checkTestSuites()
+        @Test
+        void testSuites()
         {
             final var options = QuarkusTest.Options.of(
                 List.of("suite-a", "suite-b")
@@ -1520,7 +1513,8 @@ class QuarkusCheck
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-b"))));
         }
 
-        private static void checkTestDefault()
+        @Test
+        void testDefault()
         {
             final var options = QuarkusTest.Options.of(
                 Collections.emptyList()
