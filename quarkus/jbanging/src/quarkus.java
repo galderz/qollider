@@ -72,7 +72,7 @@ public class quarkus implements Runnable
         QuarkusCheck.check();
 
         final var fs = FileSystem.ofSystem();
-        final var quarkusTest = new QuarkusTest(fs, new OperatingSystem(fs));
+        final var quarkusTest = QuarkusTest.ofSystem(fs, new OperatingSystem(fs));
 
         int exitCode = new CommandLine(new quarkus())
             .addSubcommand("clean", new QuarkusClean())
@@ -550,8 +550,7 @@ class QuarkusTest implements Runnable
 {
     private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
 
-    final FileSystem fs;
-    final OperatingSystem os;
+    private final Consumer<Options> runner;
 
     @Option(
         description = """
@@ -567,7 +566,7 @@ class QuarkusTest implements Runnable
         }
         , split = ","
     )
-    List<String> suites = new ArrayList<>();
+    private final List<String> suites = new ArrayList<>();
 
     @Option(
         description = """
@@ -581,7 +580,7 @@ class QuarkusTest implements Runnable
         }
         , split = ","
     )
-    List<URI> alsoTest = new ArrayList<>();
+    private final List<URI> alsoTest = new ArrayList<>();
 
     @Option(
         description = """
@@ -596,23 +595,44 @@ class QuarkusTest implements Runnable
         }
         , split = "\\|"
     )
-    Map<String, String> additionalTestArgs = new HashMap<>();
+    private final Map<String, String> additionalTestArgs = new HashMap<>();
 
-    Options options;
-
-    QuarkusTest(FileSystem fs, OperatingSystem os)
+    private QuarkusTest(Consumer<Options> runner)
     {
-        this.fs = fs;
-        this.os = os;
+        this.runner = runner;
+    }
+
+    static QuarkusTest ofSystem(FileSystem fs, OperatingSystem os)
+    {
+        return new QuarkusTest(new RunTest(fs, os));
+    }
+
+    static QuarkusTest of(Consumer<Options> runner)
+    {
+        return new QuarkusTest(runner);
     }
 
     @Override
     public void run()
     {
-        options = Options.of(suites, alsoTest, additionalTestArgs);
+        var options = Options.of(suites, alsoTest, additionalTestArgs);
         LOG.info(options);
+        runner.accept(options);
+    }
 
-        if (Objects.nonNull(fs) && Objects.nonNull(os))
+    final static class RunTest implements Consumer<Options>
+    {
+        final FileSystem fs;
+        final OperatingSystem os;
+
+        RunTest(FileSystem fs, OperatingSystem os)
+        {
+            this.fs = fs;
+            this.os = os;
+        }
+
+        @Override
+        public void accept(Options options)
         {
             Git.clone(options.alsoTest, fs::exists, os::exec, fs::touch);
             Maven.test(options, os::exec);
@@ -634,14 +654,14 @@ class QuarkusTest implements Runnable
             return new Options(
                 suites
                 , Git.URL.of(alsoTest)
-                , Arguments.to(additionalTestArgs)
+                , Arguments.of(additionalTestArgs)
             );
         }
     }
 
     record Arguments(List<String>arguments)
     {
-        static Map<String, Arguments> to(Map<String, String> arguments)
+        static Map<String, Arguments> of(Map<String, String> arguments)
         {
             return arguments.entrySet().stream()
                 .collect(
@@ -1412,12 +1432,16 @@ class QuarkusCheck
         void cliAdditionalTestArgsOptions()
         {
             assertThat(
-                execute("-ata", "a=b,:c|z=-y").additionalTestArgs
-                , is(equalTo(Map.of("a", "b,:c", "z", "-y")))
+                execute("-ata", "a=b,:c|z=-y").testArgs()
+                , is(equalTo(QuarkusTest.Arguments.of(
+                    Map.of("a", "b,:c", "z", "-y")
+                )))
             );
             assertThat(
-                execute("--additional-test-args", "a=b,:c|z=-y").additionalTestArgs
-                , is(equalTo(Map.of("a", "b,:c", "z", "-y")))
+                execute("--additional-test-args", "a=b,:c|z=-y").testArgs()
+                , is(equalTo(QuarkusTest.Arguments.of(
+                    Map.of("a", "b,:c", "z", "-y")
+                )))
             );
         }
 
@@ -1425,12 +1449,18 @@ class QuarkusCheck
         void cliAlsoTestOptions()
         {
             assertThat(
-                execute("-at", "h://g/a/b,h://g/b/c").alsoTest
-                , is(equalTo(List.of(URI.create("h://g/a/b"), URI.create("h://g/b/c"))))
+                execute("-at", "h://g/a/b,h://g/b/c").alsoTest()
+                , is(equalTo(Git.URL.of(List.of(
+                    URI.create("h://g/a/b")
+                    , URI.create("h://g/b/c")
+                ))))
             );
             assertThat(
-                execute("--also-test", "h://g/w/x,h://g/y/z").alsoTest
-                , is(equalTo(List.of(URI.create("h://g/w/x"), URI.create("h://g/y/z"))))
+                execute("--also-test", "h://g/w/x,h://g/y/z").alsoTest()
+                , is(equalTo(Git.URL.of(List.of(
+                    URI.create("h://g/w/x")
+                    , URI.create("h://g/y/z")
+                ))))
             );
         }
 
@@ -1438,11 +1468,11 @@ class QuarkusCheck
         void cliSuiteOptions()
         {
             assertThat(
-                execute("-s", "a,b").suites
+                execute("-s", "a,b").suites()
                 , is(equalTo(List.of("a", "b")))
             );
             assertThat(
-                execute("--suites", "y,z").suites
+                execute("--suites", "y,z").suites()
                 , is(equalTo(List.of("y", "z")))
             );
         }
@@ -1451,12 +1481,12 @@ class QuarkusCheck
         void cliEmptyOptions()
         {
             final var command = execute();
-            assertThat(command.suites, is(empty()));
-            assertThat(command.alsoTest, is(empty()));
-            assertThat(command.additionalTestArgs, is(anEmptyMap()));
+            assertThat(command.suites(), is(empty()));
+            assertThat(command.alsoTest(), is(empty()));
+            assertThat(command.testArgs(), is(anEmptyMap()));
         }
 
-        private static QuarkusTest execute(String... extra)
+        private static QuarkusTest.Options execute(String... extra)
         {
             final List<String> list = new ArrayList<>();
             list.add("test");
@@ -1464,12 +1494,13 @@ class QuarkusCheck
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var quarkusTest = new QuarkusTest(null, null);
+            final var recorder = new OptionsRecorder();
+            final var quarkusTest = QuarkusTest.of(recorder);
             new CommandLine(new quarkus())
                 .addSubcommand("test", quarkusTest)
                 .setCaseInsensitiveEnumValuesAllowed(true)
                 .execute(args);
-            return quarkusTest;
+            return recorder.options;
         }
 
         @Test
@@ -1528,6 +1559,17 @@ class QuarkusCheck
                 assertThat(task.task().findFirst(), is(Optional.of("mvn")));
                 assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
             });
+        }
+
+        private static final class OptionsRecorder implements Consumer<QuarkusTest.Options>
+        {
+            QuarkusTest.Options options;
+
+            @Override
+            public void accept(QuarkusTest.Options options)
+            {
+                this.options = options;
+            }
         }
 
         private static RecordingOperatingSystem test(QuarkusTest.Options options)
