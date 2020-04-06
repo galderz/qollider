@@ -86,20 +86,27 @@ You can find out about new options by caling:
 ```bash
 ./quarkus.sh build --help
 ...
-Usage: <main class> build [-gt=<graalTree>] [-jt=<jdkTree>] [-mt=<mxTree>]
-                          [-qt=<quarkusTree>] [-ab=<alsoBuild>[,
-                          <alsoBuild>...]]...
+Usage: <main class> build [-hV] [-gt=<graalTree>] [-jt=<jdkTree>]
+                          [-mt=<mxTree>] [-qt=<quarkusTree>] [-pob=<postBuild>[,
+                          <postBuild>...]]... [-prb=<preBuild>[,
+                          <preBuild>...]]...
 Build quarkus.
-      -ab, --also-build=<alsoBuild>[,<alsoBuild>...]
-         Additional projects to build. Separated by comma(,) character.
       -gt, --graal-tree=<graalTree>
-         Graal source tree URL
+                  Graal source tree URL
+      -h, --help      Show this help message and exit.
       -jt, --jdk-tree=<jdkTree>
-         JDK source tree URL
+                  JDK source tree URL
       -mt, --mx-tree=<mxTree>
-         mx source tree URL
+                  mx source tree URL
+      -pob, --post-build=<postBuild>[,<postBuild>...]
+                  Additional projects to build after Quarkus. Separated by comma
+                    (,) character.
+      -prb, --pre-build=<preBuild>[,<preBuild>...]
+                  Additional projects to build before Quarkus. Separated by
+                    comma(,) character.
       -qt, --quarkus-tree=<quarkusTree>
-         Quarkus source tree URL
+                  Quarkus source tree URL
+      -V, --version   Print version information and exit.
 ```
 
 ## Test Quarkus
