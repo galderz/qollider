@@ -306,7 +306,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Options(
+    record Options(
         Git.URL jdk
         , Git.URL mx
         , Git.URL graal
@@ -347,7 +347,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Java(Java.Type type, Path name)
+    record Java(Java.Type type, Path name)
     {
         static Java of(Options options)
         {
@@ -515,7 +515,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Graal(Path name, Path mx)
+    record Graal(Path name, Path mx)
     {
         static Graal of(Options options)
         {
@@ -593,7 +593,7 @@ class QuarkusBuild implements Runnable
         }
     }
 
-    private record Maven(List<Path>projects)
+    record Maven(List<Path>projects)
     {
         static Maven of(Options options)
         {
@@ -1105,17 +1105,7 @@ class FileSystem
         }
 
         boolean success = file.setLastModified(timestamp);
-        if (!success)
-        {
-            throw new RuntimeException(
-                String.format(
-                    "Unable to update last modified time for: %s"
-                    , path
-                )
-            );
-        }
-
-        LOG.debug("Touched {}", path);
+        LOG.debug("Touched={} {}", success, path);
         return success;
     }
 
@@ -1282,6 +1272,7 @@ class QuarkusCheck
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
+                , selectClass(CheckBuild.class)
                 , selectClass(CheckTest.class)
             )
             .build();
@@ -1325,6 +1316,135 @@ class QuarkusCheck
             os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
             assertThat(cloned.size(), is(1));
             assertThat(cloned.get(0).touched(), is(true));
+        }
+    }
+
+    static class CheckBuild
+    {
+        @Test
+        void testMavenBuildDefault()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("quarkus"), false
+                )
+            );
+            final var options = executeCli();
+            final var markers = QuarkusBuild.Maven.build(
+                options
+                , fs::exists
+                , os::record, m -> true
+            );
+            assertThat(markers.size(), is(1));
+            assertThat(markers.get(0).touched(), is(true));
+            os.assertSize(1);
+            os.assertMarkerTask(task ->
+            {
+                assertThat(task.task().task().findFirst(), is(Optional.of("mvn")));
+                assertThat(task.task().directory(), is(Path.of("quarkus")));
+            });
+        }
+
+        @Test
+        void testGraalLink()
+        {
+            final var options = executeCli();
+            final var path = QuarkusBuild.Graal.link(
+                options
+                , (link, ignore) -> link
+            );
+            assertThat(path, is(Homes.graal()));
+        }
+
+        @Test
+        void testGraalBuildDefault()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("graal"), false
+                )
+            );
+            final var options = executeCli();
+            final var marker = QuarkusBuild.Graal.build(
+                options
+                , fs::exists
+                , os::record, m -> true
+            );
+            assertThat(marker.touched(), is(true));
+            os.assertSize(1);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
+                assertThat(task.directory(), is(Path.of("graal/substratevm")));
+            });
+        }
+
+        @Test
+        void testJavaLink()
+        {
+            final var options = executeCli();
+            final var path = QuarkusBuild.Java.link(
+                options
+                , () -> "macos"
+                , (link, ignore) -> link
+            );
+            assertThat(path, is(Homes.java()));
+        }
+
+        @Test
+        void testJavaBuildDefault()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("labs-openjdk-11"), false
+                )
+            );
+            final var options = executeCli();
+
+            final var marker = QuarkusBuild.Java.build(
+                options
+                , os::bootJdkHome
+                , fs::exists
+                , os::record, m -> true
+            );
+            assertThat(marker.touched(), is(true));
+            os.assertSize(1);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("python")));
+                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
+            });
+        }
+
+        private static QuarkusBuild.Options executeCli(String... extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("build");
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var recorder = new OptionsRecorder();
+            final var quarkusBuild = QuarkusBuild.of(recorder);
+            new CommandLine(new quarkus())
+                .addSubcommand("build", quarkusBuild)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+            return recorder.options;
+        }
+
+        private static final class OptionsRecorder implements Consumer<QuarkusBuild.Options>
+        {
+            QuarkusBuild.Options options;
+
+            @Override
+            public void accept(QuarkusBuild.Options options)
+            {
+                this.options = options;
+            }
         }
     }
 
@@ -1522,6 +1642,11 @@ class QuarkusCheck
         {
             offer(task);
             return task.marker();
+        }
+
+        Path bootJdkHome()
+        {
+            return Path.of("boot/jdk/home");
         }
 
         void assertSize(int size)
