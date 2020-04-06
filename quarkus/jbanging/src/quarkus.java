@@ -423,7 +423,7 @@ class QuarkusBuild implements Runnable
             )
             {
                 return Stream.of(
-                    configureSh(bootJdkHome)
+                    configureSh(java, bootJdkHome)
                     , makeGraalJDK(java)
                 );
             }
@@ -442,7 +442,7 @@ class QuarkusBuild implements Runnable
                 );
             }
 
-            private static OperatingSystem.Task configureSh(Supplier<Path> bootJdkHome)
+            private static OperatingSystem.Task configureSh(Java java, Supplier<Path> bootJdkHome)
             {
                 return new OperatingSystem.Task(
                     Stream.of(
@@ -454,7 +454,7 @@ class QuarkusBuild implements Runnable
                         , "--enable-aot=no"
                         , String.format("--with-boot-jdk=%s", bootJdkHome.get())
                     )
-                    , Path.of("")
+                    , java.name
                     , Stream.empty()
                 );
             }
@@ -1321,6 +1321,41 @@ class QuarkusCheck
 
     static class CheckBuild
     {
+        @Test
+        void javaOpenJDK()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("jdk11u-dev"), false
+                )
+            );
+            final var options = executeCli(
+                "--jdk-tree",
+                "https://github.com/openjdk/jdk11u-dev"
+            );
+
+            final var marker = QuarkusBuild.Java.build(
+                options
+                , os::bootJdkHome
+                , fs::exists
+                , os::record, m -> true
+            );
+            assertThat(marker.touched(), is(true));
+            os.assertSize(2);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("sh")));
+                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
+            });
+            os.forward();
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("make")));
+                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
+            });
+        }
+
         @Test
         void testMavenBuildDefault()
         {
