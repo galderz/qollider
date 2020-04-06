@@ -179,7 +179,7 @@ class QuarkusClean implements Runnable
 class QuarkusBuild implements Runnable
 {
     // TODO add namespace info
-    static final Logger LOG = LogManager.getLogger(QuarkusClean.class);
+    static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
 
     private final Consumer<Options> runner;
 
