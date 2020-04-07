@@ -1267,6 +1267,10 @@ class QuarkusCheck
 {
     static void check()
     {
+        // Initialize logging
+        Configurator.initialize(new DefaultConfiguration());
+        Configurator.setRootLevel(Level.DEBUG);
+
         SummaryGeneratingListener listener = new SummaryGeneratingListener();
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
