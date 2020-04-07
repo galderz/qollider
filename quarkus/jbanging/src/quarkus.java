@@ -13,6 +13,9 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.DefaultConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.platform.launcher.Launcher;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -375,8 +378,8 @@ class QuarkusBuild implements Runnable
         )
         {
             final var java = Java.of(options);
-            final var marker = Marker.build(java.name);
-            if (exists.test(marker))
+            final var marker = Marker.build(java.name).query(exists);
+            if (marker.exists())
             {
                 return new OperatingSystem.MarkerMultiTask(Stream.empty(), marker);
             }
@@ -398,7 +401,7 @@ class QuarkusBuild implements Runnable
         {
             task.task().forEach(exec);
             final var marker = task.marker();
-            return touch.apply(marker) ? marker.touch() : marker;
+            return marker.touch(touch);
         }
 
         static Path link(Options options, Supplier<String> osName, BiFunction<Path, Path, Path> symLink)
@@ -538,8 +541,8 @@ class QuarkusBuild implements Runnable
 
         private static OperatingSystem.MarkerTask toBuild(Graal graal, Predicate<Marker> exists)
         {
-            final var marker = Marker.build(graal.name);
-            if (exists.test(marker))
+            final var marker = Marker.build(graal.name).query(exists);
+            if (marker.exists())
             {
                 return OperatingSystem.MarkerTask.noop(marker);
             }
@@ -555,7 +558,7 @@ class QuarkusBuild implements Runnable
         {
             exec.accept(task.task());
             final var marker = task.marker();
-            return touch.apply(marker) ? marker.touch() : marker;
+            return marker.touch(touch);
         }
 
         private static OperatingSystem.MarkerTask buildTask(Graal graal, Marker marker)
@@ -628,7 +631,7 @@ class QuarkusBuild implements Runnable
         {
             return maven.projects.stream()
                 .map(Marker::build)
-                .filter(Predicate.not(exists))
+                .filter(marker -> !marker.query(exists).exists())
                 .map(Maven::buildTask);
         }
 
@@ -657,7 +660,7 @@ class QuarkusBuild implements Runnable
         {
             return tasks
                 .map(exec)
-                .map(marker -> touch.apply(marker) ? marker.touch() : marker)
+                .map(marker -> marker.touch(touch))
                 .collect(Collectors.toList());
         }
     }
@@ -927,7 +930,7 @@ class Git
     {
         return tasks
             .map(exec)
-            .map(marker -> touch.apply(marker) ? marker.touch() : marker)
+            .map(marker -> marker.touch(touch))
             .collect(Collectors.toList());
     }
 
@@ -960,7 +963,7 @@ class Git
 
     private static Predicate<Git.MarkerURL> needsDownload(Predicate<Marker> exists)
     {
-        return url -> Predicate.not(exists).test(url.marker());
+        return url -> !url.marker.query(exists).exists();
     }
 
     static Stream<String> toClone(Git.URL url)
@@ -1018,21 +1021,50 @@ class Homes
 }
 
 // Boundary value
-record Marker(boolean touched, Path path)
+record Marker(boolean exists, boolean touched, Path path)
 {
-    Marker touch()
+    static final Logger LOG = LogManager.getLogger(Marker.class);
+
+    Marker query(Predicate<Marker> existsFn)
     {
-        return new Marker(true, path);
+        final var exists = existsFn.test(this);
+        if (exists)
+        {
+            LOG.info("Path exists {}", path);
+            return new Marker(true, this.touched, this.path);
+        }
+
+        LOG.info("Path does not exist {}", path);
+        return new Marker(false, this.touched, this.path);
+    }
+
+    Marker touch(Function<Marker, Boolean> touchFn)
+    {
+        if (exists)
+        {
+            LOG.info("Skip touch, path exists {}", path);
+            return this;
+        }
+
+        final var touched = touchFn.apply(this);
+        if (touched)
+        {
+            LOG.info("Touched path {}", path);
+            return new Marker(true, true, path);
+        }
+
+        LOG.info("Could not touch path {}", path);
+        return new Marker(false, false, path);
     }
 
     static Marker build(Path path)
     {
-        return new Marker(false, path.resolve("build.marker"));
+        return new Marker(false, false, path.resolve("build.marker"));
     }
 
     static Marker download(String dirName)
     {
-        return new Marker(false, Path.of(dirName, "download.marker"));
+        return new Marker(false, false, Path.of(dirName, "download.marker"));
     }
 }
 
@@ -1104,9 +1136,7 @@ class FileSystem
             }
         }
 
-        boolean success = file.setLastModified(timestamp);
-        LOG.debug("Touched={} {}", success, path);
-        return success;
+        return file.setLastModified(timestamp);
     }
 
     Path symlink(Path relativeLink, Path relativeTarget)
@@ -1267,10 +1297,6 @@ class QuarkusCheck
 {
     static void check()
     {
-        // Initialize logging
-        Configurator.initialize(new DefaultConfiguration());
-        Configurator.setRootLevel(Level.DEBUG);
-
         SummaryGeneratingListener listener = new SummaryGeneratingListener();
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
@@ -1287,6 +1313,17 @@ class QuarkusCheck
         listener.getSummary().printFailuresTo(new PrintWriter(System.err));
     }
 
+    private static class LoggingExtension implements BeforeAllCallback
+    {
+        @Override
+        public void beforeAll(ExtensionContext extensionContext)
+        {
+            Configurator.initialize(new DefaultConfiguration());
+            Configurator.setRootLevel(Level.DEBUG);
+        }
+    }
+
+    @ExtendWith(LoggingExtension.class)
     static class CheckGit
     {
         @Test
@@ -1323,6 +1360,7 @@ class QuarkusCheck
         }
     }
 
+    @ExtendWith(LoggingExtension.class)
     static class CheckBuild
     {
         @Test
@@ -1364,16 +1402,13 @@ class QuarkusCheck
         void testMavenBuildDefault()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.download("quarkus"), false
-                )
-            );
+            final var fs = new InMemoryFileSystem(Collections.emptyMap());
             final var options = executeCli();
             final var markers = QuarkusBuild.Maven.build(
                 options
                 , fs::exists
-                , os::record, m -> true
+                , os::record
+                , m -> true
             );
             assertThat(markers.size(), is(1));
             assertThat(markers.get(0).touched(), is(true));
@@ -1653,7 +1688,7 @@ class QuarkusCheck
         boolean exists(Marker marker)
         {
             final var doesExist = exists.get(marker);
-            return doesExist==null ? false : doesExist;
+            return doesExist == null ? false : doesExist;
         }
 
         boolean touch(Marker marker)
