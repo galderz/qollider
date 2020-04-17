@@ -404,7 +404,7 @@ class QuarkusBuild implements Runnable
             return marker.touch(touch);
         }
 
-        static Path link(Options options, Supplier<String> osName, BiFunction<Path, Path, Path> symLink)
+        static Link link(Options options, Supplier<String> osName, BiFunction<Path, Path, Link> symLink)
         {
             final var java = Java.of(options);
 
@@ -415,7 +415,9 @@ class QuarkusBuild implements Runnable
                         case LABSJDK -> Java.LabsJDK.javaHome(java);
                     };
 
-            return symLink.apply(Homes.java(), target);
+            final var link = Homes.java();
+            LOG.info("Link {} to {}", link, target);
+            return symLink.apply(link, target);
         }
 
         private static final class OpenJDK
@@ -576,7 +578,7 @@ class QuarkusBuild implements Runnable
             );
         }
 
-        static Path link(Options options, BiFunction<Path, Path, Path> symLink)
+        static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
             final var graal = Graal.of(options);
 
@@ -1068,6 +1070,9 @@ record Marker(boolean exists, boolean touched, Path path)
     }
 }
 
+// Boundary value
+record Link(Path link, Path target) {}
+
 // Dependency
 class FileSystem
 {
@@ -1139,7 +1144,7 @@ class FileSystem
         return file.setLastModified(timestamp);
     }
 
-    Path symlink(Path relativeLink, Path relativeTarget)
+    Link symlink(Path relativeLink, Path relativeTarget)
     {
         final var link = root.resolve(relativeLink);
         final var target = root.resolve(relativeTarget);
@@ -1148,7 +1153,8 @@ class FileSystem
             if (Files.exists(link))
                 Files.delete(link);
 
-            return Files.createSymbolicLink(link, target);
+            final var symbolicLink = Files.createSymbolicLink(link, target);
+            return new Link(symbolicLink, target);
         }
         catch (IOException e)
         {
@@ -1421,14 +1427,14 @@ class QuarkusCheck
         }
 
         @Test
-        void testGraalLink()
+        void graalLink()
         {
             final var options = executeCli();
-            final var path = QuarkusBuild.Graal.link(
+            final var linked = QuarkusBuild.Graal.link(
                 options
-                , (link, ignore) -> link
+                , Link::new
             );
-            assertThat(path, is(Homes.graal()));
+            assertThat(linked.link(), is(Homes.graal()));
         }
 
         @Test
@@ -1456,15 +1462,39 @@ class QuarkusCheck
         }
 
         @Test
-        void testJavaLink()
+        void labsJDKLink()
         {
             final var options = executeCli();
-            final var path = QuarkusBuild.Java.link(
+            final var linked = QuarkusBuild.Java.link(
                 options
                 , () -> "macos"
-                , (link, ignore) -> link
+                , Link::new
             );
-            assertThat(path, is(Homes.java()));
+            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
+        }
+
+        @Test
+        void openJDKLink()
+        {
+            final var options = executeCli(
+                "--jdk-tree",
+                "https://github.com/openjdk/jdk11u-dev"
+            );
+            final var linked = QuarkusBuild.Java.link(
+                options
+                , () -> "macos"
+                , Link::new
+            );
+            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.target(),
+                is(Path.of(
+                    "jdk11u-dev"
+                    , "build"
+                    , "macos-x86_64-normal-server-release"
+                    , "images"
+                    , "graal-builder-jdk"
+                )));
         }
 
         @Test
