@@ -44,7 +44,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -300,7 +299,7 @@ class QuarkusBuild implements Runnable
             Git.clone(Options.urls(options), fs::exists, os::exec, fs::touch);
 
             Java.build(options, os::bootJdkHome, fs::exists, os::exec, fs::touch);
-            Java.link(options, os::osName, fs::symlink);
+            Java.link(options, fs::symlink);
 
             Graal.build(options, fs::exists, os::exec, fs::touch);
             Graal.link(options, fs::symlink);
@@ -404,14 +403,14 @@ class QuarkusBuild implements Runnable
             return marker.touch(touch);
         }
 
-        static Link link(Options options, Supplier<String> osName, BiFunction<Path, Path, Link> symLink)
+        static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
             final var java = Java.of(options);
 
             final var target =
                 switch (java.type)
                     {
-                        case OPENJDK -> Java.OpenJDK.javaHome(java, osName);
+                        case OPENJDK -> Java.OpenJDK.javaHome(java);
                         case LABSJDK -> Java.LabsJDK.javaHome(java);
                     };
 
@@ -433,14 +432,12 @@ class QuarkusBuild implements Runnable
                 );
             }
 
-            static Path javaHome(Java java, Supplier<String> osName)
+            static Path javaHome(Java java)
             {
-                final var os = osName.get();
-                final var arch = "x86_64";
                 return java.name.resolve(
                     Path.of(
                          "build"
-                        , String.format("%s-%s-normal-server-release", os, arch)
+                        , "graal-server-release"
                         , "images"
                         , "graal-builder-jdk"
                     )
@@ -453,6 +450,7 @@ class QuarkusBuild implements Runnable
                     Stream.of(
                         "sh"
                         , "configure"
+                        , "--with-conf-name=graal-server-release"
                         , "--disable-warnings-as-errors"
                         , "--with-jvm-features=graal"
                         , "--with-jvm-variants=server"
@@ -1247,32 +1245,6 @@ class OperatingSystem
         return Path.of(System.getenv("BOOT_JDK_HOME"));
     }
 
-    String osName()
-    {
-        return OperatingSystem.type().toString().toLowerCase();
-    }
-
-    public static Type type()
-    {
-        String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
-
-        if ((OS.contains("mac")) || (OS.contains("darwin")))
-            return Type.MACOSX;
-
-        if (OS.contains("win"))
-            return Type.WINDOWS;
-
-        if (OS.contains("nux"))
-            return Type.LINUX;
-
-        return Type.OTHER;
-    }
-
-    private enum Type
-    {
-        WINDOWS, MACOSX, LINUX, OTHER
-    }
-
     record Task(Stream<String>task, Path directory, Stream<EnvVar>envVars)
     {
         static Task noop()
@@ -1467,7 +1439,6 @@ class QuarkusCheck
             final var options = executeCli();
             final var linked = QuarkusBuild.Java.link(
                 options
-                , () -> "macos"
                 , Link::new
             );
             assertThat(linked.link(), is(Homes.java()));
@@ -1483,7 +1454,6 @@ class QuarkusCheck
             );
             final var linked = QuarkusBuild.Java.link(
                 options
-                , () -> "macos"
                 , Link::new
             );
             assertThat(linked.link(), is(Homes.java()));
@@ -1491,7 +1461,7 @@ class QuarkusCheck
                 is(Path.of(
                     "jdk11u-dev"
                     , "build"
-                    , "macos-x86_64-normal-server-release"
+                    , "graal-server-release"
                     , "images"
                     , "graal-builder-jdk"
                 )));
