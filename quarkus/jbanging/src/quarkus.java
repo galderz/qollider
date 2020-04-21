@@ -1271,7 +1271,7 @@ class OperatingSystem
     record EnvVar(String name, Function<Path, Path>value) {}
 }
 
-class QuarkusCheck
+final class QuarkusCheck
 {
     static void check()
     {
@@ -1528,15 +1528,15 @@ class QuarkusCheck
         void cliAdditionalTestArgsOptions()
         {
             assertThat(
-                execute("-ata", "a=b,:c|z=-y").testArgs()
+                execute("-ata", "a=b,:c|z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
-                    Map.of("a", "b,:c", "z", "-y")
+                    Map.of("a", "b,:c", "z", "-y,-Dx=w")
                 )))
             );
             assertThat(
-                execute("--additional-test-args", "a=b,:c|z=-y").testArgs()
+                execute("--additional-test-args", "a=b,:c|z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
-                    Map.of("a", "b,:c", "z", "-y")
+                    Map.of("a", "b,:c", "z", "-y,-Dx=w")
                 )))
             );
         }
