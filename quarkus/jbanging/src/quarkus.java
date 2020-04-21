@@ -42,10 +42,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
@@ -711,17 +709,16 @@ class QuarkusTest implements Runnable
     @Option(
         description = """
              Additional test arguments, each argument separated by comma (',') per suite.
-             Each suite is separated by vertical slash ('|').
-             Example: quarkus=-rf,:tika|quarkus-platform=-rf,:aws
+             Multiple occurrences are allowed to support different suites. 
+             Example: quarkus-platform=-rf,:aws,-Dquarkus.version=999-SNAPSHOT
             """
         , names =
         {
             "-ata"
             , "--additional-test-args"
         }
-        , split = "\\|"
     )
-    private final Map<String, String> additionalTestArgs = new HashMap<>();
+    private final List<String> additionalTestArgs = new ArrayList<>();
 
     private QuarkusTest(Consumer<Options> runner)
     {
@@ -774,7 +771,7 @@ class QuarkusTest implements Runnable
         static Options of(
             List<String> suites
             , List<URI> alsoTest
-            , Map<String, String> additionalTestArgs
+            , List<String> additionalTestArgs
         )
         {
             return new Options(
@@ -787,20 +784,21 @@ class QuarkusTest implements Runnable
 
     record Arguments(List<String>arguments)
     {
-        static Map<String, Arguments> of(Map<String, String> arguments)
+        static Map<String, Arguments> of(List<String> arguments)
         {
-            return arguments.entrySet().stream()
+            return arguments.stream()
+                .map(args -> args.split("=", 2))
                 .collect(
                     Collectors.toMap(
-                        Entry::getKey
-                        , Arguments::of
+                        split -> split[0]
+                        , split -> Arguments.of(split[1])
                     )
                 );
         }
 
-        private static Arguments of(Map.Entry<String, String> e)
+        private static Arguments of(String value)
         {
-            return new Arguments(Arrays.asList(e.getValue().split(",")));
+            return new Arguments(Arrays.asList(value.split(",")));
         }
     }
 
@@ -1528,15 +1526,21 @@ final class QuarkusCheck
         void cliAdditionalTestArgsOptions()
         {
             assertThat(
-                execute("-ata", "a=b,:c|z=-y,-Dx=w").testArgs()
+                execute("-ata", "a=b,:c", "-ata", "z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
-                    Map.of("a", "b,:c", "z", "-y,-Dx=w")
+                    List.of(
+                        "a=b,:c"
+                        , "z=-y,-Dx=w"
+                    )
                 )))
             );
             assertThat(
-                execute("--additional-test-args", "a=b,:c|z=-y,-Dx=w").testArgs()
+                execute("--additional-test-args", "a=b,:c", "--additional-test-args", "z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
-                    Map.of("a", "b,:c", "z", "-y,-Dx=w")
+                    List.of(
+                        "a=b,:c"
+                        , "z=-y,-Dx=w"
+                    )
                 )))
             );
         }
@@ -1605,7 +1609,7 @@ final class QuarkusCheck
             final var options = QuarkusTest.Options.of(
                 List.of("suite-a", "suite-b")
                 , Collections.emptyList()
-                , Map.of("suite-a", "p1,:p2", "suite-b", ":p3,-p4")
+                , List.of("suite-a=p1,:p2", "suite-b=:p3,-p4")
             );
             final var os = test(options);
             os.assertSize(2);
@@ -1630,7 +1634,7 @@ final class QuarkusCheck
             final var options = QuarkusTest.Options.of(
                 List.of("suite-a", "suite-b")
                 , Collections.emptyList()
-                , Collections.emptyMap()
+                , Collections.emptyList()
             );
             final var os = test(options);
             os.assertSize(2);
@@ -1646,7 +1650,7 @@ final class QuarkusCheck
             final var options = QuarkusTest.Options.of(
                 Collections.emptyList()
                 , Collections.emptyList()
-                , Collections.emptyMap()
+                , Collections.emptyList()
             );
             final var os = test(options);
             os.assertSize(1);

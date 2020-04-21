@@ -86,27 +86,6 @@ You can find out about new options by caling:
 ```bash
 ./quarkus.sh build --help
 ...
-Usage: <main class> build [-hV] [-gt=<graalTree>] [-jt=<jdkTree>]
-                          [-mt=<mxTree>] [-qt=<quarkusTree>] [-pob=<postBuild>[,
-                          <postBuild>...]]... [-prb=<preBuild>[,
-                          <preBuild>...]]...
-Build quarkus.
-      -gt, --graal-tree=<graalTree>
-                  Graal source tree URL
-      -h, --help      Show this help message and exit.
-      -jt, --jdk-tree=<jdkTree>
-                  JDK source tree URL
-      -mt, --mx-tree=<mxTree>
-                  mx source tree URL
-      -pob, --post-build=<postBuild>[,<postBuild>...]
-                  Additional projects to build after Quarkus. Separated by comma
-                    (,) character.
-      -prb, --pre-build=<preBuild>[,<preBuild>...]
-                  Additional projects to build before Quarkus. Separated by
-                    comma(,) character.
-      -qt, --quarkus-tree=<quarkusTree>
-                  Quarkus source tree URL
-      -V, --version   Print version information and exit.
 ```
 
 ## Test Quarkus
@@ -140,7 +119,7 @@ $ ./quarkus.sh test \
 ```
 
 Some times you might want to pass extra Maven parameters to the testing phase.
-For example, you might want to test a fix and you want to execute the tests starting at a particular project.
+For example, you might want to test a fix, and you want to execute the tests starting at a particular project.
 You can do so by calling:
 
 ```bash 
@@ -149,7 +128,7 @@ You can do so by calling:
 ```
 
 The additional test arguments need to be provided for a given suite.
-Hence, adding `quarkus=` means the flags are added to the main Quarkus native test execution.
+Hence, adding `quarkus=` means the flags are for the main Quarkus native test execution.
 If testing `quarkus-platform` repository, additional test arguments could be passed to that via:
 
 ```bash
@@ -160,12 +139,13 @@ If testing `quarkus-platform` repository, additional test arguments could be pas
 ```
 
 If testing both main Quarkus native tests and `quarkus-platform`,
-you can pass extra arguments to each by separating them with `|`:
+you can pass extra arguments to each using multiple occurrences of the same parameter:
 
 ```bash
 ./quarkus.sh test \
     --also-test https://github.com/quarkusio/quarkus-platform/tree/master
-    --additional-test-args quarkus=-rf,:quarkus-integration-test-tika|quarkus-platform=-rf,:quarkus-universe-integration-tests-camel-aws
+    --additional-test-args quarkus=-rf,:quarkus-integration-test-tika
+    --additional-test-args quarkus-platform=-Dcamel-quarkus.version=1.1.0-SNAPSHOT,-Dquarkus.version=999-SNAPSHOT
 ```
 
 If in doubt, you can inspect the help via:
@@ -173,24 +153,4 @@ If in doubt, you can inspect the help via:
 ```bash
 ./quarkus.sh test --help
 ...
-Usage: <main class> test [-at=<alsoTest>[,<alsoTest>...]]...
-                         [-ata=<String=String>[,<String=String>...]]...
-                         [-s=<suites>[,<suites>...]]...
-Test quarkus.
-      -at, --also-test=<alsoTest>[,<alsoTest>...]
-          Additional test URLs to download and run.
-          The order of URLs determines the order of test execution.
-
-      -ata, --additional-test-args=<String=String>[,<String=String>...]
-          Additional test arguments, each argument separated by comma (',') per
-           suite.
-          Each suite is separated by vertical slash ('|').
-          Example: quarkus=-rf,:tika|quarkus-platform=-rf,:aws
-
-      -s, --suites=<suites>[,<suites>...]
-          Test suites to only run. By default only quarkus.
-          If suites provided, only those provided in the list are executed.
-          Other suites can be referenced using the repository name, e.g
-            quarkus-platform.
-          The order of suites represents the order test execution.
 ```
