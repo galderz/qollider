@@ -27,7 +27,7 @@ installScriptJDK() {
 
 installJBang() {
     sdk install jbang ${JBANG_VERSION} || true
-    sdk use jbang ${JBANG_VERSION}
+    n | sdk use jbang ${JBANG_VERSION}
 }
 
 installMaven() {
