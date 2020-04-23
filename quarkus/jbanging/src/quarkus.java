@@ -1305,6 +1305,16 @@ final class QuarkusCheck
     static class CheckGit
     {
         @Test
+        void uri()
+        {
+            final var url = Git.URL.of(URI.create("https://github.com/openjdk/jdk11u-dev/tree/master"));
+            assertThat(url.organization(), is("openjdk"));
+            assertThat(url.name(), is("jdk11u-dev"));
+            assertThat(url.branch(), is("master"));
+            assertThat(url.url(), is("https://github.com/openjdk/jdk11u-dev/"));
+        }
+
+        @Test
         void cloneDefault()
         {
             final var os = new RecordingOperatingSystem();
