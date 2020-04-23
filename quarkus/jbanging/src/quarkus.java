@@ -1287,6 +1287,8 @@ final class QuarkusCheck
         launcher.execute(request);
         listener.getSummary().printTo(new PrintWriter(System.out));
         listener.getSummary().printFailuresTo(new PrintWriter(System.err));
+        if (listener.getSummary().getTestsFailedCount() > 0)
+            throw new AssertionError("Expected no failures");
     }
 
     private static class LoggingExtension implements BeforeAllCallback
