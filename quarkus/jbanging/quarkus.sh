@@ -2,15 +2,15 @@
 
 set -e
 
-SCRIPT_JDK_VERSION="14.0.0"
+SCRIPT_JDK_VERSION="14.0.1"
 SCRIPT_JDK="${SCRIPT_JDK_VERSION}.hs-adpt"
 SCRIPT_JDK_HOME="${HOME}/.sdkman/candidates/java/${SCRIPT_JDK}"
 
-BOOT_JDK_VERSION="11.0.6"
+BOOT_JDK_VERSION="11.0.7"
 BOOT_JDK="${BOOT_JDK_VERSION}.hs-adpt"
 BOOT_JDK_HOME="${HOME}/.sdkman/candidates/java/${BOOT_JDK}"
 
-JBANG_VERSION="0.19.0"
+JBANG_VERSION="0.22.0.2"
 
 getSdkman() {
     curl -s "https://get.sdkman.io" | bash
