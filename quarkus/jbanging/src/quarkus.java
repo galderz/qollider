@@ -554,6 +554,9 @@ class QuarkusBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
+            if (OperatingSystem.Task.isNoop(task.task()))
+                return task.marker();
+
             exec.accept(task.task());
             final var marker = task.marker();
             return marker.touch(touch);
@@ -1245,13 +1248,20 @@ class OperatingSystem
 
     record Task(Stream<String>task, Path directory, Stream<EnvVar>envVars)
     {
+        private static final Task NOOP = new Task(
+            Stream.empty()
+            , Path.of("")
+            , Stream.empty()
+        );
+
         static Task noop()
         {
-            return new Task(
-                Stream.empty()
-                , Path.of("")
-                , Stream.empty()
-            );
+            return NOOP;
+        }
+
+        static boolean isNoop(Task task)
+        {
+            return task == NOOP;
         }
     }
 
@@ -1420,19 +1430,16 @@ final class QuarkusCheck
         }
 
         @Test
-        void testGraalBuildDefault()
+        void graalBuild()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.download("graal"), false
-                )
-            );
+            final var fs = InMemoryFileSystem.empty();
             final var options = executeCli();
             final var marker = QuarkusBuild.Graal.build(
                 options
                 , fs::exists
-                , os::record, m -> true
+                , os::record
+                , m -> true
             );
             assertThat(marker.touched(), is(true));
             os.assertSize(1);
@@ -1441,6 +1448,26 @@ final class QuarkusCheck
                 assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
                 assertThat(task.directory(), is(Path.of("graal/substratevm")));
             });
+        }
+
+        @Test
+        void skipGraalBuild()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.of(
+                Map.of(
+                    Marker.build(Path.of("graal")), true
+                )
+            );
+            final var options = executeCli();
+            final var marker = QuarkusBuild.Graal.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(marker.touched(), is(false));
+            os.assertSize(0);
         }
 
         @Test
@@ -1710,6 +1737,16 @@ final class QuarkusCheck
         boolean touch(Marker marker)
         {
             return true;
+        }
+
+        static InMemoryFileSystem empty()
+        {
+            return new InMemoryFileSystem(Collections.emptyMap());
+        }
+
+        static InMemoryFileSystem of(Map<Marker, Boolean> exists)
+        {
+            return new InMemoryFileSystem(exists);
         }
     }
 
