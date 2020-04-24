@@ -1330,7 +1330,7 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Collections.emptyList();
             final var cloned = Git.clone(urls, m -> false, os::record, m -> false);
-            os.assertSize(0);
+            os.assertNumberOfTasks(0);
             assertThat(cloned.size(), is(0));
         }
 
@@ -1351,7 +1351,7 @@ final class QuarkusCheck
                 )
             );
             final var cloned = Git.clone(urls, fs::exists, os::record, fs::touch);
-            os.assertSize(1);
+            os.assertNumberOfTasks(1);
             os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
             assertThat(cloned.size(), is(1));
             assertThat(cloned.get(0).touched(), is(true));
@@ -1365,11 +1365,7 @@ final class QuarkusCheck
         void javaOpenJDK()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.download("jdk11u-dev"), false
-                )
-            );
+            final var fs = InMemoryFileSystem.empty();
             final var options = executeCli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev"
@@ -1382,7 +1378,7 @@ final class QuarkusCheck
                 , os::record, m -> true
             );
             assertThat(marker.touched(), is(true));
-            os.assertSize(2);
+            os.assertNumberOfTasks(2);
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("sh")));
@@ -1394,6 +1390,30 @@ final class QuarkusCheck
                 assertThat(task.task().findFirst(), is(Optional.of("make")));
                 assertThat(task.directory(), is(Path.of("jdk11u-dev")));
             });
+        }
+
+        @Test
+        void skipJavaOpenJDK()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.of(
+                Marker.build(Path.of("jdk11u-dev")), true
+            );
+            final var options = executeCli(
+                "--jdk-tree",
+                "https://github.com/openjdk/jdk11u-dev"
+            );
+
+            final var marker = QuarkusBuild.Java.build(
+                options
+                , os::bootJdkHome
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(false));
+            os.assertNumberOfTasks(0);
         }
 
         @Test
@@ -1410,7 +1430,7 @@ final class QuarkusCheck
             );
             assertThat(markers.size(), is(1));
             assertThat(markers.get(0).touched(), is(true));
-            os.assertSize(1);
+            os.assertNumberOfTasks(1);
             os.assertMarkerTask(task ->
             {
                 assertThat(task.task().task().findFirst(), is(Optional.of("mvn")));
@@ -1441,8 +1461,9 @@ final class QuarkusCheck
                 , os::record
                 , m -> true
             );
+            assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
-            os.assertSize(1);
+            os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
@@ -1455,9 +1476,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.of(
-                Map.of(
-                    Marker.build(Path.of("graal")), true
-                )
+                Marker.build(Path.of("graal")), true
             );
             final var options = executeCli();
             final var marker = QuarkusBuild.Graal.build(
@@ -1466,8 +1485,9 @@ final class QuarkusCheck
                 , os::record
                 , m -> true
             );
+            assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
-            os.assertSize(0);
+            os.assertNumberOfTasks(0);
         }
 
         @Test
@@ -1522,7 +1542,7 @@ final class QuarkusCheck
                 , os::record, m -> true
             );
             assertThat(marker.touched(), is(true));
-            os.assertSize(1);
+            os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("python")));
@@ -1651,7 +1671,7 @@ final class QuarkusCheck
                 , List.of("suite-a=p1,:p2", "suite-b=:p3,-p4")
             );
             final var os = test(options);
-            os.assertSize(2);
+            os.assertNumberOfTasks(2);
             os.assertTask(t ->
                 assertThat(
                     t.task().collect(Collectors.joining(" "))
@@ -1676,7 +1696,7 @@ final class QuarkusCheck
                 , Collections.emptyList()
             );
             final var os = test(options);
-            os.assertSize(2);
+            os.assertNumberOfTasks(2);
             os.assertAllTasks(t -> assertThat(t.task().findFirst(), is(Optional.of("mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
             os.forward();
@@ -1692,7 +1712,7 @@ final class QuarkusCheck
                 , Collections.emptyList()
             );
             final var os = test(options);
-            os.assertSize(1);
+            os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("mvn")));
@@ -1744,9 +1764,9 @@ final class QuarkusCheck
             return new InMemoryFileSystem(Collections.emptyMap());
         }
 
-        static InMemoryFileSystem of(Map<Marker, Boolean> exists)
+        static InMemoryFileSystem of(Marker marker, boolean exists)
         {
-            return new InMemoryFileSystem(exists);
+            return new InMemoryFileSystem(Map.of(marker, exists));
         }
     }
 
@@ -1776,7 +1796,7 @@ final class QuarkusCheck
             return Path.of("boot/jdk/home");
         }
 
-        void assertSize(int size)
+        void assertNumberOfTasks(int size)
         {
             assertThat(tasks.size(), is(size));
         }
