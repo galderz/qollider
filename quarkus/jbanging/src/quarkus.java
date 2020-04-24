@@ -1417,7 +1417,7 @@ final class QuarkusCheck
         }
 
         @Test
-        void testMavenBuildDefault()
+        void maven()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(Collections.emptyMap());
@@ -1429,6 +1429,7 @@ final class QuarkusCheck
                 , m -> true
             );
             assertThat(markers.size(), is(1));
+            assertThat(markers.get(0).exists(), is(true));
             assertThat(markers.get(0).touched(), is(true));
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(task ->
@@ -1436,6 +1437,24 @@ final class QuarkusCheck
                 assertThat(task.task().task().findFirst(), is(Optional.of("mvn")));
                 assertThat(task.task().directory(), is(Path.of("quarkus")));
             });
+        }
+
+        @Test
+        void skipMaven()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.of(
+                Marker.build(Path.of("quarkus")), true
+            );
+            final var options = executeCli();
+            final var markers = QuarkusBuild.Maven.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(markers.size(), is(0));
+            os.assertNumberOfTasks(0);
         }
 
         @Test
