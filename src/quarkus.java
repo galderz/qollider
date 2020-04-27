@@ -243,6 +243,7 @@ class GraalGet implements Runnable
         public void accept(Options options)
         {
             Graal.get(options, fs::exists, web::download, os::exec, fs::touch);
+            Graal.link(fs::symlink);
         }
     }
 
@@ -331,6 +332,13 @@ class GraalGet implements Runnable
                 )
                 , marker
             );
+        }
+
+        public static void link(BiFunction<Path, Path, Link> symLink)
+        {
+            final var target = Path.of("graal");
+            final var link = Homes.graal();
+            symLink.apply(link, target);
         }
     }
 
