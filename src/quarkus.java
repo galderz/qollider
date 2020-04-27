@@ -1555,7 +1555,7 @@ final class Web
             final var urlChannel = Channels.newChannel(url.openStream());
 
             final var resolvedPath = fs.root.resolve(path);
-            FileSystem.mkdirs(resolvedPath);
+            FileSystem.mkdirs(resolvedPath.getParent());
 
             final var os = new FileOutputStream(resolvedPath.toFile());
             final var fileChannel = os.getChannel();
