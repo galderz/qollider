@@ -76,13 +76,15 @@ public class quarkus implements Runnable
         final var fs = FileSystem.ofSystem();
         final var os = new OperatingSystem(fs);
 
+        final var graalBuild = GraalBuild.ofSystem(fs, os);
+        final var quarkusBuild = QuarkusBuild.ofSystem(fs, os);
         final var quarkusClean = QuarkusClean.ofSystem(fs);
         final var quarkusTest = QuarkusTest.ofSystem(fs, os);
-        final var quarkusBuild = QuarkusBuild.ofSystem(fs, os);
 
         int exitCode = new CommandLine(new quarkus())
-            .addSubcommand("clean", quarkusClean)
+            .addSubcommand("graal-build", graalBuild)
             .addSubcommand("build", quarkusBuild)
+            .addSubcommand("clean", quarkusClean)
             .addSubcommand("test", quarkusTest)
             .setCaseInsensitiveEnumValuesAllowed(true)
             .execute(args);
@@ -171,15 +173,15 @@ class QuarkusClean implements Runnable
 }
 
 @Command(
-    name = "build"
-    , aliases = {"b"}
-    , description = "Build quarkus."
+    name = "graal-build"
+    , aliases = {"gb"}
+    , description = "Build Graal."
     , mixinStandardHelpOptions = true
 )
-class QuarkusBuild implements Runnable
+class GraalBuild implements Runnable
 {
     // TODO add namespace info
-    static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
+    static final Logger LOG = LogManager.getLogger(GraalBuild.class);
 
     private final Consumer<Options> runner;
 
@@ -216,52 +218,19 @@ class QuarkusBuild implements Runnable
     )
     URI graalTree;
 
-    @Option(
-        description = "Additional projects to build before Quarkus. Separated by comma(,) character."
-        , names =
-        {
-            "-prb"
-            , "--pre-build"
-        }
-        , split = ","
-    )
-    List<URI> preBuild = new ArrayList<>();
-
-    @Option(
-        description = "Additional projects to build after Quarkus. Separated by comma(,) character."
-        , names =
-        {
-            "-pob"
-            , "--post-build"
-        }
-        , split = ","
-    )
-    List<URI> postBuild = new ArrayList<>();
-
-    @Option(
-        defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
-        , description = "Quarkus source tree URL"
-        , names =
-        {
-            "-qt"
-            , "--quarkus-tree"
-        }
-    )
-    URI quarkusTree;
-
-    private QuarkusBuild(Consumer<Options> runner)
+    private GraalBuild(Consumer<Options> runner)
     {
         this.runner = runner;
     }
 
-    static QuarkusBuild ofSystem(FileSystem fs, OperatingSystem os)
+    static GraalBuild ofSystem(FileSystem fs, OperatingSystem os)
     {
-        return new QuarkusBuild(new QuarkusBuild.RunBuild(fs, os));
+        return new GraalBuild(new GraalBuild.RunBuild(fs, os));
     }
 
-    static QuarkusBuild of(Consumer<QuarkusBuild.Options> runner)
+    static GraalBuild of(Consumer<Options> runner)
     {
-        return new QuarkusBuild(runner);
+        return new GraalBuild(runner);
     }
 
     @Override
@@ -272,9 +241,6 @@ class QuarkusBuild implements Runnable
             jdkTree
             , mxTree
             , graalTree
-            , preBuild
-            , quarkusTree
-            , postBuild
         );
         LOG.info(options);
         runner.accept(options);
@@ -301,8 +267,6 @@ class QuarkusBuild implements Runnable
 
             Graal.build(options, fs::exists, os::exec, fs::touch);
             Graal.link(options, fs::symlink);
-
-            Maven.build(options, fs::exists, os::exec, fs::touch);
         }
     }
 
@@ -310,27 +274,18 @@ class QuarkusBuild implements Runnable
         Git.URL jdk
         , Git.URL mx
         , Git.URL graal
-        , List<Git.URL> preBuild
-        , Git.URL quarkus
-        , List<Git.URL> postBuild
     )
     {
         static Options of(
             URI jdk
             , URI mx
             , URI graal
-            , List<URI> preBuild
-            , URI quarkus
-            , List<URI> postBuild
         )
         {
             return new Options(
                 Git.URL.of(jdk)
                 , Git.URL.of(mx)
                 , Git.URL.of(graal)
-                , Git.URL.of(preBuild)
-                , Git.URL.of(quarkus)
-                , Git.URL.of(postBuild)
             );
         }
 
@@ -340,9 +295,6 @@ class QuarkusBuild implements Runnable
             urls.add(options.jdk);
             urls.add(options.mx);
             urls.add(options.graal);
-            urls.addAll(options.preBuild);
-            urls.add(options.quarkus);
-            urls.addAll(options.postBuild);
             return urls;
         }
     }
@@ -434,7 +386,7 @@ class QuarkusBuild implements Runnable
             {
                 return java.name.resolve(
                     Path.of(
-                         "build"
+                        "build"
                         , "graal-server-release"
                         , "images"
                         , "graal-builder-jdk"
@@ -594,6 +546,128 @@ class QuarkusBuild implements Runnable
         static Path svm(Graal graal)
         {
             return graal.name.resolve("substratevm");
+        }
+    }
+}
+
+@Command(
+    name = "build"
+    , aliases = {"b"}
+    , description = "Build quarkus."
+    , mixinStandardHelpOptions = true
+)
+class QuarkusBuild implements Runnable
+{
+    // TODO add namespace info
+    static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
+
+    private final Consumer<Options> runner;
+
+    @Option(
+        description = "Additional projects to build before Quarkus. Separated by comma(,) character."
+        , names =
+        {
+            "-prb"
+            , "--pre-build"
+        }
+        , split = ","
+    )
+    List<URI> preBuild = new ArrayList<>();
+
+    @Option(
+        description = "Additional projects to build after Quarkus. Separated by comma(,) character."
+        , names =
+        {
+            "-pob"
+            , "--post-build"
+        }
+        , split = ","
+    )
+    List<URI> postBuild = new ArrayList<>();
+
+    @Option(
+        defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
+        , description = "Quarkus source tree URL"
+        , names =
+        {
+            "-qt"
+            , "--quarkus-tree"
+        }
+    )
+    URI quarkusTree;
+
+    private QuarkusBuild(Consumer<Options> runner)
+    {
+        this.runner = runner;
+    }
+
+    static QuarkusBuild ofSystem(FileSystem fs, OperatingSystem os)
+    {
+        return new QuarkusBuild(new QuarkusBuild.RunBuild(fs, os));
+    }
+
+    static QuarkusBuild of(Consumer<QuarkusBuild.Options> runner)
+    {
+        return new QuarkusBuild(runner);
+    }
+
+    @Override
+    public void run()
+    {
+        LOG.info("Build");
+        final var options = Options.of(
+            preBuild
+            , quarkusTree
+            , postBuild
+        );
+        LOG.info(options);
+        runner.accept(options);
+    }
+
+    final static class RunBuild implements Consumer<Options>
+    {
+        final FileSystem fs;
+        final OperatingSystem os;
+
+        RunBuild(FileSystem fs, OperatingSystem os)
+        {
+            this.fs = fs;
+            this.os = os;
+        }
+
+        @Override
+        public void accept(Options options)
+        {
+            Git.clone(Options.urls(options), fs::exists, os::exec, fs::touch);
+            Maven.build(options, fs::exists, os::exec, fs::touch);
+        }
+    }
+
+    record Options(
+        List<Git.URL> preBuild
+        , Git.URL quarkus
+        , List<Git.URL> postBuild
+    )
+    {
+        static Options of(
+            List<URI> preBuild
+            , URI quarkus
+            , List<URI> postBuild
+        )
+        {
+            return new Options(
+                Git.URL.of(preBuild)
+                , Git.URL.of(quarkus)
+                , Git.URL.of(postBuild)
+            );
+        }
+
+        static List<Git.URL> urls(Options options)
+        {
+            final var urls = new ArrayList<>(options.preBuild);
+            urls.add(options.quarkus);
+            urls.addAll(options.postBuild);
+            return urls;
         }
     }
 
@@ -1288,6 +1362,7 @@ final class QuarkusCheck
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
+                , selectClass(CheckGraalBuild.class)
                 , selectClass(CheckBuild.class)
                 , selectClass(CheckTest.class)
             )
@@ -1359,19 +1434,45 @@ final class QuarkusCheck
     }
 
     @ExtendWith(LoggingExtension.class)
-    static class CheckBuild
+    static class CheckGraalBuild
     {
+        @Test
+        void javaLabsJDK()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(
+                Map.of(
+                    Marker.download("labs-openjdk-11"), false
+                )
+            );
+            final var options = cli();
+
+            final var marker = GraalBuild.Java.build(
+                options
+                , os::bootJdkHome
+                , fs::exists
+                , os::record, m -> true
+            );
+            assertThat(marker.touched(), is(true));
+            os.assertNumberOfTasks(1);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("python")));
+                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
+            });
+        }
+
         @Test
         void javaOpenJDK()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.empty();
-            final var options = executeCli(
+            final var options = cli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev"
             );
 
-            final var marker = QuarkusBuild.Java.build(
+            final var marker = GraalBuild.Java.build(
                 options
                 , os::bootJdkHome
                 , fs::exists
@@ -1399,12 +1500,12 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.of(
                 Marker.build(Path.of("jdk11u-dev")), true
             );
-            final var options = executeCli(
+            final var options = cli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev"
             );
 
-            final var marker = QuarkusBuild.Java.build(
+            final var marker = GraalBuild.Java.build(
                 options
                 , os::bootJdkHome
                 , fs::exists
@@ -1415,13 +1516,119 @@ final class QuarkusCheck
             assertThat(marker.touched(), is(false));
             os.assertNumberOfTasks(0);
         }
+        @Test
+        void graalLink()
+        {
+            final var options = cli();
+            final var linked = GraalBuild.Graal.link(
+                options
+                , Link::new
+            );
+            assertThat(linked.link(), is(Homes.graal()));
+        }
 
+        @Test
+        void graalBuild()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.empty();
+            final var options = cli();
+            final var marker = GraalBuild.Graal.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(true));
+            os.assertNumberOfTasks(1);
+            os.assertTask(task ->
+            {
+                assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
+                assertThat(task.directory(), is(Path.of("graal/substratevm")));
+            });
+        }
+
+        @Test
+        void skipGraalBuild()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.of(
+                Marker.build(Path.of("graal")), true
+            );
+            final var options = cli();
+            final var marker = GraalBuild.Graal.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(false));
+            os.assertNumberOfTasks(0);
+        }
+
+        @Test
+        void labsJDKLink()
+        {
+            final var options = cli();
+            final var linked = GraalBuild.Java.link(
+                options
+                , Link::new
+            );
+            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
+        }
+
+        @Test
+        void openJDKLink()
+        {
+            final var options = cli(
+                "--jdk-tree",
+                "https://github.com/openjdk/jdk11u-dev"
+            );
+            final var linked = GraalBuild.Java.link(
+                options
+                , Link::new
+            );
+            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.target(),
+                is(Path.of(
+                    "jdk11u-dev"
+                    , "build"
+                    , "graal-server-release"
+                    , "images"
+                    , "graal-builder-jdk"
+                )));
+        }
+
+        private static GraalBuild.Options cli(String... extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("graal-build");
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var recorder = new OptionsRecorder<GraalBuild.Options>();
+            final var command = GraalBuild.of(recorder);
+            new CommandLine(new quarkus())
+                .addSubcommand("graal-build", command)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+            return recorder.options;
+        }
+    }
+
+    @ExtendWith(LoggingExtension.class)
+    static class CheckBuild
+    {
         @Test
         void maven()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(Collections.emptyMap());
-            final var options = executeCli();
+            final var options = cli();
             final var markers = QuarkusBuild.Maven.build(
                 options
                 , fs::exists
@@ -1446,7 +1653,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.of(
                 Marker.build(Path.of("quarkus")), true
             );
-            final var options = executeCli();
+            final var options = cli();
             final var markers = QuarkusBuild.Maven.build(
                 options
                 , fs::exists
@@ -1457,119 +1664,7 @@ final class QuarkusCheck
             os.assertNumberOfTasks(0);
         }
 
-        @Test
-        void graalLink()
-        {
-            final var options = executeCli();
-            final var linked = QuarkusBuild.Graal.link(
-                options
-                , Link::new
-            );
-            assertThat(linked.link(), is(Homes.graal()));
-        }
-
-        @Test
-        void graalBuild()
-        {
-            final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.empty();
-            final var options = executeCli();
-            final var marker = QuarkusBuild.Graal.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
-                assertThat(task.directory(), is(Path.of("graal/substratevm")));
-            });
-        }
-
-        @Test
-        void skipGraalBuild()
-        {
-            final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.of(
-                Marker.build(Path.of("graal")), true
-            );
-            final var options = executeCli();
-            final var marker = QuarkusBuild.Graal.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(false));
-            os.assertNumberOfTasks(0);
-        }
-
-        @Test
-        void labsJDKLink()
-        {
-            final var options = executeCli();
-            final var linked = QuarkusBuild.Java.link(
-                options
-                , Link::new
-            );
-            assertThat(linked.link(), is(Homes.java()));
-            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
-        }
-
-        @Test
-        void openJDKLink()
-        {
-            final var options = executeCli(
-                "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev"
-            );
-            final var linked = QuarkusBuild.Java.link(
-                options
-                , Link::new
-            );
-            assertThat(linked.link(), is(Homes.java()));
-            assertThat(linked.target(),
-                is(Path.of(
-                    "jdk11u-dev"
-                    , "build"
-                    , "graal-server-release"
-                    , "images"
-                    , "graal-builder-jdk"
-                )));
-        }
-
-        @Test
-        void testJavaBuildDefault()
-        {
-            final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.download("labs-openjdk-11"), false
-                )
-            );
-            final var options = executeCli();
-
-            final var marker = QuarkusBuild.Java.build(
-                options
-                , os::bootJdkHome
-                , fs::exists
-                , os::record, m -> true
-            );
-            assertThat(marker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.task().findFirst(), is(Optional.of("python")));
-                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
-            });
-        }
-
-        private static QuarkusBuild.Options executeCli(String... extra)
+        private static QuarkusBuild.Options cli(String... extra)
         {
             final List<String> list = new ArrayList<>();
             list.add("build");
@@ -1577,7 +1672,7 @@ final class QuarkusCheck
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var recorder = new OptionsRecorder();
+            final var recorder = new OptionsRecorder<QuarkusBuild.Options>();
             final var quarkusBuild = QuarkusBuild.of(recorder);
             new CommandLine(new quarkus())
                 .addSubcommand("build", quarkusBuild)
@@ -1586,16 +1681,6 @@ final class QuarkusCheck
             return recorder.options;
         }
 
-        private static final class OptionsRecorder implements Consumer<QuarkusBuild.Options>
-        {
-            QuarkusBuild.Options options;
-
-            @Override
-            public void accept(QuarkusBuild.Options options)
-            {
-                this.options = options;
-            }
-        }
     }
 
     static class CheckTest
@@ -1852,6 +1937,17 @@ final class QuarkusCheck
         private <T> T peekTask()
         {
             return (T) tasks.peek();
+        }
+    }
+
+    private static final class OptionsRecorder<T> implements Consumer<T>
+    {
+        T options;
+
+        @Override
+        public void accept(T options)
+        {
+            this.options = options;
         }
     }
 
