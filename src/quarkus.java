@@ -33,6 +33,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URI;
+import java.net.URL;
+import java.nio.channels.Channels;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -47,6 +49,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -75,14 +78,17 @@ public class quarkus implements Runnable
 
         final var fs = FileSystem.ofSystem();
         final var os = new OperatingSystem(fs);
+        final var web = new Web(fs);
 
         final var graalBuild = GraalBuild.ofSystem(fs, os);
+        final var graalGet = GraalGet.ofSystem(fs, os, web);
         final var quarkusBuild = QuarkusBuild.ofSystem(fs, os);
         final var quarkusClean = QuarkusClean.ofSystem(fs);
         final var quarkusTest = QuarkusTest.ofSystem(fs, os);
 
         int exitCode = new CommandLine(new quarkus())
             .addSubcommand("graal-build", graalBuild)
+            .addSubcommand("graal-get", graalGet)
             .addSubcommand("build", quarkusBuild)
             .addSubcommand("clean", quarkusClean)
             .addSubcommand("test", quarkusTest)
@@ -170,6 +176,165 @@ class QuarkusClean implements Runnable
                 .forEach(delete);
         }
     }
+}
+
+@Command(
+    name = "graal-get"
+    , aliases = {"gg"}
+    , description = "Get Graal."
+    , mixinStandardHelpOptions = true
+)
+class GraalGet implements Runnable
+{
+    // TODO add namespace info
+    static final Logger LOG = LogManager.getLogger(GraalBuild.class);
+
+    private final Consumer<Options> runner;
+
+    @Option(
+        description = "URL of distribution"
+        , names =
+        {
+            "-u"
+            , "--url"
+        }
+        , required = true
+    )
+    URL url;
+
+    private GraalGet(Consumer<Options> runner)
+    {
+        this.runner = runner;
+    }
+
+    static GraalGet ofSystem(FileSystem fs, OperatingSystem os, Web web)
+    {
+        return new GraalGet(new GraalGet.RunGet(fs, os, web));
+    }
+
+    static GraalGet of(Consumer<Options> runner)
+    {
+        return new GraalGet(runner);
+    }
+
+    @Override
+    public void run()
+    {
+        LOG.info("Graal Get");
+        final var options = new Options(url);
+        LOG.info(options);
+        runner.accept(options);
+    }
+
+    final static class RunGet implements Consumer<Options>
+    {
+        final FileSystem fs;
+        final OperatingSystem os;
+        final Web web;
+
+        RunGet(FileSystem fs, OperatingSystem os, Web web)
+        {
+            this.fs = fs;
+            this.os = os;
+            this.web = web;
+        }
+
+        @Override
+        public void accept(Options options)
+        {
+            Graal.get(options, fs::exists, web::download, os::exec, fs::touch);
+        }
+    }
+
+    static final class Graal
+    {
+        static List<Marker> get(
+            Options options
+            , Predicate<Marker> exists
+            , BiConsumer<URL, Path> download
+            , Consumer<OperatingSystem.Task> exec
+            , Function<Marker, Boolean> touch
+        )
+        {
+            final var downloadMarker = Graal.download(options, exists, download);
+            return Arrays.asList(
+                downloadMarker
+                , Graal.extract(downloadMarker.path(), exists, exec, touch)
+            );
+        }
+
+        private static Marker download(
+            Options options
+            , Predicate<Marker> exists
+            , BiConsumer<URL, Path> download
+        )
+        {
+            final var url = options.url;
+            final var fileName = url.getFile();
+            final var path = Path.of("downloads", fileName);
+
+            final var marker = Marker.of( path).query(exists);
+            if (marker.exists())
+                return marker;
+
+            download.accept(url, path);
+            // No touching to be done, the file is the marker
+            return marker.touch(m -> true);
+        }
+
+        private static Marker extract(
+            Path tar
+            , Predicate<Marker> exists
+            , Consumer<OperatingSystem.Task> exec
+            , Function<Marker, Boolean> touch
+        )
+        {
+            final var target = Path.of("graal");
+            final var task = toExtract(tar, target, exists);
+            return doExtract(task, exec, touch);
+        }
+
+        private static Marker doExtract(
+            OperatingSystem.MarkerTask task
+            , Consumer<OperatingSystem.Task> exec
+            , Function<Marker, Boolean> touch
+        )
+        {
+            exec.accept(task.task());
+            final var marker = task.marker();
+            return marker.touch(touch);
+        }
+
+        private static OperatingSystem.MarkerTask toExtract(
+            Path tar
+            , Path target
+            , Predicate<Marker> exists
+        )
+        {
+            final var marker = Marker.extract(target).query(exists);
+            if (marker.exists())
+                return OperatingSystem.MarkerTask.noop(marker);
+
+            return new OperatingSystem.MarkerTask(
+                new OperatingSystem.Task(
+                    Stream.of(
+                        "tar"
+                        , "-xzvpf"
+                        , tar.toString()
+                        , "-C"
+                        , target.toString()
+                        , "--strip-components"
+                        , "1"
+                    )
+                    , Path.of("")
+                    , Stream.empty()
+                )
+                , marker
+            );
+        }
+    }
+
+    record Options(URL url) {}
 }
 
 @Command(
@@ -644,9 +809,9 @@ class QuarkusBuild implements Runnable
     }
 
     record Options(
-        List<Git.URL> preBuild
+        List<Git.URL>preBuild
         , Git.URL quarkus
-        , List<Git.URL> postBuild
+        , List<Git.URL>postBuild
     )
     {
         static Options of(
@@ -1022,7 +1187,7 @@ class Git
 
     private static Git.MarkerURL markerURL(Git.URL url)
     {
-        return new Git.MarkerURL(url, Marker.download(url.name()));
+        return new Git.MarkerURL(url, Marker.clone(url.name()));
     }
 
     private static OperatingSystem.MarkerTask cloneTask(Git.MarkerURL url)
@@ -1134,12 +1299,22 @@ record Marker(boolean exists, boolean touched, Path path)
 
     static Marker build(Path path)
     {
-        return new Marker(false, false, path.resolve("build.marker"));
+        return of(path.resolve("build.marker"));
     }
 
-    static Marker download(String dirName)
+    static Marker clone(String dirName)
     {
-        return new Marker(false, false, Path.of(dirName, "download.marker"));
+        return of(Path.of(dirName, "clone.marker"));
+    }
+
+    static Marker extract(Path path)
+    {
+        return of(path.resolve("extract.marker"));
+    }
+
+    static Marker of(Path path)
+    {
+        return new Marker(false, false, path);
     }
 }
 
@@ -1302,7 +1477,7 @@ class OperatingSystem
 
             Process process = processBuilder.start();
 
-            if (process.waitFor()!=0)
+            if (process.waitFor() != 0)
             {
                 throw new RuntimeException(
                     "Failed, exit code: " + process.exitValue()
@@ -1353,6 +1528,34 @@ class OperatingSystem
     record EnvVar(String name, Function<Path, Path>value) {}
 }
 
+final class Web
+{
+    final FileSystem fs;
+
+    Web(FileSystem fs)
+    {
+        this.fs = fs;
+    }
+
+    void download(URL url, Path path)
+    {
+        try
+        {
+            final var urlChannel = Channels.newChannel(url.openStream());
+
+            final var resolvedPath = fs.root.resolve(path);
+            final var os = new FileOutputStream(resolvedPath.toFile());
+            final var fileChannel = os.getChannel();
+
+            fileChannel.transferFrom(urlChannel, 0, Long.MAX_VALUE);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
 final class QuarkusCheck
 {
     static void check()
@@ -1363,6 +1566,7 @@ final class QuarkusCheck
             .selectors(
                 selectClass(CheckGit.class)
                 , selectClass(CheckGraalBuild.class)
+                , selectClass(CheckGraalGet.class)
                 , selectClass(CheckBuild.class)
                 , selectClass(CheckTest.class)
             )
@@ -1414,8 +1618,8 @@ final class QuarkusCheck
         {
             final var fs = new InMemoryFileSystem(
                 Map.of(
-                    Marker.download("repo-a"), true
-                    , Marker.download("repo-b"), false
+                    Marker.clone("repo-a"), true
+                    , Marker.clone("repo-b"), false
                 )
             );
             final var os = new RecordingOperatingSystem();
@@ -1442,7 +1646,7 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(
                 Map.of(
-                    Marker.download("labs-openjdk-11"), false
+                    Marker.clone("labs-openjdk-11"), false
                 )
             );
             final var options = cli();
@@ -1497,8 +1701,8 @@ final class QuarkusCheck
         void skipJavaOpenJDK()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.of(
-                Marker.build(Path.of("jdk11u-dev")), true
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.build(Path.of("jdk11u-dev"))
             );
             final var options = cli(
                 "--jdk-tree",
@@ -1516,6 +1720,7 @@ final class QuarkusCheck
             assertThat(marker.touched(), is(false));
             os.assertNumberOfTasks(0);
         }
+
         @Test
         void graalLink()
         {
@@ -1553,8 +1758,8 @@ final class QuarkusCheck
         void skipGraalBuild()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.of(
-                Marker.build(Path.of("graal")), true
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.build(Path.of("graal"))
             );
             final var options = cli();
             final var marker = GraalBuild.Graal.build(
@@ -1621,6 +1826,132 @@ final class QuarkusCheck
     }
 
     @ExtendWith(LoggingExtension.class)
+    static class CheckGraalGet
+    {
+        @Test
+        void graalGet()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.empty();
+            final BiConsumer<URL, Path> download = (url, path) -> {};
+            final var options = cli(
+                "--url",
+                "https://doestnotexist.com/archive.tar.gz"
+            );
+            final var markers = GraalGet.Graal.get(
+                options
+                , fs::exists
+                , download
+                , os::record
+                , fs::touch
+            );
+            assertThat(markers.size(), is(2));
+            final var downloadMarker = markers.get(0);
+            assertThat(downloadMarker.exists(), is(true));
+            assertThat(downloadMarker.touched(), is(true));
+            final var extractMarker = markers.get(1);
+            assertThat(extractMarker.exists(), is(true));
+            assertThat(extractMarker.touched(), is(true));
+        }
+
+        @Test
+        void skipDownloadAndExtract()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.of(Path.of("downloads", "archive.tar.gz"))
+                , Marker.extract(Path.of("graal"))
+            );
+            final BiConsumer<URL, Path> download = (url, path) -> {};
+            final var options = cli(
+                "--url",
+                "https://doestnotexist.com/archive.tar.gz"
+            );
+            final var markers = GraalGet.Graal.get(
+                options
+                , fs::exists
+                , download
+                , os::record
+                , fs::touch
+            );
+            assertThat(markers.size(), is(2));
+            final var downloadMarker = markers.get(0);
+            assertThat(downloadMarker.exists(), is(true));
+            assertThat(downloadMarker.touched(), is(false));
+            final var extractMarker = markers.get(1);
+            assertThat(extractMarker.exists(), is(true));
+            assertThat(extractMarker.touched(), is(false));
+        }
+
+        @Test
+        void skipDownload()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.of(Path.of("downloads", "archive.tar.gz"))
+            );
+            final BiConsumer<URL, Path> download = (url, path) -> {};
+            final var options = cli(
+                "--url",
+                "https://doestnotexist.com/archive.tar.gz"
+            );
+            final var markers = GraalGet.Graal.get(
+                options
+                , fs::exists
+                , download
+                , os::record
+                , fs::touch
+            );
+            assertThat(markers.size(), is(2));
+            final var downloadMarker = markers.get(0);
+            assertThat(downloadMarker.exists(), is(true));
+            assertThat(downloadMarker.touched(), is(false));
+            final var extractMarker = markers.get(1);
+            assertThat(extractMarker.exists(), is(true));
+            assertThat(extractMarker.touched(), is(true));
+        }
+
+        @Test
+        void missingURL()
+        {
+            final var result = cliError();
+            assertThat(result, not(0));
+        }
+
+        private static int cliError()
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("graal-get");
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var recorder = new OptionsRecorder<GraalGet.Options>();
+            final var command = GraalGet.of(recorder);
+            return new CommandLine(new quarkus())
+                .addSubcommand("graal-get", command)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+        }
+
+        private static GraalGet.Options cli(String... extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("graal-get");
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var recorder = new OptionsRecorder<GraalGet.Options>();
+            final var command = GraalGet.of(recorder);
+            new CommandLine(new quarkus())
+                .addSubcommand("graal-get", command)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+            return recorder.options;
+        }
+    }
+
+    @ExtendWith(LoggingExtension.class)
     static class CheckBuild
     {
         @Test
@@ -1650,8 +1981,8 @@ final class QuarkusCheck
         void skipMaven()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.of(
-                Marker.build(Path.of("quarkus")), true
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.build(Path.of("quarkus"))
             );
             final var options = cli();
             final var markers = QuarkusBuild.Maven.build(
@@ -1868,9 +2199,13 @@ final class QuarkusCheck
             return new InMemoryFileSystem(Collections.emptyMap());
         }
 
-        static InMemoryFileSystem of(Marker marker, boolean exists)
+        static InMemoryFileSystem ofExists(Marker... markers)
         {
-            return new InMemoryFileSystem(Map.of(marker, exists));
+            final var map = Stream.of(markers)
+                .collect(
+                    Collectors.toMap(Function.identity(), marker -> true)
+                );
+            return new InMemoryFileSystem(map);
         }
     }
 
