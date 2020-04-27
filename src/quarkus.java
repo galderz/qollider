@@ -275,8 +275,8 @@ class GraalGet implements Runnable
         )
         {
             final var url = options.url;
-            final var fileName = url.getFile();
-            final var path = Path.of("downloads", fileName);
+            final var fileName = Path.of(url.getFile()).getFileName();
+            final var path = Path.of("downloads").resolve(fileName);
 
             final var marker = Marker.of( path).query(exists);
             if (marker.exists())
@@ -1359,7 +1359,7 @@ class FileSystem
         return new FileSystem(mkdirs(path));
     }
 
-    private static Path mkdirs(Path path)
+    static Path mkdirs(Path path)
     {
         final var directory = path.toFile();
         if (!directory.exists() && !directory.mkdirs())
@@ -1371,11 +1371,6 @@ class FileSystem
         }
 
         return path;
-    }
-
-    private FileSystem(Path root)
-    {
-        this.root = root;
     }
 
     boolean exists(Marker marker)
@@ -1446,6 +1441,11 @@ class FileSystem
         {
             throw new RuntimeException(e);
         }
+    }
+
+    private FileSystem(Path root)
+    {
+        this.root = root;
     }
 }
 
@@ -1555,6 +1555,8 @@ final class Web
             final var urlChannel = Channels.newChannel(url.openStream());
 
             final var resolvedPath = fs.root.resolve(path);
+            FileSystem.mkdirs(resolvedPath);
+
             final var os = new FileOutputStream(resolvedPath.toFile());
             final var fileChannel = os.getChannel();
 
