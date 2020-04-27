@@ -1088,7 +1088,7 @@ class FileSystem
 
         var baseDir = Path.of(
             System.getProperty("user.home")
-            , "target"
+            , "workspace"
             , "quarkus-with-graal"
         );
         LOG.info("Base directory: {}", baseDir);
