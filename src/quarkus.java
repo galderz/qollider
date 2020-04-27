@@ -187,7 +187,7 @@ class QuarkusClean implements Runnable
 class GraalGet implements Runnable
 {
     // TODO add namespace info
-    static final Logger LOG = LogManager.getLogger(GraalBuild.class);
+    static final Logger LOG = LogManager.getLogger(GraalGet.class);
 
     private final Consumer<Options> runner;
 
@@ -242,6 +242,7 @@ class GraalGet implements Runnable
         @Override
         public void accept(Options options)
         {
+            fs.mkdirs(options.graal);
             Graal.get(options, fs::exists, web::download, os::exec, fs::touch);
             Graal.link(options, fs::symlink);
         }
@@ -1356,21 +1357,26 @@ class FileSystem
         final var path = baseDir.resolve(today);
         LOG.info("Root path: {}", path);
 
-        return new FileSystem(mkdirs(path));
+        return new FileSystem(idempotentMkDirs(path));
     }
 
-    static Path mkdirs(Path path)
+    private static Path idempotentMkDirs(Path directory)
     {
-        final var directory = path.toFile();
-        if (!directory.exists() && !directory.mkdirs())
+        final var directoryFile = directory.toFile();
+        if (!directoryFile.exists() && !directoryFile.mkdirs())
         {
             throw new RuntimeException(String.format(
-                "Unable to create path: %s"
-                , path)
+                "Unable to create directory: %s"
+                , directory)
             );
         }
 
-        return path;
+        return directory;
+    }
+
+    Path mkdirs(Path directory)
+    {
+        return FileSystem.idempotentMkDirs(root.resolve(directory));
     }
 
     boolean exists(Marker marker)
@@ -1548,16 +1554,17 @@ final class Web
         this.fs = fs;
     }
 
-    void download(URL url, Path path)
+    void download(URL url, Path file)
     {
         try
         {
             final var urlChannel = Channels.newChannel(url.openStream());
 
-            final var resolvedPath = fs.root.resolve(path);
-            FileSystem.mkdirs(resolvedPath.getParent());
+            // Create any parent directories as needed
+            fs.mkdirs(file.getParent());
 
-            final var os = new FileOutputStream(resolvedPath.toFile());
+            final var path = fs.root.resolve(file);
+            final var os = new FileOutputStream(path.toFile());
             final var fileChannel = os.getChannel();
 
             fileChannel.transferFrom(urlChannel, 0, Long.MAX_VALUE);
