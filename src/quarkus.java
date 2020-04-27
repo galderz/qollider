@@ -221,7 +221,7 @@ class GraalGet implements Runnable
     public void run()
     {
         LOG.info("Graal Get");
-        final var options = new Options(url);
+        final var options = new Options(url, Path.of("graal"));
         LOG.info(options);
         runner.accept(options);
     }
@@ -243,7 +243,7 @@ class GraalGet implements Runnable
         public void accept(Options options)
         {
             Graal.get(options, fs::exists, web::download, os::exec, fs::touch);
-            Graal.link(fs::symlink);
+            Graal.link(options, fs::symlink);
         }
     }
 
@@ -258,10 +258,14 @@ class GraalGet implements Runnable
         )
         {
             final var downloadMarker = Graal.download(options, exists, download);
-            return Arrays.asList(
-                downloadMarker
-                , Graal.extract(downloadMarker.path(), exists, exec, touch)
+            final var extractMarker = Graal.extract(
+                options
+                , downloadMarker.path()
+                , exists
+                , exec
+                , touch
             );
+            return Arrays.asList(downloadMarker, extractMarker);
         }
 
         private static Marker download(
@@ -284,14 +288,14 @@ class GraalGet implements Runnable
         }
 
         private static Marker extract(
-            Path tar
+            Options options
+            , Path tar
             , Predicate<Marker> exists
             , Consumer<OperatingSystem.Task> exec
             , Function<Marker, Boolean> touch
         )
         {
-            final var target = Path.of("graal");
-            final var task = toExtract(tar, target, exists);
+            final var task = toExtract(tar, options.graal, exists);
             return doExtract(task, exec, touch);
         }
 
@@ -334,15 +338,14 @@ class GraalGet implements Runnable
             );
         }
 
-        public static void link(BiFunction<Path, Path, Link> symLink)
+        public static void link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var target = Path.of("graal");
             final var link = Homes.graal();
-            symLink.apply(link, target);
+            symLink.apply(link, options.graal);
         }
     }
 
-    record Options(URL url) {}
+    record Options(URL url, Path graal) {}
 }
 
 @Command(
