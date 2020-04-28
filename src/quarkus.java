@@ -908,6 +908,7 @@ class QuarkusBuild implements Runnable
 
         private static Stream<String> arguments(String directory)
         {
+            LOG.info("Compute task arguments for {}", directory);
             final var arguments = Stream.of(
                 "mvn" // ?
                 , "install"
