@@ -739,8 +739,9 @@ class QuarkusBuild implements Runnable
     // TODO add namespace info
     static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
 
-    private static final Map<String, Stream<String>> EXTRA_BUILD_ARGS = Map.of(
-        "camel-quarkus", Stream.of("-Dquarkus.version=999-SNAPSHOT")
+    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
+    private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
+        "camel-quarkus", List.of("-Dquarkus.version=999-SNAPSHOT")
     );
 
     private final Consumer<Options> runner;
@@ -919,7 +920,7 @@ class QuarkusBuild implements Runnable
             final var extra = EXTRA_BUILD_ARGS.get(directory);
             return Objects.isNull(extra)
                 ? arguments
-                : Stream.concat(arguments, extra);
+                : Stream.concat(arguments, extra.stream());
         }
 
         private static List<Marker> doBuild(
@@ -946,10 +947,11 @@ class QuarkusTest implements Runnable
 {
     private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
 
-    // TODO read camel-quarkus snapshot version from  
-    private static final Map<String, Stream<String>> EXTRA_TEST_ARGS = Map.of(
+    // TODO read camel-quarkus snapshot version from
+    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
+    private static final Map<String, List<String>> EXTRA_TEST_ARGS = Map.of(
         "quarkus-platform"
-        , Stream.of(
+        , List.of(
             "-Dquarkus.version=999-SNAPSHOT"
             , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
         )
@@ -1154,13 +1156,13 @@ class QuarkusTest implements Runnable
             if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
             {
                 return Stream
-                    .of(args, extraArgs, userArgs.arguments().stream())
+                    .of(args, extraArgs.stream(), userArgs.arguments().stream())
                     .flatMap(Function.identity());
             }
 
             if (Objects.nonNull(extraArgs))
             {
-                return Stream.concat(args, extraArgs);
+                return Stream.concat(args, extraArgs.stream());
             }
 
             if (Objects.nonNull(userArgs))
