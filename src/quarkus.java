@@ -279,6 +279,7 @@ class GraalGet implements Runnable
             final var fileName = Path.of(url.getFile()).getFileName();
             final var path = Path.of("downloads").resolve(fileName);
 
+            // TODO path to the file itself cannot be a marker (might be partially downloaded)
             final var marker = Marker.of( path).query(exists);
             if (marker.exists())
                 return marker;
@@ -1554,6 +1555,7 @@ final class Web
         this.fs = fs;
     }
 
+    // TODO add download progress
     void download(URL url, Path file)
     {
         try
