@@ -280,7 +280,7 @@ class GraalGet implements Runnable
             final var path = Path.of("downloads").resolve(fileName);
 
             // TODO path to the file itself cannot be a marker (might be partially downloaded)
-            final var marker = Marker.of( path).query(exists);
+            final var marker = Marker.of(path).query(exists);
             if (marker.exists())
                 return marker;
 
@@ -1855,7 +1855,6 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.empty();
-            final BiConsumer<URL, Path> download = (url, path) -> {};
             final var options = cli(
                 "--url",
                 "https://doestnotexist.com/archive.tar.gz"
@@ -1863,7 +1862,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , download
+                , CheckGraalGet::downloadNoop
                 , os::record
                 , fs::touch
             );
@@ -1884,7 +1883,6 @@ final class QuarkusCheck
                 Marker.of(Path.of("downloads", "archive.tar.gz"))
                 , Marker.extract(Path.of("graal"))
             );
-            final BiConsumer<URL, Path> download = (url, path) -> {};
             final var options = cli(
                 "--url",
                 "https://doestnotexist.com/archive.tar.gz"
@@ -1892,7 +1890,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , download
+                , CheckGraalGet::downloadNoop
                 , os::record
                 , fs::touch
             );
@@ -1912,7 +1910,6 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.ofExists(
                 Marker.of(Path.of("downloads", "archive.tar.gz"))
             );
-            final BiConsumer<URL, Path> download = (url, path) -> {};
             final var options = cli(
                 "--url",
                 "https://doestnotexist.com/archive.tar.gz"
@@ -1920,7 +1917,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , download
+                , CheckGraalGet::downloadNoop
                 , os::record
                 , fs::touch
             );
@@ -1971,6 +1968,8 @@ final class QuarkusCheck
                 .execute(args);
             return recorder.options;
         }
+
+        static void downloadNoop(URL url, Path path) {}
     }
 
     @ExtendWith(LoggingExtension.class)
