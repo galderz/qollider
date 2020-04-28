@@ -739,6 +739,10 @@ class QuarkusBuild implements Runnable
     // TODO add namespace info
     static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
 
+    private static final Map<String, Stream<String>> EXTRA_BUILD_ARGS = Map.of(
+        "camel-quarkus", Stream.of("-Dquarkus.version=999-SNAPSHOT")
+    );
+
     private final Consumer<Options> runner;
 
     @Option(
@@ -890,19 +894,31 @@ class QuarkusBuild implements Runnable
 
         private static OperatingSystem.MarkerTask buildTask(Marker marker)
         {
+            final var directory = marker.path().getParent();
+            final var arguments = arguments(directory.toString());
             return new OperatingSystem.MarkerTask(
                 new OperatingSystem.Task(
-                    Stream.of(
-                        "mvn" // ?
-                        , "install"
-                        , "-DskipTests"
-                        , "-Dformat.skip"
-                    )
-                    , marker.path().getParent()
+                    arguments
+                    , directory
                     , Stream.of(Homes.EnvVars.graal())
                 )
                 , marker
             );
+        }
+
+        private static Stream<String> arguments(String directory)
+        {
+            final var arguments = Stream.of(
+                "mvn" // ?
+                , "install"
+                , "-DskipTests"
+                , "-Dformat.skip"
+            );
+
+            final var extra = EXTRA_BUILD_ARGS.get(directory);
+            return Objects.isNull(extra)
+                ? arguments
+                : Stream.concat(arguments, extra);
         }
 
         private static List<Marker> doBuild(
@@ -928,6 +944,15 @@ class QuarkusBuild implements Runnable
 class QuarkusTest implements Runnable
 {
     private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
+
+    // TODO read camel-quarkus snapshot version from  
+    private static final Map<String, Stream<String>> EXTRA_TEST_ARGS = Map.of(
+        "quarkus-platform"
+        , Stream.of(
+            "-Dquarkus.version=999-SNAPSHOT"
+            , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
+        )
+    );
 
     private final Consumer<Options> runner;
 
@@ -1104,27 +1129,48 @@ class QuarkusTest implements Runnable
         {
             return suite ->
             {
-                final var args = maven.testArgs.get(suite);
-
+                final var directory = Maven.suitePath(suite);
+                final var userArgs = maven.testArgs.get(suite);
+                final var arguments = arguments(userArgs, directory.toString());
                 return new OperatingSystem.Task(
-                    Stream.concat(
-                        Stream.of(
-                            "mvn" // ?
-                            , "install"
-                            , "-Dnative"
-                            , "-Dformat.skip"
-                        )
-                        , Objects.isNull(args)
-                            ? Stream.empty()
-                            : args.arguments.stream()
-                    )
-                    , Maven.suitePath(suite)
+                    arguments
+                    , directory
                     , Stream.of(Homes.EnvVars.graal())
                 );
             };
         }
 
-        static Path suitePath(String suite)
+        private static Stream<String> arguments(Arguments userArgs, String directory)
+        {
+            final var args = Stream.of(
+                "mvn"
+                , "install"
+                , "-Dnative"
+                , "-Dformat.skip"
+            );
+
+            final var extraArgs = EXTRA_TEST_ARGS.get(directory);
+            if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
+            {
+                return Stream
+                    .of(args, extraArgs, userArgs.arguments().stream())
+                    .flatMap(Function.identity());
+            }
+
+            if (Objects.nonNull(extraArgs))
+            {
+                return Stream.concat(args, extraArgs);
+            }
+
+            if (Objects.nonNull(userArgs))
+            {
+                return Stream.concat(args, userArgs.arguments.stream());
+            }
+
+            return args;
+        }
+
+        private static Path suitePath(String suite)
         {
             return suite.equals("quarkus")
                 ? Path.of("quarkus", "integration-tests")
@@ -1976,7 +2022,7 @@ final class QuarkusCheck
     static class CheckBuild
     {
         @Test
-        void maven()
+        void quarkus()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(Collections.emptyMap());
@@ -1993,13 +2039,13 @@ final class QuarkusCheck
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(task ->
             {
-                assertThat(task.task().task().findFirst(), is(Optional.of("mvn")));
                 assertThat(task.task().directory(), is(Path.of("quarkus")));
+                assertThat(task.task().task().findFirst(), is(Optional.of("mvn")));
             });
         }
 
         @Test
-        void skipMaven()
+        void skipQuarkus()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
@@ -2014,6 +2060,37 @@ final class QuarkusCheck
             );
             assertThat(markers.size(), is(0));
             os.assertNumberOfTasks(0);
+        }
+
+        @Test
+        void postBuildCamelQuarkus()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(Collections.emptyMap());
+            final var options = cli("--post-build", "https://github.com/apache/camel-quarkus/tree/master");
+            final var markers = QuarkusBuild.Maven.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(markers.size(), is(2));
+            assertThat(markers.get(0).exists(), is(true));
+            assertThat(markers.get(0).touched(), is(true));
+            assertThat(markers.get(1).exists(), is(true));
+            assertThat(markers.get(1).touched(), is(true));
+            os.assertNumberOfTasks(2);
+            os.forward(); // skip quarkus task
+            os.assertMarkerTask(task ->
+            {
+                assertThat(task.task().directory(), is(Path.of("camel-quarkus")));
+                final var arguments = task.task().task().collect(Collectors.toList());
+                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(
+                    arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
+                    , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
+                );
+            });
         }
 
         private static QuarkusBuild.Options cli(String... extra)
@@ -2032,7 +2109,6 @@ final class QuarkusCheck
                 .execute(args);
             return recorder.options;
         }
-
     }
 
     static class CheckTest
@@ -2041,7 +2117,7 @@ final class QuarkusCheck
         void cliAdditionalTestArgsOptions()
         {
             assertThat(
-                execute("-ata", "a=b,:c", "-ata", "z=-y,-Dx=w").testArgs()
+                cli("-ata", "a=b,:c", "-ata", "z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
                     List.of(
                         "a=b,:c"
@@ -2050,7 +2126,7 @@ final class QuarkusCheck
                 )))
             );
             assertThat(
-                execute("--additional-test-args", "a=b,:c", "--additional-test-args", "z=-y,-Dx=w").testArgs()
+                cli("--additional-test-args", "a=b,:c", "--additional-test-args", "z=-y,-Dx=w").testArgs()
                 , is(equalTo(QuarkusTest.Arguments.of(
                     List.of(
                         "a=b,:c"
@@ -2064,14 +2140,14 @@ final class QuarkusCheck
         void cliAlsoTestOptions()
         {
             assertThat(
-                execute("-at", "h://g/a/b,h://g/b/c").alsoTest()
+                cli("-at", "h://g/a/b,h://g/b/c").alsoTest()
                 , is(equalTo(Git.URL.of(List.of(
                     URI.create("h://g/a/b")
                     , URI.create("h://g/b/c")
                 ))))
             );
             assertThat(
-                execute("--also-test", "h://g/w/x,h://g/y/z").alsoTest()
+                cli("--also-test", "h://g/w/x,h://g/y/z").alsoTest()
                 , is(equalTo(Git.URL.of(List.of(
                     URI.create("h://g/w/x")
                     , URI.create("h://g/y/z")
@@ -2083,11 +2159,11 @@ final class QuarkusCheck
         void cliSuiteOptions()
         {
             assertThat(
-                execute("-s", "a,b").suites()
+                cli("-s", "a,b").suites()
                 , is(equalTo(List.of("a", "b")))
             );
             assertThat(
-                execute("--suites", "y,z").suites()
+                cli("--suites", "y,z").suites()
                 , is(equalTo(List.of("y", "z")))
             );
         }
@@ -2095,38 +2171,23 @@ final class QuarkusCheck
         @Test
         void cliEmptyOptions()
         {
-            final var command = execute();
+            final var command = cli();
             assertThat(command.suites(), is(empty()));
             assertThat(command.alsoTest(), is(empty()));
             assertThat(command.testArgs(), is(anEmptyMap()));
         }
 
-        private static QuarkusTest.Options execute(String... extra)
-        {
-            final List<String> list = new ArrayList<>();
-            list.add("test");
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var recorder = new OptionsRecorder();
-            final var quarkusTest = QuarkusTest.of(recorder);
-            new CommandLine(new quarkus())
-                .addSubcommand("test", quarkusTest)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-                .execute(args);
-            return recorder.options;
-        }
-
         @Test
-        void testArguments()
+        void extraArguments()
         {
-            final var options = QuarkusTest.Options.of(
-                List.of("suite-a", "suite-b")
-                , Collections.emptyList()
-                , List.of("suite-a=p1,:p2", "suite-b=:p3,-p4")
+            final var os = new RecordingOperatingSystem();
+            final var options = cli(
+                "--suites", "suite-a,suite-b"
+                , "--additional-test-args", "suite-a=p1,:p2"
+                , "--additional-test-args", "suite-b=:p3,-p4"
             );
-            final var os = test(options);
+            QuarkusTest.Maven.test(options, os::record);
+
             os.assertNumberOfTasks(2);
             os.assertTask(t ->
                 assertThat(
@@ -2144,14 +2205,12 @@ final class QuarkusCheck
         }
 
         @Test
-        void testSuites()
+        void suites()
         {
-            final var options = QuarkusTest.Options.of(
-                List.of("suite-a", "suite-b")
-                , Collections.emptyList()
-                , Collections.emptyList()
-            );
-            final var os = test(options);
+            final var os = new RecordingOperatingSystem();
+            final var options = cli("--suites", "suite-a,suite-b");
+            QuarkusTest.Maven.test(options, os::record);
+
             os.assertNumberOfTasks(2);
             os.assertAllTasks(t -> assertThat(t.task().findFirst(), is(Optional.of("mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
@@ -2160,14 +2219,12 @@ final class QuarkusCheck
         }
 
         @Test
-        void testDefault()
+        void quarkus()
         {
-            final var options = QuarkusTest.Options.of(
-                Collections.emptyList()
-                , Collections.emptyList()
-                , Collections.emptyList()
-            );
-            final var os = test(options);
+            final var os = new RecordingOperatingSystem();
+            final var options = cli();
+            QuarkusTest.Maven.test(options, os::record);
+
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
@@ -2176,22 +2233,49 @@ final class QuarkusCheck
             });
         }
 
-        private static final class OptionsRecorder implements Consumer<QuarkusTest.Options>
-        {
-            QuarkusTest.Options options;
-
-            @Override
-            public void accept(QuarkusTest.Options options)
-            {
-                this.options = options;
-            }
-        }
-
-        private static RecordingOperatingSystem test(QuarkusTest.Options options)
+        @Test
+        void quarkusPlatform()
         {
             final var os = new RecordingOperatingSystem();
+            final var options = cli(
+                "--also-test"
+                , "https://github.com/quarkusio/quarkus-platform/tree/master"
+            );
             QuarkusTest.Maven.test(options, os::record);
-            return os;
+
+            os.assertNumberOfTasks(2);
+            os.forward(); // skip quarkus task
+            os.assertTask(task ->
+            {
+                assertThat(task.directory(), is(Path.of("quarkus-platform")));
+                final var arguments = task.task().collect(Collectors.toList());
+                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(
+                    arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
+                    , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
+                );
+                assertThat(
+                    arguments.stream().filter(e -> e.equals("-Dcamel-quarkus.version=1.1.0-SNAPSHOT")).findFirst()
+                    , is(Optional.of("-Dcamel-quarkus.version=1.1.0-SNAPSHOT"))
+                );
+            });
+        }
+
+        private static QuarkusTest.Options cli(String... extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add("test");
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var recorder = new OptionsRecorder<QuarkusTest.Options>();
+            final var quarkusTest = QuarkusTest.of(recorder);
+            new CommandLine(new quarkus())
+                .addSubcommand("test", quarkusTest)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
+            return recorder.options;
         }
     }
 
