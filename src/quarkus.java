@@ -33,6 +33,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.channels.Channels;
 import java.nio.file.Files;
@@ -1197,10 +1198,49 @@ class Git
 
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
-            final var branch = path.getFileName().toString();
-            final var url = uri.resolve("..").toString();
+            final var branch = extractBranch(path).toString();
+            final var url = githubURL(organization, name);
 
             return new URL(organization, name, branch, url);
+        }
+
+        private static String githubURL(String organization, String repositoryName)
+        {
+            try
+            {
+                return new URI(
+                    "https"
+                    , "github.com"
+                    , Path.of("/", organization, repositoryName).toString()
+                    , null
+                ).toString();
+            }
+            catch (URISyntaxException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private static Path extractBranch(Path path)
+        {
+            final int base = 3;
+            if (path.getNameCount() == (base + 1))
+                return path.getFileName();
+
+            final var numPathElements = path.getNameCount() - base;
+            final var pathElements = new String[numPathElements];
+            int index = 0;
+            while (index < numPathElements)
+            {
+                pathElements[index] = path.getName(base + index).toString();
+                index++;
+            }
+
+            final var first = pathElements[0];
+            final var numMoreElements = numPathElements - 1;
+            final var more = new String[numMoreElements];
+            System.arraycopy(pathElements, 1, more, 0, numMoreElements);
+            return Path.of(first, more);
         }
 
         static List<Git.URL> of(List<URI> uris)
@@ -1595,6 +1635,7 @@ class OperatingSystem
     record EnvVar(String name, Function<Path, Path>value) {}
 }
 
+// Dependency
 final class Web
 {
     final FileSystem fs;
@@ -1671,7 +1712,7 @@ final class QuarkusCheck
             assertThat(url.organization(), is("openjdk"));
             assertThat(url.name(), is("jdk11u-dev"));
             assertThat(url.branch(), is("master"));
-            assertThat(url.url(), is("https://github.com/openjdk/jdk11u-dev/"));
+            assertThat(url.url(), is("https://github.com/openjdk/jdk11u-dev"));
         }
 
         @Test
@@ -1696,8 +1737,8 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Git.URL.of(
                 List.of(
-                    URI.create("h://_/_/repo-a")
-                    , URI.create("h:/_/_/repo-b")
+                    URI.create("h://g/a/repo-a/tree/master")
+                    , URI.create("h:/g/b/repo-b/tree/branch")
                 )
             );
             final var cloned = Git.clone(urls, fs::exists, os::record, fs::touch);
@@ -1705,6 +1746,16 @@ final class QuarkusCheck
             os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
             assertThat(cloned.size(), is(1));
             assertThat(cloned.get(0).touched(), is(true));
+        }
+
+        @Test
+        void branchWithPath()
+        {
+            final var url = Git.URL.of(URI.create("https://github.com/olpaw/graal/tree/paw/2367"));
+            assertThat(url.organization(), is("olpaw"));
+            assertThat(url.name(), is("graal"));
+            assertThat(url.branch(), is("paw/2367"));
+            assertThat(url.url(), is("https://github.com/olpaw/graal"));
         }
     }
 
@@ -1744,7 +1795,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev"
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
             final var marker = GraalBuild.Java.build(
@@ -1777,7 +1828,7 @@ final class QuarkusCheck
             );
             final var options = cli(
                 "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev"
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
             final var marker = GraalBuild.Java.build(
@@ -1861,7 +1912,7 @@ final class QuarkusCheck
         {
             final var options = cli(
                 "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev"
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
             final var linked = GraalBuild.Java.link(
                 options
@@ -2143,17 +2194,10 @@ final class QuarkusCheck
         void cliAlsoTestOptions()
         {
             assertThat(
-                cli("-at", "h://g/a/b,h://g/b/c").alsoTest()
+                cli("-at", "h://g/a/b/tree/m1,h://g/b/c/tree/m2").alsoTest()
                 , is(equalTo(Git.URL.of(List.of(
-                    URI.create("h://g/a/b")
-                    , URI.create("h://g/b/c")
-                ))))
-            );
-            assertThat(
-                cli("--also-test", "h://g/w/x,h://g/y/z").alsoTest()
-                , is(equalTo(Git.URL.of(List.of(
-                    URI.create("h://g/w/x")
-                    , URI.create("h://g/y/z")
+                    URI.create("h://g/a/b/tree/m1")
+                    , URI.create("h://g/b/c/tree/m2")
                 ))))
             );
         }
@@ -2164,10 +2208,6 @@ final class QuarkusCheck
             assertThat(
                 cli("-s", "a,b").suites()
                 , is(equalTo(List.of("a", "b")))
-            );
-            assertThat(
-                cli("--suites", "y,z").suites()
-                , is(equalTo(List.of("y", "z")))
             );
         }
 
