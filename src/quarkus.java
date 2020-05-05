@@ -59,6 +59,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
@@ -83,18 +84,18 @@ public class quarkus implements Runnable
 
         final var graalBuild = GraalBuild.ofSystem(fs, os);
         final var graalGet = GraalGet.ofSystem(fs, os, web);
-        final var quarkusBuild = QuarkusBuild.ofSystem(fs, os);
+        final var mavenBuild = MavenBuild.ofSystem(fs, os);
         final var quarkusClean = QuarkusClean.ofSystem(fs);
         final var quarkusTest = QuarkusTest.ofSystem(fs, os);
 
-        int exitCode = new CommandLine(new quarkus())
-            .addSubcommand("graal-build", graalBuild)
-            .addSubcommand("graal-get", graalGet)
-            .addSubcommand("build", quarkusBuild)
-            .addSubcommand("clean", quarkusClean)
-            .addSubcommand("test", quarkusTest)
-            .setCaseInsensitiveEnumValuesAllowed(true)
-            .execute(args);
+        final var cli = Cli.newCli(
+            graalBuild
+            , graalGet
+            , mavenBuild
+            , quarkusClean
+            , quarkusTest
+        );
+        int exitCode = cli.execute(args);
         System.exit(exitCode);
     }
 
@@ -105,6 +106,20 @@ public class quarkus implements Runnable
             spec.commandLine()
             , "Missing required subcommand"
         );
+    }
+}
+
+final class Cli
+{
+    static CommandLine newCli(Object... subcommands)
+    {
+        final var cmdline = new CommandLine(new quarkus());
+        // Sub-commands need to be added first,
+        // for converters and other options to have effect
+        Arrays.asList(subcommands).forEach(cmdline::addSubcommand);
+        return cmdline
+            .registerConverter(Git.URL.class, Git.URL::of)
+            .setCaseInsensitiveEnumValuesAllowed(true);
     }
 }
 
@@ -730,15 +745,15 @@ class GraalBuild implements Runnable
 }
 
 @Command(
-    name = "build"
-    , aliases = {"b"}
-    , description = "Build quarkus."
+    name = "maven-build"
+    , aliases = {"mb"}
+    , description = "Maven build."
     , mixinStandardHelpOptions = true
 )
-class QuarkusBuild implements Runnable
+class MavenBuild implements Runnable
 {
     // TODO add namespace info
-    static final Logger LOG = LogManager.getLogger(QuarkusBuild.class);
+    static final Logger LOG = LogManager.getLogger(MavenBuild.class);
 
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
     private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
@@ -748,62 +763,47 @@ class QuarkusBuild implements Runnable
     private final Consumer<Options> runner;
 
     @Option(
-        description = "Additional projects to build before Quarkus. Separated by comma(,) character."
+        description = "Source tree URL"
         , names =
         {
-            "-prb"
-            , "--pre-build"
+            "-t"
+            , "--tree"
+        }
+        , required = true
+    )
+    Git.URL tree;
+
+    @Option(
+        description = "Additional build arguments"
+        , names =
+        {
+            "-aba"
+            , "--additional-build-args"
         }
         , split = ","
     )
-    List<URI> preBuild = new ArrayList<>();
+    List<String> additionalBuildArgs = new ArrayList<>();
 
-    @Option(
-        description = "Additional projects to build after Quarkus. Separated by comma(,) character."
-        , names =
-        {
-            "-pob"
-            , "--post-build"
-        }
-        , split = ","
-    )
-    List<URI> postBuild = new ArrayList<>();
-
-    @Option(
-        defaultValue = "https://github.com/quarkusio/quarkus/tree/master"
-        , description = "Quarkus source tree URL"
-        , names =
-        {
-            "-qt"
-            , "--quarkus-tree"
-        }
-    )
-    URI quarkusTree;
-
-    private QuarkusBuild(Consumer<Options> runner)
+    private MavenBuild(Consumer<Options> runner)
     {
         this.runner = runner;
     }
 
-    static QuarkusBuild ofSystem(FileSystem fs, OperatingSystem os)
+    static MavenBuild ofSystem(FileSystem fs, OperatingSystem os)
     {
-        return new QuarkusBuild(new QuarkusBuild.RunBuild(fs, os));
+        return new MavenBuild(new MavenBuild.RunBuild(fs, os));
     }
 
-    static QuarkusBuild of(Consumer<QuarkusBuild.Options> runner)
+    static MavenBuild of(Consumer<MavenBuild.Options> runner)
     {
-        return new QuarkusBuild(runner);
+        return new MavenBuild(runner);
     }
 
     @Override
     public void run()
     {
         LOG.info("Build");
-        final var options = Options.of(
-            preBuild
-            , quarkusTree
-            , postBuild
-        );
+        final var options = new Options(tree, additionalBuildArgs);
         LOG.info(options);
         runner.accept(options);
     }
@@ -822,82 +822,48 @@ class QuarkusBuild implements Runnable
         @Override
         public void accept(Options options)
         {
-            Git.clone(Options.urls(options), fs::exists, os::exec, fs::touch);
+            Git.clone(singletonList(options.tree), fs::exists, os::exec, fs::touch);
             Maven.build(options, fs::exists, os::exec, fs::touch);
         }
     }
 
-    record Options(
-        List<Git.URL>preBuild
-        , Git.URL quarkus
-        , List<Git.URL>postBuild
-    )
+    record Options(Git.URL tree, List<String> additionalBuildArgs)
     {
-        static Options of(
-            List<URI> preBuild
-            , URI quarkus
-            , List<URI> postBuild
-        )
+        Path project()
         {
-            return new Options(
-                Git.URL.of(preBuild)
-                , Git.URL.of(quarkus)
-                , Git.URL.of(postBuild)
-            );
-        }
-
-        static List<Git.URL> urls(Options options)
-        {
-            final var urls = new ArrayList<>(options.preBuild);
-            urls.add(options.quarkus);
-            urls.addAll(options.postBuild);
-            return urls;
+            return Path.of(tree.name());
         }
     }
 
-    record Maven(List<Path>projects)
+    static class Maven
     {
-        static Maven of(Options options)
-        {
-            final var urls = new ArrayList<>(options.preBuild);
-            urls.add(options.quarkus);
-            urls.addAll(options.postBuild);
-
-            final var projects = urls.stream()
-                .map(Git.URL::name)
-                .map(Path::of)
-                .collect(Collectors.toList());
-
-            return new Maven(projects);
-        }
-
-        static List<Marker> build(
+        static Marker build(
             Options options
             , Predicate<Marker> exists
             , Function<OperatingSystem.MarkerTask, Marker> exec
             , Function<Marker, Boolean> touch
         )
         {
-            final var maven = Maven.of(options);
-            final var tasks = Maven.toBuild(maven, exists);
-            return Maven.doBuild(tasks, exec, touch);
+            final var task = Maven.toBuild(options, exists);
+            return Maven.doBuild(task, exec, touch);
         }
 
-        private static Stream<OperatingSystem.MarkerTask> toBuild(
-            Maven maven
+        private static OperatingSystem.MarkerTask toBuild(
+            Options options
             , Predicate<Marker> exists
         )
         {
-            return maven.projects.stream()
-                .map(Marker::build)
-                .filter(marker -> !marker.query(exists).exists())
-                .map(Maven::buildTask);
+            final var marker = Marker.build(options.project()).query(exists);
+            if (marker.exists())
+                return OperatingSystem.MarkerTask.noop(marker);
+
+            return Maven.buildTask(options, marker);
         }
 
-        private static OperatingSystem.MarkerTask buildTask(Marker marker)
+        private static OperatingSystem.MarkerTask buildTask(Options options, Marker marker)
         {
             final var directory = marker.path().getParent();
-            final var arguments = arguments(directory.toString());
+            final var arguments = arguments(options, directory.toString());
             return new OperatingSystem.MarkerTask(
                 new OperatingSystem.Task(
                     arguments
@@ -908,14 +874,21 @@ class QuarkusBuild implements Runnable
             );
         }
 
-        private static Stream<String> arguments(String directory)
+        private static Stream<String> arguments(Options options, String directory)
         {
-            LOG.info("Compute task arguments for {}", directory);
-            final var arguments = Stream.of(
-                "mvn" // ?
-                , "install"
-                , "-DskipTests"
-                , "-Dformat.skip"
+            LOG.info(
+                "Compute task arguments for {} with additional build args {}"
+                , directory
+                , options.additionalBuildArgs
+            );
+            final var arguments = Stream.concat(
+                Stream.of(
+                    "mvn" // ?
+                    , "install"
+                    , "-DskipTests"
+                    , "-Dformat.skip"
+                )
+                , options.additionalBuildArgs.stream()
             );
 
             final var extra = EXTRA_BUILD_ARGS.get(directory);
@@ -924,16 +897,14 @@ class QuarkusBuild implements Runnable
                 : Stream.concat(arguments, extra.stream());
         }
 
-        private static List<Marker> doBuild(
-            Stream<OperatingSystem.MarkerTask> tasks
+        private static Marker doBuild(
+            OperatingSystem.MarkerTask task
             , Function<OperatingSystem.MarkerTask, Marker> exec
             , Function<Marker, Boolean> touch
         )
         {
-            return tasks
-                .map(exec)
-                .map(marker -> marker.touch(touch))
-                .collect(Collectors.toList());
+            final var marker = exec.apply(task);
+            return marker.touch(touch);
         }
     }
 }
@@ -1192,6 +1163,11 @@ class Git
         , String url
     )
     {
+        static Git.URL of(String uri)
+        {
+            return Git.URL.of(URI.create(uri));
+        }
+
         static Git.URL of(URI uri)
         {
             final var path = Path.of(uri.getPath());
@@ -1688,8 +1664,14 @@ final class QuarkusCheck
         launcher.execute(request);
         listener.getSummary().printTo(new PrintWriter(System.out));
         listener.getSummary().printFailuresTo(new PrintWriter(System.err));
-        if (listener.getSummary().getTestsFailedCount() > 0)
-            throw new AssertionError("Expected no failures");
+        final var failureCount = listener.getSummary().getTestsFailedCount();
+        if (failureCount > 0)
+        {
+            throw new AssertionError(String.format(
+                "Number of failed tests: %d"
+                , failureCount
+            ));
+        }
     }
 
     private static class LoggingExtension implements BeforeAllCallback
@@ -1939,10 +1921,8 @@ final class QuarkusCheck
 
             final var recorder = new OptionsRecorder<GraalBuild.Options>();
             final var command = GraalBuild.of(recorder);
-            new CommandLine(new quarkus())
-                .addSubcommand("graal-build", command)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-                .execute(args);
+            final var exitCode = Cli.newCli(command).execute(args);
+            assertThat(exitCode, is(0));
             return recorder.options;
         }
     }
@@ -2034,7 +2014,7 @@ final class QuarkusCheck
         void missingURL()
         {
             final var result = cliError();
-            assertThat(result, not(0));
+            assertThat(result, is(2));
         }
 
         private static int cliError()
@@ -2046,9 +2026,11 @@ final class QuarkusCheck
 
             final var recorder = new OptionsRecorder<GraalGet.Options>();
             final var command = GraalGet.of(recorder);
-            return new CommandLine(new quarkus())
-                .addSubcommand("graal-get", command)
-                .setCaseInsensitiveEnumValuesAllowed(true)
+            return Cli.newCli(command)
+                .setParameterExceptionHandler(
+                    (ex, cmdArgs) ->
+                        ex.getCommandLine().getCommandSpec().exitCodeOnInvalidInput()
+                )
                 .execute(args);
         }
 
@@ -2062,10 +2044,8 @@ final class QuarkusCheck
 
             final var recorder = new OptionsRecorder<GraalGet.Options>();
             final var command = GraalGet.of(recorder);
-            new CommandLine(new quarkus())
-                .addSubcommand("graal-get", command)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-                .execute(args);
+            final var exitCode = Cli.newCli(command).execute(args);
+            assertThat(exitCode, is(0));
             return recorder.options;
         }
 
@@ -2080,16 +2060,18 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(Collections.emptyMap());
-            final var options = cli();
-            final var markers = QuarkusBuild.Maven.build(
+            final var options = cli(
+                "-t"
+                , "https://github.com/quarkusio/quarkus/tree/master"
+            );
+            final var marker = MavenBuild.Maven.build(
                 options
                 , fs::exists
                 , os::record
                 , m -> true
             );
-            assertThat(markers.size(), is(1));
-            assertThat(markers.get(0).exists(), is(true));
-            assertThat(markers.get(0).touched(), is(true));
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(task ->
             {
@@ -2105,36 +2087,37 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.ofExists(
                 Marker.build(Path.of("quarkus"))
             );
-            final var options = cli();
-            final var markers = QuarkusBuild.Maven.build(
+            final var options = cli(
+                "-t"
+                , "https://github.com/quarkusio/quarkus/tree/master"
+            );
+            final var marker = MavenBuild.Maven.build(
                 options
                 , fs::exists
                 , os::record
                 , m -> true
             );
-            assertThat(markers.size(), is(0));
-            os.assertNumberOfTasks(0);
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(false));
         }
 
         @Test
-        void postBuildCamelQuarkus()
+        void camelQuarkus()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(Collections.emptyMap());
-            final var options = cli("--post-build", "https://github.com/apache/camel-quarkus/tree/master");
-            final var markers = QuarkusBuild.Maven.build(
+            final var options = cli(
+                "-t"
+                , "https://github.com/apache/camel-quarkus/tree/master"
+            );
+            final var marker = MavenBuild.Maven.build(
                 options
                 , fs::exists
                 , os::record
                 , m -> true
             );
-            assertThat(markers.size(), is(2));
-            assertThat(markers.get(0).exists(), is(true));
-            assertThat(markers.get(0).touched(), is(true));
-            assertThat(markers.get(1).exists(), is(true));
-            assertThat(markers.get(1).touched(), is(true));
-            os.assertNumberOfTasks(2);
-            os.forward(); // skip quarkus task
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(true));
             os.assertMarkerTask(task ->
             {
                 assertThat(task.task().directory(), is(Path.of("camel-quarkus")));
@@ -2147,20 +2130,53 @@ final class QuarkusCheck
             });
         }
 
-        private static QuarkusBuild.Options cli(String... extra)
+        @Test
+        void camel()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var fs = new InMemoryFileSystem(Collections.emptyMap());
+            final var options = cli(
+                "-t"
+                , "https://github.com/apache/camel/tree/master"
+                , "-aba"
+                , "-Pfastinstall,-Pdoesnotexist"
+            );
+            final var marker = MavenBuild.Maven.build(
+                options
+                , fs::exists
+                , os::record
+                , m -> true
+            );
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(true));
+            os.assertMarkerTask(task ->
+            {
+                assertThat(task.task().directory(), is(Path.of("camel")));
+                final var arguments = task.task().task().collect(Collectors.toList());
+                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(
+                    arguments.stream().filter(e -> e.equals("-Pfastinstall")).findFirst()
+                    , is(Optional.of("-Pfastinstall"))
+                );
+                assertThat(
+                    arguments.stream().filter(e -> e.equals("-Pdoesnotexist")).findFirst()
+                    , is(Optional.of("-Pdoesnotexist"))
+                );
+            });
+        }
+
+        private static MavenBuild.Options cli(String... extra)
         {
             final List<String> list = new ArrayList<>();
-            list.add("build");
+            list.add("maven-build");
             list.addAll(Arrays.asList(extra));
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var recorder = new OptionsRecorder<QuarkusBuild.Options>();
-            final var quarkusBuild = QuarkusBuild.of(recorder);
-            new CommandLine(new quarkus())
-                .addSubcommand("build", quarkusBuild)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-                .execute(args);
+            final var recorder = new OptionsRecorder<MavenBuild.Options>();
+            final var command = MavenBuild.of(recorder);
+            final var exitCode = Cli.newCli(command).execute(args);
+            assertThat(exitCode, is(0));
             return recorder.options;
         }
     }
@@ -2313,11 +2329,9 @@ final class QuarkusCheck
             list.toArray(args);
 
             final var recorder = new OptionsRecorder<QuarkusTest.Options>();
-            final var quarkusTest = QuarkusTest.of(recorder);
-            new CommandLine(new quarkus())
-                .addSubcommand("test", quarkusTest)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-                .execute(args);
+            final var command = QuarkusTest.of(recorder);
+            final var exitCode = Cli.newCli(command).execute(args);
+            assertThat(exitCode, is(0));
             return recorder.options;
         }
     }
