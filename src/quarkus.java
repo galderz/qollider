@@ -323,6 +323,9 @@ class GraalGet implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
+            if (OperatingSystem.Task.isNoop(task.task()))
+                return task.marker();
+
             exec.accept(task.task());
             final var marker = task.marker();
             return marker.touch(touch);
@@ -903,6 +906,9 @@ class MavenBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
+            if (OperatingSystem.Task.isNoop(task.task()))
+                return task.marker();
+
             final var marker = exec.apply(task);
             return marker.touch(touch);
         }
@@ -1931,7 +1937,7 @@ final class QuarkusCheck
     static class CheckGraalGet
     {
         @Test
-        void graalGet()
+        void get()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.empty();
@@ -1956,7 +1962,7 @@ final class QuarkusCheck
         }
 
         @Test
-        void skipDownloadAndExtract()
+        void skipBothDownloadAndExtract()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
@@ -1974,6 +1980,7 @@ final class QuarkusCheck
                 , os::record
                 , fs::touch
             );
+            os.assertNumberOfTasks(0);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
@@ -1984,7 +1991,7 @@ final class QuarkusCheck
         }
 
         @Test
-        void skipDownload()
+        void skipOnlyDownload()
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
@@ -2001,6 +2008,7 @@ final class QuarkusCheck
                 , os::record
                 , fs::touch
             );
+            os.assertNumberOfTasks(1);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
@@ -2099,6 +2107,7 @@ final class QuarkusCheck
             );
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
+            os.assertNumberOfTasks(0);
         }
 
         @Test
