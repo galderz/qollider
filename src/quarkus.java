@@ -279,7 +279,7 @@ class GraalGet implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var downloadMarker = Graal.download(options, exists, download);
+            final var downloadMarker = Graal.download(options, exists, download, touch);
             final var extractMarker = Graal.extract(
                 options
                 , downloadMarker.path()
@@ -351,6 +351,7 @@ class GraalGet implements Runnable
             Options options
             , Predicate<Marker> exists
             , BiConsumer<URL, Path> download
+            , Function<Marker, Boolean> touch
         )
         {
             final var url = options.url;
@@ -362,8 +363,7 @@ class GraalGet implements Runnable
 
             final var path = directory.resolve(fileName);
             download.accept(url, path);
-            // No touching to be done, the file is the marker
-            return marker.touch(m -> true);
+            return marker.touch(touch);
         }
 
         private static Marker extract(
