@@ -2050,6 +2050,13 @@ final class QuarkusCheck
             assertThat(extractMarker.exists(), is(true));
             assertThat(extractMarker.touched(), is(true));
             assertThat(Marker.isNotApplicable(markers.get(2)), is(true));
+            os.assertNumberOfTasks(1);
+            os.assertTask(t ->
+                assertThat(
+                    t.task().collect(Collectors.joining(" "))
+                    , is(equalTo("tar -xzvpf downloads/archive.tar.gz -C graal --strip-components 1"))
+                )
+            );
         }
 
         @Test
