@@ -86,7 +86,7 @@ public class quarkus implements Runnable
         final var graalGet = GraalGet.ofSystem(fs, os, web);
         final var mavenBuild = MavenBuild.ofSystem(fs, os);
         final var quarkusClean = QuarkusClean.ofSystem(fs);
-        final var quarkusTest = QuarkusTest.ofSystem(fs, os);
+        final var quarkusTest = MavenTest.ofSystem(fs, os);
 
         final var cli = Cli.newCli(
             graalBuild
@@ -884,6 +884,8 @@ class MavenBuild implements Runnable
                 , directory
                 , options.additionalBuildArgs
             );
+            // TODO add -DskipITs just in case
+            // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
             final var arguments = Stream.concat(
                 Stream.of(
                     "mvn" // ?
@@ -916,19 +918,19 @@ class MavenBuild implements Runnable
 }
 
 @Command(
-    name = "test"
-    , aliases = {"t"}
-    , description = "Test quarkus."
+    name = "maven-test"
+    , aliases = {"mt"}
+    , description = "Maven test."
     , mixinStandardHelpOptions = true
 )
-class QuarkusTest implements Runnable
+class MavenTest implements Runnable
 {
-    private static final Logger LOG = LogManager.getLogger(QuarkusTest.class);
+    private static final Logger LOG = LogManager.getLogger(MavenTest.class);
 
     // TODO read camel-quarkus snapshot version from
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
-    private static final Map<String, List<String>> EXTRA_TEST_ARGS = Map.of(
-        "quarkus-platform"
+    private static final Map<Path, List<String>> EXTRA_TEST_ARGS = Map.of(
+        Path.of("quarkus-platform")
         , List.of(
             "-Dquarkus.version=999-SNAPSHOT"
             , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
@@ -938,68 +940,46 @@ class QuarkusTest implements Runnable
     private final Consumer<Options> runner;
 
     @Option(
-        description = """
-            Test suites to only run. By default only quarkus.
-            If suites provided, only those provided in the list are executed.
-            Other suites can be referenced using the repository name, e.g quarkus-platform.
-            The order of suites represents the order test execution.
-            """
+        description = "Test suite to run"
         , names =
         {
             "-s"
-            , "--suites"
+            , "--suite"
         }
-        , split = ","
+        , required = true
     )
-    private final List<String> suites = new ArrayList<>();
+    String suite;
 
     @Option(
-        description = """
-            Additional test URLs to download and run.
-            The order of URLs determines the order of test execution.
-            """
-        , names =
-        {
-            "-at"
-            , "--also-test"
-        }
-        , split = ","
-    )
-    private final List<URI> alsoTest = new ArrayList<>();
-
-    @Option(
-        description = """
-             Additional test arguments, each argument separated by comma (',') per suite.
-             Multiple occurrences are allowed to support different suites. 
-             Example: quarkus-platform=-rf,:aws,-Dquarkus.version=999-SNAPSHOT
-            """
+        description = "Additional test arguments, each argument separated by comma (',')"
         , names =
         {
             "-ata"
             , "--additional-test-args"
         }
+        , split = ","
     )
-    private final List<String> additionalTestArgs = new ArrayList<>();
+    final List<String> additionalTestArgs = new ArrayList<>();
 
-    private QuarkusTest(Consumer<Options> runner)
+    private MavenTest(Consumer<Options> runner)
     {
         this.runner = runner;
     }
 
-    static QuarkusTest ofSystem(FileSystem fs, OperatingSystem os)
+    static MavenTest ofSystem(FileSystem fs, OperatingSystem os)
     {
-        return new QuarkusTest(new RunTest(fs, os));
+        return new MavenTest(new RunTest(fs, os));
     }
 
-    static QuarkusTest of(Consumer<Options> runner)
+    static MavenTest of(Consumer<Options> runner)
     {
-        return new QuarkusTest(runner);
+        return new MavenTest(runner);
     }
 
     @Override
     public void run()
     {
-        var options = Options.of(suites, alsoTest, additionalTestArgs);
+        var options = new Options(suite, additionalTestArgs);
         LOG.info(options);
         runner.accept(options);
     }
@@ -1018,110 +998,40 @@ class QuarkusTest implements Runnable
         @Override
         public void accept(Options options)
         {
-            Git.clone(options.alsoTest, fs::exists, os::exec, fs::touch);
             Maven.test(options, os::exec);
         }
     }
 
-    record Options(
-        List<String>suites
-        , List<Git.URL>alsoTest
-        , Map<String, Arguments>testArgs
-    )
+    record Options(String suite, List<String> additionalTestArgs) {}
+
+    static class Maven
     {
-        static Options of(
-            List<String> suites
-            , List<URI> alsoTest
-            , List<String> additionalTestArgs
-        )
-        {
-            return new Options(
-                suites
-                , Git.URL.of(alsoTest)
-                , Arguments.of(additionalTestArgs)
-            );
-        }
-    }
-
-    record Arguments(List<String>arguments)
-    {
-        static Map<String, Arguments> of(List<String> arguments)
-        {
-            return arguments.stream()
-                .map(args -> args.split("=", 2))
-                .collect(
-                    Collectors.toMap(
-                        split -> split[0]
-                        , split -> Arguments.of(split[1])
-                    )
-                );
-        }
-
-        private static Arguments of(String value)
-        {
-            return new Arguments(Arrays.asList(value.split(",")));
-        }
-    }
-
-    record Maven(List<String>suites, Map<String, Arguments>testArgs)
-    {
-        static Maven of(Options options)
-        {
-            final var suites = suites(options);
-            final var testArgs = options.testArgs();
-            return new Maven(suites, testArgs);
-        }
-
-        private static List<String> suites(Options options)
-        {
-            if (!options.suites.isEmpty())
-                return options.suites;
-
-            final var suites = new ArrayList<>(List.of("quarkus"));
-            final var alsoTestSuites = options.alsoTest.stream()
-                .map(Git.URL::name)
-                .collect(Collectors.toList());
-            suites.addAll(alsoTestSuites);
-            return suites;
-        }
-
         static void test(Options options, Consumer<OperatingSystem.Task> exec)
         {
-            final var tasks = Maven.toTest(options);
-            Maven.doTest(tasks, exec);
+            final var task = Maven.toTest(options);
+            Maven.doTest(task, exec);
         }
 
         private static void doTest(
-            Stream<OperatingSystem.Task> tasks
+            OperatingSystem.Task task
             , Consumer<OperatingSystem.Task> exec
         )
         {
-            tasks.forEach(exec);
+            exec.accept(task);
         }
 
-        private static Stream<OperatingSystem.Task> toTest(Options options)
+        private static OperatingSystem.Task toTest(Options options)
         {
-            final var maven = Maven.of(options);
-            return maven.suites.stream()
-                .map(suiteTest(maven));
+            final var directory = Maven.suitePath(options.suite);
+            final var arguments = arguments(options, directory);
+            return new OperatingSystem.Task(
+                arguments
+                , directory
+                , Stream.of(Homes.EnvVars.graal())
+            );
         }
 
-        private static Function<String, OperatingSystem.Task> suiteTest(Maven maven)
-        {
-            return suite ->
-            {
-                final var directory = Maven.suitePath(suite);
-                final var userArgs = maven.testArgs.get(suite);
-                final var arguments = arguments(userArgs, directory.toString());
-                return new OperatingSystem.Task(
-                    arguments
-                    , directory
-                    , Stream.of(Homes.EnvVars.graal())
-                );
-            };
-        }
-
-        private static Stream<String> arguments(Arguments userArgs, String directory)
+        private static Stream<String> arguments(Options options, Path directory)
         {
             final var args = Stream.of(
                 "mvn"
@@ -1130,11 +1040,12 @@ class QuarkusTest implements Runnable
                 , "-Dformat.skip"
             );
 
+            final var userArgs = options.additionalTestArgs;
             final var extraArgs = EXTRA_TEST_ARGS.get(directory);
             if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
             {
                 return Stream
-                    .of(args, extraArgs.stream(), userArgs.arguments().stream())
+                    .of(args, extraArgs.stream(), userArgs.stream())
                     .flatMap(Function.identity());
             }
 
@@ -1145,7 +1056,7 @@ class QuarkusTest implements Runnable
 
             if (Objects.nonNull(userArgs))
             {
-                return Stream.concat(args, userArgs.arguments.stream());
+                return Stream.concat(args, userArgs.stream());
             }
 
             return args;
@@ -2196,53 +2107,16 @@ final class QuarkusCheck
         void cliAdditionalTestArgsOptions()
         {
             assertThat(
-                cli("-ata", "a=b,:c", "-ata", "z=-y,-Dx=w").testArgs()
-                , is(equalTo(QuarkusTest.Arguments.of(
+                cli(
+                    "-s", "ignore"
+                    , "-ata", "b,:c,-y,-Dx=w"
+                ).additionalTestArgs()
+                , is(equalTo(
                     List.of(
-                        "a=b,:c"
-                        , "z=-y,-Dx=w"
+                        "b", ":c", "-y", "-Dx=w"
                     )
-                )))
+                ))
             );
-            assertThat(
-                cli("--additional-test-args", "a=b,:c", "--additional-test-args", "z=-y,-Dx=w").testArgs()
-                , is(equalTo(QuarkusTest.Arguments.of(
-                    List.of(
-                        "a=b,:c"
-                        , "z=-y,-Dx=w"
-                    )
-                )))
-            );
-        }
-
-        @Test
-        void cliAlsoTestOptions()
-        {
-            assertThat(
-                cli("-at", "h://g/a/b/tree/m1,h://g/b/c/tree/m2").alsoTest()
-                , is(equalTo(Git.URL.of(List.of(
-                    URI.create("h://g/a/b/tree/m1")
-                    , URI.create("h://g/b/c/tree/m2")
-                ))))
-            );
-        }
-
-        @Test
-        void cliSuiteOptions()
-        {
-            assertThat(
-                cli("-s", "a,b").suites()
-                , is(equalTo(List.of("a", "b")))
-            );
-        }
-
-        @Test
-        void cliEmptyOptions()
-        {
-            final var command = cli();
-            assertThat(command.suites(), is(empty()));
-            assertThat(command.alsoTest(), is(empty()));
-            assertThat(command.testArgs(), is(anEmptyMap()));
         }
 
         @Test
@@ -2250,48 +2124,38 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var options = cli(
-                "--suites", "suite-a,suite-b"
-                , "--additional-test-args", "suite-a=p1,:p2"
-                , "--additional-test-args", "suite-b=:p3,-p4"
+                "--suite", "suite-a"
+                , "--additional-test-args", "p1,:p2,:p3,-p4"
             );
-            QuarkusTest.Maven.test(options, os::record);
+            MavenTest.Maven.test(options, os::record);
 
-            os.assertNumberOfTasks(2);
+            os.assertNumberOfTasks(1);
             os.assertTask(t ->
                 assertThat(
                     t.task().collect(Collectors.joining(" "))
-                    , is(equalTo("mvn install -Dnative -Dformat.skip p1 :p2"))
-                )
-            );
-            os.forward();
-            os.assertTask(t ->
-                assertThat(
-                    t.task().collect(Collectors.joining(" "))
-                    , is(equalTo("mvn install -Dnative -Dformat.skip :p3 -p4"))
+                    , is(equalTo("mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
                 )
             );
         }
 
         @Test
-        void suites()
+        void suite()
         {
             final var os = new RecordingOperatingSystem();
-            final var options = cli("--suites", "suite-a,suite-b");
-            QuarkusTest.Maven.test(options, os::record);
+            final var options = cli("--suite", "suite-a");
+            MavenTest.Maven.test(options, os::record);
 
-            os.assertNumberOfTasks(2);
+            os.assertNumberOfTasks(1);
             os.assertAllTasks(t -> assertThat(t.task().findFirst(), is(Optional.of("mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
-            os.forward();
-            os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-b"))));
         }
 
         @Test
         void quarkus()
         {
             final var os = new RecordingOperatingSystem();
-            final var options = cli();
-            QuarkusTest.Maven.test(options, os::record);
+            final var options = cli("-s", "quarkus");
+            MavenTest.Maven.test(options, os::record);
 
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
@@ -2305,14 +2169,10 @@ final class QuarkusCheck
         void quarkusPlatform()
         {
             final var os = new RecordingOperatingSystem();
-            final var options = cli(
-                "--also-test"
-                , "https://github.com/quarkusio/quarkus-platform/tree/master"
-            );
-            QuarkusTest.Maven.test(options, os::record);
+            final var options = cli("-s", "quarkus-platform");
+            MavenTest.Maven.test(options, os::record);
 
-            os.assertNumberOfTasks(2);
-            os.forward(); // skip quarkus task
+            os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
                 assertThat(task.directory(), is(Path.of("quarkus-platform")));
@@ -2329,16 +2189,16 @@ final class QuarkusCheck
             });
         }
 
-        private static QuarkusTest.Options cli(String... extra)
+        private static MavenTest.Options cli(String... extra)
         {
             final List<String> list = new ArrayList<>();
-            list.add("test");
+            list.add("maven-test");
             list.addAll(Arrays.asList(extra));
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var recorder = new OptionsRecorder<QuarkusTest.Options>();
-            final var command = QuarkusTest.of(recorder);
+            final var recorder = new OptionsRecorder<MavenTest.Options>();
+            final var command = MavenTest.of(recorder);
             final var exitCode = Cli.newCli(command).execute(args);
             assertThat(exitCode, is(0));
             return recorder.options;
