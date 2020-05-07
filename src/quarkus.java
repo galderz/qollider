@@ -2085,7 +2085,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.of(Path.of("downloads", "archive.tar.gz"))
+                Marker.of(Path.of("downloads", "archive.tar.gz.marker"))
                 , Marker.extract(Path.of("graal"))
             );
             final var options = cli(
@@ -2115,7 +2115,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.of(Path.of("downloads", "archive.tar.gz"))
+                Marker.of(Path.of("downloads", "archive.tar.gz.marker"))
             );
             final var options = cli(
                 "--url",
