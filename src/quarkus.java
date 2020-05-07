@@ -298,7 +298,6 @@ class GraalGet implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var path = Path.of("native-image.marker");
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
             {
@@ -306,6 +305,7 @@ class GraalGet implements Runnable
                 return Marker.notApplicable();
             }
 
+            final var path = Path.of("native-image.marker");
             final var task = toDownloadNative(path, exists);
             return doDownloadNative(task, exec, touch);
         }
@@ -355,13 +355,12 @@ class GraalGet implements Runnable
         {
             final var url = options.url;
             final var fileName = Path.of(url.getFile()).getFileName();
-            final var path = Path.of("downloads").resolve(fileName);
-
-            // TODO path to the file itself cannot be a marker (might be partially downloaded)
-            final var marker = Marker.of(path).query(exists);
+            final var directory = Path.of("downloads");
+            final var marker = Marker.ofFileName(fileName, directory).query(exists);
             if (marker.exists())
                 return marker;
 
+            final var path = directory.resolve(fileName);
             download.accept(url, path);
             // No touching to be done, the file is the marker
             return marker.touch(m -> true);
@@ -1370,6 +1369,12 @@ record Marker(boolean exists, boolean touched, Path path)
     static Marker extract(Path path)
     {
         return of(path.resolve("extract.marker"));
+    }
+
+    static Marker ofFileName(Path fileName, Path path)
+    {
+        final var markerFileName = String.format("%s.marker", fileName);
+        return Marker.of(path.resolve(markerFileName));
     }
 
     static Marker of(Path path)
