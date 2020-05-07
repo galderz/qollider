@@ -1630,10 +1630,8 @@ final class Web
     {
         try
         {
-            final var expectedSize = contentLength(url);
             final var urlChannel = new DownloadProgressChannel(
                 Channels.newChannel(url.openStream())
-                , expectedSize
             );
 
             // Create any parent directories as needed
@@ -1651,36 +1649,18 @@ final class Web
         }
     }
 
-    private int contentLength(URL url)
-    {
-        try
-        {
-            HttpURLConnection.setFollowRedirects(false);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("HEAD");
-            return connection.getContentLength();
-        }
-        catch (Exception ignored)
-        {
-            return -1;
-        }
-    }
-
     private static final class DownloadProgressChannel implements ReadableByteChannel
     {
+        private static final long LOG_CHUNK_SIZE = 25 * 1024 * 1024;
+
         final ReadableByteChannel channel;
-        final long expectedSize;
 
         long bytesCount;
-        double progress;
+        int logCount;
 
-        private DownloadProgressChannel(
-            ReadableByteChannel channel
-            , long expectedSize
-        )
+        private DownloadProgressChannel(ReadableByteChannel channel)
         {
             this.channel = channel;
-            this.expectedSize = expectedSize;
         }
 
         @Override
@@ -1692,17 +1672,10 @@ final class Web
             if (bytesRead > 0)
             {
                 bytesCount += bytesRead;
-                if (expectedSize > 0)
+                final var logChunk = (int) (bytesCount / LOG_CHUNK_SIZE);
+                if (logChunk != logCount)
                 {
-                    progress = (double) bytesCount * 100 / (double) expectedSize;
-                    LOG.info(
-                        "Download progress {} received, {}"
-                        , humanReadableByteCountBin(bytesCount)
-                        , String.format("%.02f%%", progress)
-                    );
-                }
-                else
-                {
+                    logCount = logChunk;
                     LOG.info(
                         "Download progress {} received"
                         , humanReadableByteCountBin(bytesCount)
