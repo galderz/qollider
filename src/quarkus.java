@@ -317,7 +317,7 @@ class GraalGet implements Runnable
             return new OperatingSystem.MarkerTask(
                 new OperatingSystem.Task(
                     Stream.of(
-                        "gu"
+                        "./gu"
                         , "install"
                         , "native-image"
                     )
