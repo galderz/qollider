@@ -32,12 +32,17 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.CharacterIterator;
+import java.text.StringCharacterIterator;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
@@ -1601,6 +1606,8 @@ class OperatingSystem
 // Dependency
 final class Web
 {
+    static final Logger LOG = LogManager.getLogger(Web.class);
+
     final FileSystem fs;
 
     Web(FileSystem fs)
@@ -1613,7 +1620,11 @@ final class Web
     {
         try
         {
-            final var urlChannel = Channels.newChannel(url.openStream());
+            final var expectedSize = contentLength(url);
+            final var urlChannel = new DownloadProgressChannel(
+                Channels.newChannel(url.openStream())
+                , expectedSize
+            );
 
             // Create any parent directories as needed
             fs.mkdirs(file.getParent());
@@ -1627,6 +1638,99 @@ final class Web
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    private int contentLength(URL url)
+    {
+        try
+        {
+            HttpURLConnection.setFollowRedirects(false);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("HEAD");
+            return connection.getContentLength();
+        }
+        catch (Exception ignored)
+        {
+            return -1;
+        }
+    }
+
+    private static final class DownloadProgressChannel implements ReadableByteChannel
+    {
+        final ReadableByteChannel channel;
+        final long expectedSize;
+
+        long bytesCount;
+        double progress;
+
+        private DownloadProgressChannel(
+            ReadableByteChannel channel
+            , long expectedSize
+        )
+        {
+            this.channel = channel;
+            this.expectedSize = expectedSize;
+        }
+
+        @Override
+        public int read(ByteBuffer dst) throws IOException
+        {
+            int bytesRead;
+
+            bytesRead = channel.read(dst);
+            if (bytesRead > 0)
+            {
+                bytesCount += bytesRead;
+                if (expectedSize > 0)
+                {
+                    progress = (double) bytesCount * 100 / (double) expectedSize;
+                    LOG.info(
+                        "Download progress {} received, {}"
+                        , humanReadableByteCountBin(bytesCount)
+                        , String.format("%.02f%%", progress)
+                    );
+                }
+                else
+                {
+                    LOG.info(
+                        "Download progress {} received"
+                        , humanReadableByteCountBin(bytesCount)
+                    );
+                }
+            }
+            return bytesRead;
+        }
+
+        // https://stackoverflow.com/questions/3758606/how-to-convert-byte-size-into-human-readable-format-in-java
+        public static String humanReadableByteCountBin(long bytes)
+        {
+            long absB = bytes == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(bytes);
+            if (absB < 1024)
+            {
+                return bytes + " B";
+            }
+            long value = absB;
+            CharacterIterator ci = new StringCharacterIterator("KMGTPE");
+            for (int i = 40; i >= 0 && absB > 0xfffccccccccccccL >> i; i -= 10)
+            {
+                value >>= 10;
+                ci.next();
+            }
+            value *= Long.signum(bytes);
+            return String.format("%.1f %ciB", value / 1024.0, ci.current());
+        }
+
+        @Override
+        public boolean isOpen()
+        {
+            return channel.isOpen();
+        }
+
+        @Override
+        public void close() throws IOException
+        {
+            channel.close();
         }
     }
 }
