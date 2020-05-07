@@ -279,10 +279,22 @@ class GraalGet implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var downloadMarker = Graal.download(options, exists, download, touch);
+            final var url = options.url;
+            final var fileName = Path.of(url.getFile()).getFileName();
+            final var directory = Path.of("downloads");
+            final var tarPath = directory.resolve(fileName);
+            final var markerPath = directory.resolve(String.format("%s.marker", fileName));
+            final var downloadMarker = Graal.download(
+                options
+                , markerPath
+                , tarPath
+                , exists
+                , download
+                , touch
+            );
             final var extractMarker = Graal.extract(
                 options
-                , downloadMarker.path()
+                , tarPath
                 , exists
                 , exec
                 , touch
@@ -349,20 +361,19 @@ class GraalGet implements Runnable
 
         private static Marker download(
             Options options
+            , Path markerPath
+            , Path tarPath
             , Predicate<Marker> exists
             , BiConsumer<URL, Path> download
             , Function<Marker, Boolean> touch
         )
         {
             final var url = options.url;
-            final var fileName = Path.of(url.getFile()).getFileName();
-            final var directory = Path.of("downloads");
-            final var marker = Marker.ofFileName(fileName, directory).query(exists);
+            final var marker = Marker.of(markerPath).query(exists);
             if (marker.exists())
                 return marker;
 
-            final var path = directory.resolve(fileName);
-            download.accept(url, path);
+            download.accept(url, tarPath);
             return marker.touch(touch);
         }
 
@@ -1369,12 +1380,6 @@ record Marker(boolean exists, boolean touched, Path path)
     static Marker extract(Path path)
     {
         return of(path.resolve("extract.marker"));
-    }
-
-    static Marker ofFileName(Path fileName, Path path)
-    {
-        final var markerFileName = String.format("%s.marker", fileName);
-        return Marker.of(path.resolve(markerFileName));
     }
 
     static Marker of(Path path)
