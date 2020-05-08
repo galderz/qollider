@@ -13,25 +13,39 @@ BOOT_JDK_HOME="${HOME}/.sdkman/candidates/java/${BOOT_JDK}"
 JBANG_VERSION="0.22.0.2"
 
 getSdkman() {
-    curl -s "https://get.sdkman.io" | bash
-    source ${HOME}/.sdkman/bin/sdkman-init.sh
+    local file="${HOME}/.sdkman/bin/sdkman-init.sh"
+    if [ ! -e "${file}" ]; then
+        echo 'Installing sdkman'
+        curl -s "https://get.sdkman.io" | bash
+    fi
+    source "${file}"
 }
 
 installBootJDK() {
-    n | sdk install java ${BOOT_JDK} || true
+    if [ ! -d "${BOOT_JDK_HOME}" ]; then
+        n | sdk install java ${BOOT_JDK}
+    fi
 }
 
 installScriptJDK() {
-    n | sdk install java ${SCRIPT_JDK} || true
+    if [ ! -d "${SCRIPT_JDK_HOME}" ]; then
+        n | sdk install java ${SCRIPT_JDK}
+    fi
 }
 
 installJBang() {
-    sdk install jbang ${JBANG_VERSION} || true
-    n | sdk use jbang ${JBANG_VERSION}
+    local directory="${HOME}/.sdkman/candidates/jbang/${JBANG_VERSION}"
+    if [ ! -d "${directory}" ]; then
+        sdk install jbang ${JBANG_VERSION}
+        n | sdk use jbang ${JBANG_VERSION}
+    fi
 }
 
 installMaven() {
-    n | sdk install maven || true
+    local directory="${HOME}/.sdkman/candidates/maven"
+    if [ ! -d "${directory}" ]; then
+        n | sdk install maven || true
+    fi
 }
 
 run() {
