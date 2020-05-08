@@ -32,7 +32,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -242,7 +241,7 @@ class GraalGet implements Runnable
     public void run()
     {
         LOG.info("Graal Get");
-        final var options = new Options(url, Path.of("graal"));
+        final var options = new Options(url, Path.of("graalvm", "graal"));
         LOG.info(options);
         runner.accept(options);
     }
@@ -510,6 +509,7 @@ class GraalBuild implements Runnable
             jdkTree
             , mxTree
             , graalTree
+            , Path.of("graalvm")
         );
         LOG.info(options);
         runner.accept(options);
@@ -529,7 +529,9 @@ class GraalBuild implements Runnable
         @Override
         public void accept(Options options)
         {
-            Git.clone(Options.urls(options), fs::exists, os::exec, fs::touch);
+            final var parent = fs.mkdirs(options.parent);
+
+            Git.clone(Options.urls(options), parent, fs::exists, os::exec, fs::touch);
 
             Java.build(options, os::bootJdkHome, fs::exists, os::exec, fs::touch);
             Java.link(options, fs::symlink);
@@ -543,18 +545,41 @@ class GraalBuild implements Runnable
         Git.URL jdk
         , Git.URL mx
         , Git.URL graal
+        , Path parent
     )
     {
+        Java.Type javaType()
+        {
+            return Java.type(jdk);
+        }
+
+        Path jdkPath()
+        {
+            return parent.resolve(jdk.name());
+        }
+
+        Path graalPath()
+        {
+            return parent.resolve(graal.name());
+        }
+
+        Path mxPath()
+        {
+            return parent.resolve(Path.of(mx.name(), "mx"));
+        }
+
         static Options of(
             URI jdk
             , URI mx
             , URI graal
+            , Path parent
         )
         {
             return new Options(
                 Git.URL.of(jdk)
                 , Git.URL.of(mx)
                 , Git.URL.of(graal)
+                , parent
             );
         }
 
@@ -568,15 +593,8 @@ class GraalBuild implements Runnable
         }
     }
 
-    record Java(Java.Type type, Path name)
+    static final class Java
     {
-        static Java of(Options options)
-        {
-            final var type = type(options.jdk);
-            final var name = Path.of(options.jdk.name());
-            return new Java(type, name);
-        }
-
         static Marker build(
             Options options
             , Supplier<Path> bootJdkHome
@@ -595,17 +613,17 @@ class GraalBuild implements Runnable
             , Predicate<Marker> exists
         )
         {
-            final var java = Java.of(options);
-            final var marker = Marker.build(java.name).query(exists);
+            final var jdkPath = options.jdkPath();
+            final var marker = Marker.build(jdkPath).query(exists);
             if (marker.exists())
             {
                 return new OperatingSystem.MarkerMultiTask(Stream.empty(), marker);
             }
 
-            final var tasks = switch (java.type)
+            final var tasks = switch (options.javaType())
                 {
-                    case OPENJDK -> Java.OpenJDK.buildSteps(java, bootJdkHome);
-                    case LABSJDK -> Java.LabsJDK.buildSteps(java, bootJdkHome);
+                    case OPENJDK -> Java.OpenJDK.buildSteps(jdkPath, bootJdkHome);
+                    case LABSJDK -> Java.LabsJDK.buildSteps(jdkPath, bootJdkHome);
                 };
 
             return new OperatingSystem.MarkerMultiTask(tasks, marker);
@@ -624,13 +642,12 @@ class GraalBuild implements Runnable
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var java = Java.of(options);
-
+            final var jdkPath = options.jdkPath();
             final var target =
-                switch (java.type)
+                switch (options.javaType())
                     {
-                        case OPENJDK -> Java.OpenJDK.javaHome(java);
-                        case LABSJDK -> Java.LabsJDK.javaHome(java);
+                        case OPENJDK -> Java.OpenJDK.javaHome(jdkPath);
+                        case LABSJDK -> Java.LabsJDK.javaHome(jdkPath);
                     };
 
             final var link = Homes.java();
@@ -641,19 +658,19 @@ class GraalBuild implements Runnable
         private static final class OpenJDK
         {
             static Stream<OperatingSystem.Task> buildSteps(
-                Java java
+                Path jdkPath
                 , Supplier<Path> bootJdkHome
             )
             {
                 return Stream.of(
-                    configureSh(java, bootJdkHome)
-                    , makeGraalJDK(java)
+                    configureSh(jdkPath, bootJdkHome)
+                    , makeGraalJDK(jdkPath)
                 );
             }
 
-            static Path javaHome(Java java)
+            static Path javaHome(Path jdk)
             {
-                return java.name.resolve(
+                return jdk.resolve(
                     Path.of(
                         "build"
                         , "graal-server-release"
@@ -663,7 +680,7 @@ class GraalBuild implements Runnable
                 );
             }
 
-            private static OperatingSystem.Task configureSh(Java java, Supplier<Path> bootJdkHome)
+            private static OperatingSystem.Task configureSh(Path jdk, Supplier<Path> bootJdkHome)
             {
                 return new OperatingSystem.Task(
                     Stream.of(
@@ -676,19 +693,19 @@ class GraalBuild implements Runnable
                         , "--enable-aot=no"
                         , String.format("--with-boot-jdk=%s", bootJdkHome.get())
                     )
-                    , java.name
+                    , jdk
                     , Stream.empty()
                 );
             }
 
-            private static OperatingSystem.Task makeGraalJDK(Java java)
+            private static OperatingSystem.Task makeGraalJDK(Path jdk)
             {
                 return new OperatingSystem.Task(
                     Stream.of(
                         "make"
                         , "graal-builder-image"
                     )
-                    , java.name
+                    , jdk
                     , Stream.empty()
                 );
             }
@@ -696,30 +713,30 @@ class GraalBuild implements Runnable
 
         private static final class LabsJDK
         {
-            static Stream<OperatingSystem.Task> buildSteps(Java java, Supplier<Path> bootJdkPath)
+            static Stream<OperatingSystem.Task> buildSteps(Path jdk, Supplier<Path> bootJdkPath)
             {
-                return Stream.of(buildJDK(java, bootJdkPath));
+                return Stream.of(buildJDK(jdk, bootJdkPath));
             }
 
-            static Path javaHome(Java java)
+            static Path javaHome(Path jdk)
             {
-                return java.name.resolve("java_home");
+                return jdk.resolve("java_home");
             }
 
-            private static OperatingSystem.Task buildJDK(Java java, Supplier<Path> bootJdkPath)
+            private static OperatingSystem.Task buildJDK(Path jdk, Supplier<Path> bootJdkPath)
             {
                 return new OperatingSystem.Task(
                     Stream.of(
                         "python"
                         , "build_labsjdk.py"
                     )
-                    , java.name
+                    , jdk
                     , Stream.of(Homes.EnvVars.bootJava(bootJdkPath))
                 );
             }
         }
 
-        private static Java.Type type(Git.URL url)
+        static Java.Type type(Git.URL url)
         {
             return switch (url.organization())
                 {
@@ -737,15 +754,8 @@ class GraalBuild implements Runnable
         }
     }
 
-    record Graal(Path name, Path mx)
+    static final class Graal
     {
-        static Graal of(Options options)
-        {
-            final var name = Path.of(options.graal.name());
-            final var mx = Path.of(options.mx.name(), "mx");
-            return new Graal(name, mx);
-        }
-
         static Marker build(
             Options options
             , Predicate<Marker> exists
@@ -753,20 +763,19 @@ class GraalBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var graal = Graal.of(options);
-            final var task = Graal.toBuild(graal, exists);
+            final var task = Graal.toBuild(options, exists);
             return Graal.doBuild(task, exec, touch);
         }
 
-        private static OperatingSystem.MarkerTask toBuild(Graal graal, Predicate<Marker> exists)
+        private static OperatingSystem.MarkerTask toBuild(Options options, Predicate<Marker> exists)
         {
-            final var marker = Marker.build(graal.name).query(exists);
+            final var marker = Marker.build(options.graalPath()).query(exists);
             if (marker.exists())
             {
                 return OperatingSystem.MarkerTask.noop(marker);
             }
 
-            return buildTask(graal, marker);
+            return buildTask(options, marker);
         }
 
         private static Marker doBuild(
@@ -783,15 +792,15 @@ class GraalBuild implements Runnable
             return marker.touch(touch);
         }
 
-        private static OperatingSystem.MarkerTask buildTask(Graal graal, Marker marker)
+        private static OperatingSystem.MarkerTask buildTask(Options options, Marker marker)
         {
             return new OperatingSystem.MarkerTask(
                 new OperatingSystem.Task(
                     Stream.of(
-                        Path.of("../..").resolve(graal.mx).toString()
+                        Path.of("../..").resolve(options.mxPath()).toString()
                         , "build"
                     )
-                    , Graal.svm(graal)
+                    , Graal.svm(options)
                     , Stream.of(Homes.EnvVars.java())
                 )
                 , marker
@@ -800,9 +809,7 @@ class GraalBuild implements Runnable
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var graal = Graal.of(options);
-
-            final var target = graal.name.resolve(
+            final var target = options.graalPath().resolve(
                 Path.of(
                     "sdk"
                     , "latest_graalvm_home"
@@ -812,9 +819,9 @@ class GraalBuild implements Runnable
             return symLink.apply(Homes.graal(), target);
         }
 
-        static Path svm(Graal graal)
+        static Path svm(Options options)
         {
-            return graal.name.resolve("substratevm");
+            return options.graalPath().resolve("substratevm");
         }
     }
 }
@@ -897,7 +904,8 @@ class MavenBuild implements Runnable
         @Override
         public void accept(Options options)
         {
-            Git.clone(singletonList(options.tree), fs::exists, os::exec, fs::touch);
+            final var parent = Path.of("");
+            Git.clone(singletonList(options.tree), parent, fs::exists, os::exec, fs::touch);
             Maven.build(options, fs::exists, os::exec, fs::touch);
         }
     }
@@ -1220,12 +1228,13 @@ class Git
 
     static List<Marker> clone(
         List<Git.URL> urls
+        , Path parent
         , Predicate<Marker> exists
         , Function<OperatingSystem.MarkerTask, Marker> exec
         , Function<Marker, Boolean> touch
     )
     {
-        final var tasks = Git.toClone(urls, exists);
+        final var tasks = Git.toClone(urls, parent, exists);
         return Git.doClone(tasks, exec, touch);
     }
 
@@ -1242,14 +1251,15 @@ class Git
     }
 
     private static Stream<OperatingSystem.MarkerTask> toClone(
-        List<Git.URL> urls
+        List<URL> urls
+        , Path parent
         , Predicate<Marker> exists
     )
     {
         return urls.stream()
             .map(Git::markerURL)
             .filter(Git.needsDownload(exists))
-            .map(Git::cloneTask);
+            .map(Git.cloneTask(parent));
     }
 
     private static Git.MarkerURL markerURL(Git.URL url)
@@ -1257,15 +1267,16 @@ class Git
         return new Git.MarkerURL(url, Marker.clone(url.name()));
     }
 
-    private static OperatingSystem.MarkerTask cloneTask(Git.MarkerURL url)
+    private static Function<Git.MarkerURL, OperatingSystem.MarkerTask> cloneTask(Path parent)
     {
-        return new OperatingSystem.MarkerTask(
-            new OperatingSystem.Task(
-                Git.toClone(url.url())
-                , Path.of("")
-                , Stream.empty())
-            , url.marker()
-        );
+        return url ->
+            new OperatingSystem.MarkerTask(
+                new OperatingSystem.Task(
+                    Git.toClone(url.url())
+                    , parent
+                    , Stream.empty())
+                , url.marker()
+            );
     }
 
     private static Predicate<Git.MarkerURL> needsDownload(Predicate<Marker> exists)
@@ -1291,6 +1302,7 @@ class Homes
 {
     static Path java()
     {
+        // TODO rename to graal_java_home
         return Path.of("java_home");
     }
 
@@ -1776,7 +1788,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Collections.emptyList();
-            final var cloned = Git.clone(urls, m -> false, os::record, m -> false);
+            final var cloned = Git.clone(urls, Path.of(""), m -> false, os::record, m -> false);
             os.assertNumberOfTasks(0);
             assertThat(cloned.size(), is(0));
         }
@@ -1797,7 +1809,7 @@ final class QuarkusCheck
                     , URI.create("h:/g/b/repo-b/tree/branch")
                 )
             );
-            final var cloned = Git.clone(urls, fs::exists, os::record, fs::touch);
+            final var cloned = Git.clone(urls, Path.of(""), fs::exists, os::record, fs::touch);
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
             assertThat(cloned.size(), is(1));
@@ -1840,7 +1852,7 @@ final class QuarkusCheck
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("python")));
-                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
+                assertThat(task.directory(), is(Path.of("graalvm", "labs-openjdk-11")));
             });
         }
 
@@ -1865,13 +1877,13 @@ final class QuarkusCheck
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("sh")));
-                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
+                assertThat(task.directory(), is(Path.of("graalvm", "jdk11u-dev")));
             });
             os.forward();
             os.assertTask(task ->
             {
                 assertThat(task.task().findFirst(), is(Optional.of("make")));
-                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
+                assertThat(task.directory(), is(Path.of("graalvm", "jdk11u-dev")));
             });
         }
 
@@ -1880,7 +1892,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.build(Path.of("jdk11u-dev"))
+                Marker.build(Path.of("graalvm", "jdk11u-dev"))
             );
             final var options = cli(
                 "--jdk-tree",
@@ -1927,8 +1939,8 @@ final class QuarkusCheck
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
-                assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
-                assertThat(task.directory(), is(Path.of("graal/substratevm")));
+                assertThat(task.task().findFirst(), is(Optional.of("../../graalvm/mx/mx")));
+                assertThat(task.directory(), is(Path.of("graalvm", "graal", "substratevm")));
             });
         }
 
@@ -1937,7 +1949,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.build(Path.of("graal"))
+                Marker.build(Path.of("graalvm", "graal"))
             );
             final var options = cli();
             final var marker = GraalBuild.Graal.build(
@@ -1960,7 +1972,7 @@ final class QuarkusCheck
                 , Link::new
             );
             assertThat(linked.link(), is(Homes.java()));
-            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
+            assertThat(linked.target(), is(Path.of("graalvm", "labs-openjdk-11", "java_home")));
         }
 
         @Test
@@ -1977,7 +1989,8 @@ final class QuarkusCheck
             assertThat(linked.link(), is(Homes.java()));
             assertThat(linked.target(),
                 is(Path.of(
-                    "jdk11u-dev"
+                    "graalvm"
+                    ,"jdk11u-dev"
                     , "build"
                     , "graal-server-release"
                     , "images"
@@ -2032,7 +2045,7 @@ final class QuarkusCheck
             os.assertTask(t ->
                 assertThat(
                     t.task().collect(Collectors.joining(" "))
-                    , is(equalTo("tar -xzvpf downloads/archive.tar.gz -C graal --strip-components 1"))
+                    , is(equalTo("tar -xzvpf downloads/archive.tar.gz -C graalvm/graal --strip-components 1"))
                 )
             );
         }
@@ -2071,7 +2084,7 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
                 Marker.of(Path.of("downloads", "archive.tar.gz.marker"))
-                , Marker.extract(Path.of("graal"))
+                , Marker.extract(Path.of("graalvm", "graal"))
             );
             final var options = cli(
                 "--url",
