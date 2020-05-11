@@ -1303,12 +1303,13 @@ class Homes
 {
     static Path java()
     {
-        // TODO rename to graal_java_home
+        // TODO rename to graalvm_java_home
         return Path.of("java_home");
     }
 
     static Path graal()
     {
+        // TODO rename to graalvm_home
         return Path.of("graal_home");
     }
 
