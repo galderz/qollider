@@ -565,7 +565,7 @@ class GraalBuild implements Runnable
 
         Path mxPath()
         {
-            return parent.resolve(Path.of(mx.name(), "mx"));
+            return Path.of(mx.name(), "mx");
         }
 
         static Options of(
@@ -1960,7 +1960,7 @@ final class QuarkusCheck
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
-                assertThat(task.task().findFirst(), is(Optional.of("../../graalvm/mx/mx")));
+                assertThat(task.task().findFirst(), is(Optional.of("../../mx/mx")));
                 assertThat(task.directory(), is(Path.of("graalvm", "graal", "substratevm")));
             });
         }
