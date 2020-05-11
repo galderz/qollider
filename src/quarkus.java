@@ -837,9 +837,17 @@ class MavenBuild implements Runnable
     // TODO add namespace info
     static final Logger LOG = LogManager.getLogger(MavenBuild.class);
 
+    // TODO avoid duplication with MavenTest
+    // TODO read camel-quarkus snapshot version from pom.xml
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
     private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
-        "camel-quarkus", List.of("-Dquarkus.version=999-SNAPSHOT")
+        "camel-quarkus"
+        , List.of("-Dquarkus.version=999-SNAPSHOT")
+        , "quarkus-platform"
+        , List.of(
+            "-Dquarkus.version=999-SNAPSHOT"
+            , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
+        )
     );
 
     private final Consumer<Options> runner;
@@ -1007,6 +1015,7 @@ class MavenTest implements Runnable
 {
     private static final Logger LOG = LogManager.getLogger(MavenTest.class);
 
+    // TODO avoid duplication with MavenBuild
     // TODO read camel-quarkus snapshot version from
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
     private static final Map<Path, List<String>> EXTRA_TEST_ARGS = Map.of(
