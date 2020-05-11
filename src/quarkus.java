@@ -1797,11 +1797,8 @@ final class QuarkusCheck
         @Test
         void gitCloneSelective()
         {
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.clone(Path.of("jdk11u-dev")), true
-                    , Marker.clone(Path.of("camel-quarkus")), false
-                )
+            final var fs = InMemoryFileSystem.ofExists(
+                Marker.clone(Path.of("jdk11u-dev"))
             );
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Git.URL.of(
@@ -1862,11 +1859,7 @@ final class QuarkusCheck
         void javaLabsJDK()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(
-                Map.of(
-                    Marker.clone(Path.of("labs-openjdk-11")), false
-                )
-            );
+            final var fs = InMemoryFileSystem.empty();
             final var options = cli();
 
             final var marker = GraalBuild.Java.build(
@@ -2214,7 +2207,7 @@ final class QuarkusCheck
         void quarkus()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(Collections.emptyMap());
+            final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
                 , "https://github.com/quarkusio/quarkus/tree/master"
@@ -2261,7 +2254,7 @@ final class QuarkusCheck
         void camelQuarkus()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(Collections.emptyMap());
+            final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
                 , "https://github.com/apache/camel-quarkus/tree/master"
@@ -2290,7 +2283,7 @@ final class QuarkusCheck
         void camel()
         {
             final var os = new RecordingOperatingSystem();
-            final var fs = new InMemoryFileSystem(Collections.emptyMap());
+            final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
                 , "https://github.com/apache/camel/tree/master"
