@@ -1257,14 +1257,15 @@ class Git
     )
     {
         return urls.stream()
-            .map(Git::markerURL)
+            .map(Git.markerURL(parent))
             .filter(Git.needsDownload(exists))
             .map(Git.cloneTask(parent));
     }
 
-    private static Git.MarkerURL markerURL(Git.URL url)
+    private static Function<Git.URL, Git.MarkerURL> markerURL(Path parent)
     {
-        return new Git.MarkerURL(url, Marker.clone(url.name()));
+        return url ->
+            new Git.MarkerURL(url, Marker.clone(parent.resolve(url.name())));
     }
 
     private static Function<Git.MarkerURL, OperatingSystem.MarkerTask> cloneTask(Path parent)
@@ -1384,9 +1385,9 @@ record Marker(boolean exists, boolean touched, Path path)
         return of(path.resolve("build.marker"));
     }
 
-    static Marker clone(String dirName)
+    static Marker clone(Path path)
     {
-        return of(Path.of(dirName, "clone.marker"));
+        return of(path.resolve("clone.marker"));
     }
 
     static Marker extract(Path path)
@@ -1784,7 +1785,7 @@ final class QuarkusCheck
         }
 
         @Test
-        void cloneDefault()
+        void gitClone()
         {
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Collections.emptyList();
@@ -1794,26 +1795,53 @@ final class QuarkusCheck
         }
 
         @Test
-        void cloneSelective()
+        void gitCloneSelective()
         {
             final var fs = new InMemoryFileSystem(
                 Map.of(
-                    Marker.clone("repo-a"), true
-                    , Marker.clone("repo-b"), false
+                    Marker.clone(Path.of("jdk11u-dev")), true
+                    , Marker.clone(Path.of("camel-quarkus")), false
                 )
             );
             final var os = new RecordingOperatingSystem();
             final List<Git.URL> urls = Git.URL.of(
                 List.of(
-                    URI.create("h://g/a/repo-a/tree/master")
-                    , URI.create("h:/g/b/repo-b/tree/branch")
+                    URI.create("https://github.com/openjdk/jdk11u-dev/tree/master")
+                    , URI.create("https://github.com/apache/camel-quarkus/tree/quarkus-master")
                 )
             );
             final var cloned = Git.clone(urls, Path.of(""), fs::exists, os::record, fs::touch);
             os.assertNumberOfTasks(1);
-            os.assertMarkerTask(t -> assertThat(t.task().task().findFirst(), is(Optional.of("git"))));
+            os.assertMarkerTask(t ->
+            {
+                assertThat(t.task().directory(), is(Path.of("")));
+                assertThat(t.task().task().findFirst(), is(Optional.of("git")));
+            });
             assertThat(cloned.size(), is(1));
             assertThat(cloned.get(0).touched(), is(true));
+            assertThat(cloned.get(0).path(), is(Path.of("camel-quarkus", "clone.marker")));
+        }
+
+        @Test
+        void gitCloneParent()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = new RecordingOperatingSystem();
+            final List<Git.URL> urls = Git.URL.of(
+                List.of(
+                    URI.create("https://github.com/openjdk/jdk11u-dev/tree/master")
+                )
+            );
+            final var cloned = Git.clone(urls, Path.of("graalvm"), fs::exists, os::record, fs::touch);
+            os.assertNumberOfTasks(1);
+            os.assertMarkerTask(t ->
+            {
+                assertThat(t.task().directory(), is(Path.of("graalvm")));
+                assertThat(t.task().task().findFirst(), is(Optional.of("git")));
+            });
+            assertThat(cloned.size(), is(1));
+            assertThat(cloned.get(0).touched(), is(true));
+            assertThat(cloned.get(0).path(), is(Path.of("graalvm", "jdk11u-dev", "clone.marker")));
         }
 
         @Test
@@ -1836,7 +1864,7 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var fs = new InMemoryFileSystem(
                 Map.of(
-                    Marker.clone("labs-openjdk-11"), false
+                    Marker.clone(Path.of("labs-openjdk-11")), false
                 )
             );
             final var options = cli();
