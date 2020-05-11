@@ -1742,8 +1742,8 @@ final class QuarkusCheck
                 selectClass(CheckGit.class)
                 , selectClass(CheckGraalBuild.class)
                 , selectClass(CheckGraalGet.class)
-                , selectClass(CheckBuild.class)
-                , selectClass(CheckTest.class)
+                , selectClass(CheckMavenBuild.class)
+                , selectClass(CheckMavenTest.class)
             )
             .build();
         Launcher launcher = LauncherFactory.create();
@@ -2201,7 +2201,7 @@ final class QuarkusCheck
     }
 
     @ExtendWith(LoggingExtension.class)
-    static class CheckBuild
+    static class CheckMavenBuild
     {
         @Test
         void quarkus()
@@ -2330,7 +2330,7 @@ final class QuarkusCheck
         }
     }
 
-    static class CheckTest
+    static class CheckMavenTest
     {
         @Test
         void cliAdditionalTestArgsOptions()
