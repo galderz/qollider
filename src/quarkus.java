@@ -122,7 +122,7 @@ final class Cli
         // for converters and other options to have effect
         Arrays.asList(subcommands).forEach(cmdline::addSubcommand);
         return cmdline
-            .registerConverter(Git.URL.class, Git.URL::of)
+            .registerConverter(Repository.class, Repository::of)
             .setCaseInsensitiveEnumValuesAllowed(true);
     }
 }
@@ -531,7 +531,8 @@ class GraalBuild implements Runnable
         {
             final var parent = fs.mkdirs(options.parent);
 
-            Git.clone(Options.urls(options), parent, fs::exists, os::exec, fs::touch);
+            Java.clone(options, parent, fs::exists, os::exec, fs::touch);
+            Git.clone(Options.repositories(options), parent, fs::exists, os::exec, fs::touch);
 
             Java.build(options, os::bootJdkHome, fs::exists, os::exec, fs::touch);
             Java.link(options, fs::symlink);
@@ -542,9 +543,9 @@ class GraalBuild implements Runnable
     }
 
     record Options(
-        Git.URL jdk
-        , Git.URL mx
-        , Git.URL graal
+        Repository jdk
+        , Repository mx
+        , Repository graal
         , Path parent
     )
     {
@@ -576,17 +577,16 @@ class GraalBuild implements Runnable
         )
         {
             return new Options(
-                Git.URL.of(jdk)
-                , Git.URL.of(mx)
-                , Git.URL.of(graal)
+                Repository.of(jdk)
+                , Repository.of(mx)
+                , Repository.of(graal)
                 , parent
             );
         }
 
-        static List<Git.URL> urls(Options options)
+        static List<Repository> repositories(Options options)
         {
-            final var urls = new ArrayList<Git.URL>();
-            urls.add(options.jdk);
+            final var urls = new ArrayList<Repository>();
             urls.add(options.mx);
             urls.add(options.graal);
             return urls;
@@ -595,6 +595,29 @@ class GraalBuild implements Runnable
 
     static final class Java
     {
+        static Marker clone(
+            Options options
+            , Path parent
+            , Predicate<Marker> exists
+            , Function<OperatingSystem.MarkerTask, Marker> exec
+            , Function<Marker, Boolean> touch
+        )
+        {
+            return switch (options.jdk.type())
+            {
+                case GIT ->
+                    Git.clone(
+                        options.jdk
+                        , parent
+                        , exists
+                        , exec
+                        , touch
+                    );
+                case MERCURIAL ->
+                    Mercurial.clone(options.jdk, parent, exists, exec, touch);
+            };
+        }
+
         static Marker build(
             Options options
             , Supplier<Path> bootJdkHome
@@ -725,6 +748,7 @@ class GraalBuild implements Runnable
 
             private static OperatingSystem.Task buildJDK(Path jdk, Supplier<Path> bootJdkPath)
             {
+                // TODO pass boot jdk via --boot-jdk (e.g. python build_labsjdk.py --boot-jdk ${HOME}/.sdkman/candidates/java/11.0.7.hs-adpt)
                 return new OperatingSystem.Task(
                     Stream.of(
                         "python"
@@ -736,14 +760,14 @@ class GraalBuild implements Runnable
             }
         }
 
-        static Java.Type type(Git.URL url)
+        static Java.Type type(Repository repo)
         {
-            return switch (url.organization())
+            return switch (repo.organization())
                 {
                     case "openjdk" -> Type.OPENJDK;
                     case "graalvm" -> Type.LABSJDK;
                     default -> throw new IllegalStateException(
-                        "Unexpected value: " + url.name()
+                        "Unexpected value: " + repo.name()
                     );
                 };
         }
@@ -861,7 +885,7 @@ class MavenBuild implements Runnable
         }
         , required = true
     )
-    Git.URL tree;
+    Repository tree;
 
     @Option(
         description = "Additional build arguments"
@@ -918,7 +942,7 @@ class MavenBuild implements Runnable
         }
     }
 
-    record Options(Git.URL tree, List<String> additionalBuildArgs)
+    record Options(Repository tree, List<String> additionalBuildArgs)
     {
         Path project()
         {
@@ -1160,90 +1184,197 @@ class MavenTest implements Runnable
     }
 }
 
-class Git
+record Repository(
+    String organization
+    , String name
+    , Repository.Type type
+    , String branch
+    , URI cloneUri
+)
 {
-    record URL(
-        String organization
-        , String name // TODO refactor to repoName or repository
-        , String branch
-        , String url
-    )
+    static Repository of(String uri)
     {
-        static Git.URL of(String uri)
-        {
-            return Git.URL.of(URI.create(uri));
-        }
+        return Repository.of(URI.create(uri));
+    }
 
-        static Git.URL of(URI uri)
+    static Repository of(URI uri)
+    {
+        final var host = uri.getHost();
+        final var path = Path.of(uri.getPath());
+        if (host.equals("github.com"))
         {
-            final var path = Path.of(uri.getPath());
-
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
             final var branch = extractBranch(path).toString();
-            final var url = githubURL(organization, name);
-
-            return new URL(organization, name, branch, url);
+            final var cloneUri = gitCloneUri(organization, name);
+            return new Repository(organization, name, Type.GIT, branch, cloneUri);
         }
-
-        private static String githubURL(String organization, String repositoryName)
+        else if (host.equals("hg.openjdk.java.net"))
         {
-            try
-            {
-                return new URI(
-                    "https"
-                    , "github.com"
-                    , Path.of("/", organization, repositoryName).toString()
-                    , null
-                ).toString();
-            }
-            catch (URISyntaxException e)
-            {
-                throw new RuntimeException(e);
-            }
+            final var organization = "openjdk";
+            final var name = path.getFileName().toString();
+            return new Repository(organization, name, Type.MERCURIAL, null, uri);
         }
+        throw new IllegalStateException("Unknown repository type");
+    }
 
-        private static Path extractBranch(Path path)
+    static List<Repository> of(List<String> uris)
+    {
+        return uris.stream()
+            .map(Repository::of)
+            .collect(Collectors.toList());
+    }
+
+    private static URI gitCloneUri(String organization, String name)
+    {
+        try
         {
-            final int base = 3;
-            if (path.getNameCount() == (base + 1))
-                return path.getFileName();
+            final var path = Path.of(
+                "/"
+                , organization
+                , name
+            );
 
-            final var numPathElements = path.getNameCount() - base;
-            final var pathElements = new String[numPathElements];
-            int index = 0;
-            while (index < numPathElements)
-            {
-                pathElements[index] = path.getName(base + index).toString();
-                index++;
-            }
-
-            final var first = pathElements[0];
-            final var numMoreElements = numPathElements - 1;
-            final var more = new String[numMoreElements];
-            System.arraycopy(pathElements, 1, more, 0, numMoreElements);
-            return Path.of(first, more);
+            return new URI(
+                "https"
+                , "github.com"
+                , path.toString()
+                , null
+            );
         }
-
-        static List<Git.URL> of(List<URI> uris)
+        catch (URISyntaxException e)
         {
-            return uris.stream()
-                .map(Git.URL::of)
-                .collect(Collectors.toList());
+            throw new RuntimeException(e);
         }
     }
 
-    record MarkerURL(Git.URL url, Marker marker) {}
+    private static Path extractBranch(Path path)
+    {
+        final int base = 3;
+        if (path.getNameCount() == (base + 1))
+            return path.getFileName();
 
-    static List<Marker> clone(
-        List<Git.URL> urls
+        final var numPathElements = path.getNameCount() - base;
+        final var pathElements = new String[numPathElements];
+        int index = 0;
+        while (index < numPathElements)
+        {
+            pathElements[index] = path.getName(base + index).toString();
+            index++;
+        }
+
+        final var first = pathElements[0];
+        final var numMoreElements = numPathElements - 1;
+        final var more = new String[numMoreElements];
+        System.arraycopy(pathElements, 1, more, 0, numMoreElements);
+        return Path.of(first, more);
+    }
+
+    enum Type
+    {
+        GIT
+        , MERCURIAL
+    }
+}
+
+class Mercurial
+{
+    static Marker clone(
+        Repository repository
         , Path parent
         , Predicate<Marker> exists
         , Function<OperatingSystem.MarkerTask, Marker> exec
         , Function<Marker, Boolean> touch
     )
     {
-        final var tasks = Git.toClone(urls, parent, exists);
+        final var task = Mercurial.toClone(repository, parent, exists);
+        return Mercurial.doClone(task, exec, touch);
+    }
+
+    private static OperatingSystem.MarkerTask toClone(Repository repository, Path parent, Predicate<Marker> exists)
+    {
+        final var marker = Marker.clone(parent.resolve(repository.name())).query(exists);
+        if (marker.exists())
+            return OperatingSystem.MarkerTask.noop(marker);
+
+        return new OperatingSystem.MarkerTask(
+            new OperatingSystem.Task(
+                Stream.of(
+                    "hg"
+                    , "clone"
+                    , repository.cloneUri().toString()
+                )
+                , parent
+                , Stream.empty()
+            )
+            , marker
+        );
+    }
+
+    private static Marker doClone(OperatingSystem.MarkerTask task, Function<OperatingSystem.MarkerTask, Marker> exec, Function<Marker, Boolean> touch)
+    {
+        if (OperatingSystem.Task.isNoop(task.task()))
+            return task.marker();
+
+        final var marker = exec.apply(task);
+        return marker.touch(touch);
+    }
+}
+
+class Git
+{
+//    record URL(
+//        Repository repository
+//    )
+//    {
+//        static Git.URL of(String uri)
+//        {
+//            return Git.URL.of(URI.create(uri));
+//        }
+//
+//        static Git.URL of(URI uri)
+//        {
+//            final var repo = Repository.of(uri);
+//            return of(repo, uri);
+//        }
+//
+//        static Git.URL of(Repository repo, URI uri)
+//        {
+//            final var path = Path.of(uri.getPath());
+//            return new URL(repo, branch, url);
+//        }
+//
+//        static List<Git.URL> of(List<URI> uris)
+//        {
+//            return uris.stream()
+//                .map(Git.URL::of)
+//                .collect(Collectors.toList());
+//        }
+//    }
+
+    record MarkerURL(Repository repo, Marker marker) {}
+
+    static Marker clone(
+        Repository repo
+        , Path parent
+        , Predicate<Marker> exists
+        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Function<Marker, Boolean> touch
+    )
+    {
+        final var repos = singletonList(repo);
+        return Git.clone(repos, parent, exists, exec, touch).get(0);
+    }
+
+    static List<Marker> clone(
+        List<Repository> repos
+        , Path parent
+        , Predicate<Marker> exists
+        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Function<Marker, Boolean> touch
+    )
+    {
+        final var tasks = Git.toClone(repos, parent, exists);
         return Git.doClone(tasks, exec, touch);
     }
 
@@ -1260,21 +1391,24 @@ class Git
     }
 
     private static Stream<OperatingSystem.MarkerTask> toClone(
-        List<URL> urls
+        List<Repository> repos
         , Path parent
         , Predicate<Marker> exists
     )
     {
-        return urls.stream()
+        return repos.stream()
             .map(Git.markerURL(parent))
             .filter(Git.needsDownload(exists))
             .map(Git.cloneTask(parent));
     }
 
-    private static Function<Git.URL, Git.MarkerURL> markerURL(Path parent)
+    private static Function<Repository, Git.MarkerURL> markerURL(Path parent)
     {
-        return url ->
-            new Git.MarkerURL(url, Marker.clone(parent.resolve(url.name())));
+        return repo ->
+            new Git.MarkerURL(
+                repo
+                , Marker.clone(parent.resolve(repo.name()))
+            );
     }
 
     private static Function<Git.MarkerURL, OperatingSystem.MarkerTask> cloneTask(Path parent)
@@ -1282,7 +1416,7 @@ class Git
         return url ->
             new OperatingSystem.MarkerTask(
                 new OperatingSystem.Task(
-                    Git.toClone(url.url())
+                    Git.toClone(url.repo)
                     , parent
                     , Stream.empty())
                 , url.marker()
@@ -1294,16 +1428,16 @@ class Git
         return url -> !url.marker.query(exists).exists();
     }
 
-    static Stream<String> toClone(Git.URL url)
+    static Stream<String> toClone(Repository repo)
     {
         return Stream.of(
             "git"
             , "clone"
             , "-b"
-            , url.branch
+            , repo.branch()
             , "--depth"
             , "10"
-            , url.url
+            , repo.cloneUri().toString()
         );
     }
 }
@@ -1750,6 +1884,7 @@ final class QuarkusCheck
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
+                , selectClass(CheckMercurial.class)
                 , selectClass(CheckGraalBuild.class)
                 , selectClass(CheckGraalGet.class)
                 , selectClass(CheckMavenBuild.class)
@@ -1787,19 +1922,19 @@ final class QuarkusCheck
         @Test
         void uri()
         {
-            final var url = Git.URL.of(URI.create("https://github.com/openjdk/jdk11u-dev/tree/master"));
-            assertThat(url.organization(), is("openjdk"));
-            assertThat(url.name(), is("jdk11u-dev"));
-            assertThat(url.branch(), is("master"));
-            assertThat(url.url(), is("https://github.com/openjdk/jdk11u-dev"));
+            final var repo = Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master");
+            assertThat(repo.organization(), is("openjdk"));
+            assertThat(repo.name(), is("jdk11u-dev"));
+            assertThat(repo.branch(), is("master"));
+            assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
         @Test
-        void gitClone()
+        void gitCloneEmpty()
         {
             final var os = new RecordingOperatingSystem();
-            final List<Git.URL> urls = Collections.emptyList();
-            final var cloned = Git.clone(urls, Path.of(""), m -> false, os::record, m -> false);
+            final List<Repository> repos = Collections.emptyList();
+            final var cloned = Git.clone(repos, Path.of(""), m -> false, os::record, m -> false);
             os.assertNumberOfTasks(0);
             assertThat(cloned.size(), is(0));
         }
@@ -1811,13 +1946,13 @@ final class QuarkusCheck
                 Marker.clone(Path.of("jdk11u-dev"))
             );
             final var os = new RecordingOperatingSystem();
-            final List<Git.URL> urls = Git.URL.of(
+            final List<Repository> repos = Repository.of(
                 List.of(
-                    URI.create("https://github.com/openjdk/jdk11u-dev/tree/master")
-                    , URI.create("https://github.com/apache/camel-quarkus/tree/quarkus-master")
+                    "https://github.com/openjdk/jdk11u-dev/tree/master"
+                    , "https://github.com/apache/camel-quarkus/tree/quarkus-master"
                 )
             );
-            final var cloned = Git.clone(urls, Path.of(""), fs::exists, os::record, fs::touch);
+            final var cloned = Git.clone(repos, Path.of(""), fs::exists, os::record, fs::touch);
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(t ->
             {
@@ -1834,12 +1969,12 @@ final class QuarkusCheck
         {
             final var fs = InMemoryFileSystem.empty();
             final var os = new RecordingOperatingSystem();
-            final List<Git.URL> urls = Git.URL.of(
+            final List<Repository> repos = Repository.of(
                 List.of(
-                    URI.create("https://github.com/openjdk/jdk11u-dev/tree/master")
+                    "https://github.com/openjdk/jdk11u-dev/tree/master"
                 )
             );
-            final var cloned = Git.clone(urls, Path.of("graalvm"), fs::exists, os::record, fs::touch);
+            final var cloned = Git.clone(repos, Path.of("graalvm"), fs::exists, os::record, fs::touch);
             os.assertNumberOfTasks(1);
             os.assertMarkerTask(t ->
             {
@@ -1854,11 +1989,35 @@ final class QuarkusCheck
         @Test
         void branchWithPath()
         {
-            final var url = Git.URL.of(URI.create("https://github.com/olpaw/graal/tree/paw/2367"));
+            final var url = Repository.of("https://github.com/olpaw/graal/tree/paw/2367");
             assertThat(url.organization(), is("olpaw"));
             assertThat(url.name(), is("graal"));
             assertThat(url.branch(), is("paw/2367"));
-            assertThat(url.url(), is("https://github.com/olpaw/graal"));
+            assertThat(url.cloneUri(), is(URI.create("https://github.com/olpaw/graal")));
+        }
+    }
+
+    @ExtendWith(LoggingExtension.class)
+    static class CheckMercurial
+    {
+        @Test
+        void mercurialClone()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = new RecordingOperatingSystem();
+            final Repository repo = Repository.of("http://hg.openjdk.java.net/jdk8/jdk8/jdk");
+            final var cloned = Mercurial.clone(repo, Path.of(""), fs::exists, os::record, fs::touch);
+            os.assertNumberOfTasks(1);
+            os.assertMarkerTask(t ->
+            {
+                assertThat(t.task().directory(), is(Path.of("")));
+                assertThat(
+                    t.task().task().collect(Collectors.joining(" "))
+                    , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8/jdk"))
+                );
+            });
+            assertThat(cloned.touched(), is(true));
+            assertThat(cloned.path(), is(Path.of("jdk", "clone.marker")));
         }
     }
 
