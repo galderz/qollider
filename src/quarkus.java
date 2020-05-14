@@ -599,7 +599,7 @@ class GraalBuild implements Runnable
             Options options
             , Path parent
             , Predicate<Marker> exists
-            , Function<OperatingSystem.MarkerTask, Marker> exec
+            , Consumer<OperatingSystem.Task> exec
             , Function<Marker, Boolean> touch
         )
         {
@@ -1283,87 +1283,68 @@ class Mercurial
         Repository repository
         , Path parent
         , Predicate<Marker> exists
-        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Consumer<OperatingSystem.Task> exec
         , Function<Marker, Boolean> touch
     )
     {
-        final var task = Mercurial.toClone(repository, parent, exists);
-        return Mercurial.doClone(task, exec, touch);
-    }
-
-    private static OperatingSystem.MarkerTask toClone(Repository repository, Path parent, Predicate<Marker> exists)
-    {
-        final var marker = Marker.clone(parent.resolve(repository.name())).query(exists);
-        if (marker.exists())
-            return OperatingSystem.MarkerTask.noop(marker);
-
-        return new OperatingSystem.MarkerTask(
-            new OperatingSystem.Task(
-                Stream.of(
-                    "hg"
-                    , "clone"
-                    , repository.cloneUri().toString()
-                )
-                , parent
-                , Stream.empty()
+        return Tasks.lazy(
+            Stream.of(
+                "hg"
+                , "clone"
+                , repository.cloneUri().toString()
             )
-            , marker
+            , new Tasks.Effects(exists, exec, touch)
+            , Marker.clone(parent.resolve(repository.name()))
         );
     }
+}
 
-    private static Marker doClone(OperatingSystem.MarkerTask task, Function<OperatingSystem.MarkerTask, Marker> exec, Function<Marker, Boolean> touch)
+final class Tasks
+{
+    static Marker lazy(Stream<String> args, Effects effects, Marker marker)
     {
-        if (OperatingSystem.Task.isNoop(task.task()))
-            return task.marker();
+        final var queried = marker.query(effects.exists);
+        if (queried.exists())
+            return queried;
 
-        final var marker = exec.apply(task);
-        return marker.touch(touch);
+        OperatingSystem.Task task = new OperatingSystem.Task(
+            args
+            , marker.path().getParent().getParent()
+            , Stream.empty()
+        );
+
+        effects.exec().accept(task);
+        return marker.touch(effects.touch);
+    }
+
+    record Effects(
+        Predicate<Marker> exists
+        , Consumer<OperatingSystem.Task> exec
+        , Function<Marker, Boolean> touch
+    ) {}
+
+    private Tasks()
+    {
     }
 }
 
 class Git
 {
-//    record URL(
-//        Repository repository
-//    )
-//    {
-//        static Git.URL of(String uri)
-//        {
-//            return Git.URL.of(URI.create(uri));
-//        }
-//
-//        static Git.URL of(URI uri)
-//        {
-//            final var repo = Repository.of(uri);
-//            return of(repo, uri);
-//        }
-//
-//        static Git.URL of(Repository repo, URI uri)
-//        {
-//            final var path = Path.of(uri.getPath());
-//            return new URL(repo, branch, url);
-//        }
-//
-//        static List<Git.URL> of(List<URI> uris)
-//        {
-//            return uris.stream()
-//                .map(Git.URL::of)
-//                .collect(Collectors.toList());
-//        }
-//    }
-
     record MarkerURL(Repository repo, Marker marker) {}
 
     static Marker clone(
         Repository repo
         , Path parent
         , Predicate<Marker> exists
-        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Consumer<OperatingSystem.Task> exec
         , Function<Marker, Boolean> touch
     )
     {
-        final var repos = singletonList(repo);
-        return Git.clone(repos, parent, exists, exec, touch).get(0);
+        return Tasks.lazy(
+            toClone(repo)
+            , new Tasks.Effects(exists, exec, touch)
+            , Marker.clone(parent.resolve(repo.name()))
+        );
     }
 
     static List<Marker> clone(
@@ -2006,18 +1987,19 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var os = new RecordingOperatingSystem();
             final Repository repo = Repository.of("http://hg.openjdk.java.net/jdk8/jdk8/jdk");
-            final var cloned = Mercurial.clone(repo, Path.of(""), fs::exists, os::record, fs::touch);
+            final var root = Path.of("root");
+            final var cloned = Mercurial.clone(repo, root, fs::exists, os::record, fs::touch);
             os.assertNumberOfTasks(1);
-            os.assertMarkerTask(t ->
+            os.assertTask(t ->
             {
-                assertThat(t.task().directory(), is(Path.of("")));
+                assertThat(t.directory(), is(root));
                 assertThat(
-                    t.task().task().collect(Collectors.joining(" "))
+                    t.task().collect(Collectors.joining(" "))
                     , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8/jdk"))
                 );
             });
             assertThat(cloned.touched(), is(true));
-            assertThat(cloned.path(), is(Path.of("jdk", "clone.marker")));
+            assertThat(cloned.path(), is(root.resolve(Path.of("jdk", "clone.marker"))));
         }
     }
 
