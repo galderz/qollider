@@ -1865,7 +1865,6 @@ final class QuarkusCheck
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
-                , selectClass(CheckMercurial.class)
                 , selectClass(CheckGraalBuild.class)
                 , selectClass(CheckGraalGet.class)
                 , selectClass(CheckMavenBuild.class)
@@ -1975,31 +1974,6 @@ final class QuarkusCheck
             assertThat(url.name(), is("graal"));
             assertThat(url.branch(), is("paw/2367"));
             assertThat(url.cloneUri(), is(URI.create("https://github.com/olpaw/graal")));
-        }
-    }
-
-    @ExtendWith(LoggingExtension.class)
-    static class CheckMercurial
-    {
-        @Test
-        void mercurialClone()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = new RecordingOperatingSystem();
-            final Repository repo = Repository.of("http://hg.openjdk.java.net/jdk8/jdk8/jdk");
-            final var root = Path.of("root");
-            final var cloned = Mercurial.clone(repo, root, fs::exists, os::record, fs::touch);
-            os.assertNumberOfTasks(1);
-            os.assertTask(t ->
-            {
-                assertThat(t.directory(), is(root));
-                assertThat(
-                    t.task().collect(Collectors.joining(" "))
-                    , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8/jdk"))
-                );
-            });
-            assertThat(cloned.touched(), is(true));
-            assertThat(cloned.path(), is(root.resolve(Path.of("jdk", "clone.marker"))));
         }
     }
 
@@ -2168,6 +2142,54 @@ final class QuarkusCheck
                     , "images"
                     , "graal-builder-jdk"
                 )));
+        }
+
+        @Test
+        void javaCloneGit()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = new RecordingOperatingSystem();
+            final var options = cli(
+                "--jdk-tree",
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
+            );
+            final var root = Path.of("root");
+            final var cloned = GraalBuild.Java.clone(options, root, fs::exists, os::record, fs::touch);
+            os.assertNumberOfTasks(1);
+            os.assertTask(t ->
+            {
+                assertThat(t.directory(), is(root));
+                assertThat(
+                    t.task().collect(Collectors.joining(" "))
+                    , is(equalTo("git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev"))
+                );
+            });
+            assertThat(cloned.touched(), is(true));
+            assertThat(cloned.path(), is(root.resolve(Path.of("jdk11u-dev", "clone.marker"))));
+        }
+
+        @Test
+        void javaCloneMercurial()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = new RecordingOperatingSystem();
+            final var options = cli(
+                "--jdk-tree",
+                "http://hg.openjdk.java.net/jdk8/jdk8/jdk"
+            );
+            final var root = Path.of("root");
+            final var cloned = GraalBuild.Java.clone(options, root, fs::exists, os::record, fs::touch);
+            os.assertNumberOfTasks(1);
+            os.assertTask(t ->
+            {
+                assertThat(t.directory(), is(root));
+                assertThat(
+                    t.task().collect(Collectors.joining(" "))
+                    , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8/jdk"))
+                );
+            });
+            assertThat(cloned.touched(), is(true));
+            assertThat(cloned.path(), is(root.resolve(Path.of("jdk", "clone.marker"))));
         }
 
         private static GraalBuild.Options cli(String... extra)
