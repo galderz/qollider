@@ -2175,7 +2175,7 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var options = cli(
                 "--jdk-tree",
-                "http://hg.openjdk.java.net/jdk8/jdk8/jdk"
+                "http://hg.openjdk.java.net/jdk8/jdk8"
             );
             final var root = Path.of("root");
             final var cloned = GraalBuild.Java.clone(options, root, fs::exists, os::record, fs::touch);
@@ -2185,7 +2185,7 @@ final class QuarkusCheck
                 assertThat(t.directory(), is(root));
                 assertThat(
                     t.task().collect(Collectors.joining(" "))
-                    , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8/jdk"))
+                    , is(equalTo("hg clone http://hg.openjdk.java.net/jdk8/jdk8"))
                 );
             });
             assertThat(cloned.touched(), is(true));
