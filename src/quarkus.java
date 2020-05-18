@@ -293,13 +293,19 @@ class GraalGet implements Runnable
                 , new Tasks.Download.Effects(exists, download, touch)
             );
 
-            final var extractMarker = Graal.extract(
-                options
-                , tarPath
-                , exists
-                , exec
-                , touch
+            final var extractMarker = Tasks.Exec.lazy(
+                new Tasks.Exec(OperatingSystem.Task.of(
+                    "tar"
+                    , "-xzvpf"
+                    , tarPath.toString()
+                    , "-C"
+                    , options.graal.toString()
+                    , "--strip-components"
+                    , "1"
+                ))
+                , new Tasks.Exec.Effects(exists, exec, touch)
             );
+
             final var nativeImageMarker = Graal.downloadNativeImage(options, exists, exec, touch);
             return Arrays.asList(downloadMarker, extractMarker, nativeImageMarker);
         }
@@ -358,60 +364,6 @@ class GraalGet implements Runnable
             exec.accept(task.task());
             final var marker = task.marker();
             return marker.touch(touch);
-        }
-
-        private static Marker extract(
-            Options options
-            , Path tar
-            , Predicate<Marker> exists
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            final var task = toExtract(tar, options.graal, exists);
-            return doExtract(task, exec, touch);
-        }
-
-        private static Marker doExtract(
-            OperatingSystem.MarkerTask task
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            if (OperatingSystem.Task.isNoop(task.task()))
-                return task.marker();
-
-            exec.accept(task.task());
-            final var marker = task.marker();
-            return marker.touch(touch);
-        }
-
-        private static OperatingSystem.MarkerTask toExtract(
-            Path tar
-            , Path target
-            , Predicate<Marker> exists
-        )
-        {
-            final var marker = Marker.extract(target).query(exists);
-            if (marker.exists())
-                return OperatingSystem.MarkerTask.noop(marker);
-
-            return new OperatingSystem.MarkerTask(
-                new OperatingSystem.Task(
-                    List.of(
-                        "tar"
-                        , "-xzvpf"
-                        , tar.toString()
-                        , "-C"
-                        , target.toString()
-                        , "--strip-components"
-                        , "1"
-                    )
-                    , Path.of("")
-                    , Stream.empty()
-                )
-                , marker
-            );
         }
 
         public static void link(Options options, BiFunction<Path, Path, Link> symLink)
@@ -1273,14 +1225,14 @@ class Mercurial
     )
     {
         return Tasks.Exec.lazy(
-            OperatingSystem.Task.of(
+            new Tasks.Exec(OperatingSystem.Task.of(
                 List.of(
                     "hg"
                     , "clone"
                     , repository.cloneUri().toString()
                 )
                 , parent
-            )
+            ))
             , new Tasks.Exec.Effects(exists, exec, touch)
         );
     }
@@ -1288,17 +1240,23 @@ class Mercurial
 
 final class Tasks
 {
-    // TODO make record
-    static class Exec
+    // TODO collapse exec and task into one
+    record Exec(OperatingSystem.Task task)
     {
-        static Marker lazy(OperatingSystem.Task task, Effects effects)
+        static Marker lazy(Exec task, Effects effects)
         {
-            final var marker = task.marker().query(effects.exists);
+            final var marker = task.task.marker().query(effects.exists);
             if (marker.exists())
                 return marker;
 
-            effects.exec().accept(task);
+            effects.exec().accept(task.task);
             return marker.touch(effects.touch);
+        }
+
+        // TODO duplicate
+        Marker marker()
+        {
+            return task.marker();
         }
 
         record Effects(
@@ -1320,7 +1278,7 @@ final class Tasks
             return marker.touch(effects.touch);
         }
 
-        // TODO duplicate
+        // TODO duplicate & make it not rely on internal toString() definitions
         Marker marker()
         {
             final var cmd = this.toString();
@@ -1350,7 +1308,7 @@ class Git
     )
     {
         return Tasks.Exec.lazy(
-            OperatingSystem.Task.of(toClone(repo), parent)
+            new Tasks.Exec(OperatingSystem.Task.of(toClone(repo), parent))
             , new Tasks.Exec.Effects(exists, exec, touch)
         );
     }
@@ -1521,11 +1479,6 @@ record Marker(boolean exists, boolean touched, Path path)
     static Marker clone(Path path)
     {
         return of(path.resolve("clone.marker"));
-    }
-
-    static Marker extract(Path path)
-    {
-        return of(path.resolve("extract.marker"));
     }
 
     static Marker of(Path path)
@@ -1731,6 +1684,11 @@ class OperatingSystem
         static Task of(List<String> task, Path path)
         {
             return new Task(task, path, Stream.empty());
+        }
+
+        static Task of(String... task)
+        {
+            return new Task(Arrays.asList(task), Path.of(""), Stream.empty());
         }
 
         Marker marker()
@@ -2317,13 +2275,24 @@ final class QuarkusCheck
         void skipBothDownloadAndExtract()
         {
             final var url = "https://skip.both/download";
-            final var options = cli("--url", url);
             final var downloadPath = Path.of("downloads", "download");
+
+            final var extractArgs = new String[]{
+                "tar"
+                , "-xzvpf"
+                , downloadPath.toString()
+                , "-C"
+                , Path.of("graalvm", "graal").toString()
+                , "--strip-components"
+                , "1"
+            };
+
+            final var options = cli("--url", url);
 
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
                 new Tasks.Download(URLs.of(url), downloadPath).marker()
-                , Marker.extract(Path.of("graalvm", "graal"))
+                , new Tasks.Exec(OperatingSystem.Task.of(extractArgs)).marker()
             );
             final var markers = GraalGet.Graal.get(
                 options
