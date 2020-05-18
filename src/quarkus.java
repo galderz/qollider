@@ -33,6 +33,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.math.BigInteger;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -286,15 +287,12 @@ class GraalGet implements Runnable
             final var fileName = Path.of(url.getFile()).getFileName();
             final var directory = Path.of("downloads");
             final var tarPath = directory.resolve(fileName);
-            final var markerPath = directory.resolve(String.format("%s.marker", fileName));
-            final var downloadMarker = Graal.download(
-                options
-                , markerPath
-                , tarPath
-                , exists
-                , download
-                , touch
+
+            final var downloadMarker = Tasks.Download.lazy(
+                new Tasks.Download(options.url, tarPath)
+                , new Tasks.Download.Effects(exists, download, touch)
             );
+
             final var extractMarker = Graal.extract(
                 options
                 , tarPath
@@ -359,24 +357,6 @@ class GraalGet implements Runnable
 
             exec.accept(task.task());
             final var marker = task.marker();
-            return marker.touch(touch);
-        }
-
-        private static Marker download(
-            Options options
-            , Path markerPath
-            , Path tarPath
-            , Predicate<Marker> exists
-            , BiConsumer<URL, Path> download
-            , Function<Marker, Boolean> touch
-        )
-        {
-            final var url = options.url;
-            final var marker = Marker.of(markerPath).query(exists);
-            if (marker.exists())
-                return marker;
-
-            download.accept(url, tarPath);
             return marker.touch(touch);
         }
 
@@ -1292,7 +1272,7 @@ class Mercurial
         , Function<Marker, Boolean> touch
     )
     {
-        return Tasks.lazy(
+        return Tasks.Exec.lazy(
             OperatingSystem.Task.of(
                 List.of(
                     "hg"
@@ -1301,28 +1281,60 @@ class Mercurial
                 )
                 , parent
             )
-            , new Tasks.Effects(exists, exec, touch)
+            , new Tasks.Exec.Effects(exists, exec, touch)
         );
     }
 }
 
 final class Tasks
 {
-    static Marker lazy(OperatingSystem.Task task, Effects effects)
+    // TODO make record
+    static class Exec
     {
-        final var marker = task.marker().query(effects.exists);
-        if (marker.exists())
-            return marker;
+        static Marker lazy(OperatingSystem.Task task, Effects effects)
+        {
+            final var marker = task.marker().query(effects.exists);
+            if (marker.exists())
+                return marker;
 
-        effects.exec().accept(task);
-        return marker.touch(effects.touch);
+            effects.exec().accept(task);
+            return marker.touch(effects.touch);
+        }
+
+        record Effects(
+            Predicate<Marker> exists
+            , Consumer<OperatingSystem.Task> exec
+            , Function<Marker, Boolean> touch
+        ) {}
     }
 
-    record Effects(
-        Predicate<Marker> exists
-        , Consumer<OperatingSystem.Task> exec
-        , Function<Marker, Boolean> touch
-    ) {}
+    record Download(URL url, Path path)
+    {
+        static Marker lazy(Download task, Effects effects)
+        {
+            final var marker = task.marker().query(effects.exists);
+            if (marker.exists())
+                return marker;
+
+            effects.download.accept(task.url, task.path);
+            return marker.touch(effects.touch);
+        }
+
+        // TODO duplicate
+        Marker marker()
+        {
+            final var cmd = this.toString();
+            final var hash = Hashing.sha1(cmd);
+            final var path = Path.of(String.format("%s.marker", hash));
+            return Marker.of(path);
+        }
+
+        record Effects(
+            Predicate<Marker> exists
+            , BiConsumer<URL, Path> download
+            , Function<Marker, Boolean> touch
+        ) {}
+    }
 }
 
 class Git
@@ -1337,9 +1349,9 @@ class Git
         , Function<Marker, Boolean> touch
     )
     {
-        return Tasks.lazy(
+        return Tasks.Exec.lazy(
             OperatingSystem.Task.of(toClone(repo), parent)
-            , new Tasks.Effects(exists, exec, touch)
+            , new Tasks.Exec.Effects(exists, exec, touch)
         );
     }
 
@@ -1888,6 +1900,21 @@ final class Web
     }
 }
 
+final class URLs
+{
+    static URL of(String url)
+    {
+        try
+        {
+            return new URL(url);
+        }
+        catch (MalformedURLException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
 final class QuarkusCheck
 {
     static void check()
@@ -2289,14 +2316,14 @@ final class QuarkusCheck
         @Test
         void skipBothDownloadAndExtract()
         {
+            final var url = "https://skip.both/download";
+            final var options = cli("--url", url);
+            final var downloadPath = Path.of("downloads", "download");
+
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.of(Path.of("downloads", "archive.tar.gz.marker"))
+                new Tasks.Download(URLs.of(url), downloadPath).marker()
                 , Marker.extract(Path.of("graalvm", "graal"))
-            );
-            final var options = cli(
-                "--url",
-                "https://doestnotexist.com/archive.tar.gz"
             );
             final var markers = GraalGet.Graal.get(
                 options
@@ -2319,14 +2346,14 @@ final class QuarkusCheck
         @Test
         void skipOnlyDownload()
         {
+            final var url = "https://skip.only/download";
+            final var path = Path.of("downloads", "download");
+            final var marker = new Tasks.Download(URLs.of(url), path).marker();
+            final var options = cli("--url", url);
+
             final var os = new RecordingOperatingSystem();
-            final var fs = InMemoryFileSystem.ofExists(
-                Marker.of(Path.of("downloads", "archive.tar.gz.marker"))
-            );
-            final var options = cli(
-                "--url",
-                "https://doestnotexist.com/archive.tar.gz"
-            );
+            final var fs = InMemoryFileSystem.ofExists(marker);
+
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
