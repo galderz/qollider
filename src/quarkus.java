@@ -306,64 +306,23 @@ class GraalGet implements Runnable
                 , new Tasks.Exec.Effects(exists, exec, touch)
             );
 
-            final var nativeImageMarker = Graal.downloadNativeImage(options, exists, exec, touch);
-            return Arrays.asList(downloadMarker, extractMarker, nativeImageMarker);
-        }
-
-        private static Marker downloadNativeImage(
-            Options options
-            , Predicate<Marker> exists
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
-            {
-                LOG.info("Not a graalvm distro, assume the native-image exists");
-                return Marker.notApplicable();
-            }
+                return Arrays.asList(downloadMarker, extractMarker);
 
-            final var path = Path.of("native-image.marker");
-            final var task = toDownloadNative(path, exists);
-            return doDownloadNative(task, exec, touch);
-        }
-
-        private static OperatingSystem.MarkerTask toDownloadNative(
-            Path markerPath
-            , Predicate<Marker> exists
-        )
-        {
-            final var marker = Marker.of(markerPath).query(exists);
-            if (marker.exists())
-                return OperatingSystem.MarkerTask.noop(marker);
-
-            return new OperatingSystem.MarkerTask(
-                new OperatingSystem.Task(
+            final var nativeImageMarker = Tasks.Exec.lazy(
+                new Tasks.Exec(OperatingSystem.Task.of(
                     List.of(
                         "./gu"
                         , "install"
                         , "native-image"
                     )
                     , Path.of("graal", "bin")
-                    , Stream.empty()
-                )
-                , marker
+                ))
+                , new Tasks.Exec.Effects(exists, exec, touch)
             );
-        }
 
-        private static Marker doDownloadNative(
-            OperatingSystem.MarkerTask task
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            if (OperatingSystem.Task.isNoop(task.task()))
-                return task.marker();
-
-            exec.accept(task.task());
-            final var marker = task.marker();
-            return marker.touch(touch);
+            return Arrays.asList(downloadMarker, extractMarker, nativeImageMarker);
         }
 
         public static void link(Options options, BiFunction<Path, Path, Link> symLink)
@@ -1485,16 +1444,6 @@ record Marker(boolean exists, boolean touched, Path path)
     {
         return new Marker(false, false, path);
     }
-
-    static Marker notApplicable()
-    {
-        return NOT_APPLICABLE;
-    }
-
-    static boolean isNotApplicable(Marker marker)
-    {
-        return marker == NOT_APPLICABLE;
-    }
 }
 
 // Boundary value
@@ -2226,14 +2175,13 @@ final class QuarkusCheck
                 , os::record
                 , fs::touch
             );
-            assertThat(markers.size(), is(3));
+            assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
             assertThat(downloadMarker.touched(), is(true));
             final var extractMarker = markers.get(1);
             assertThat(extractMarker.exists(), is(true));
             assertThat(extractMarker.touched(), is(true));
-            assertThat(Marker.isNotApplicable(markers.get(2)), is(true));
             os.assertNumberOfTasks(1);
             os.assertTask(t ->
                 assertThat(
@@ -2302,14 +2250,13 @@ final class QuarkusCheck
                 , fs::touch
             );
             os.assertNumberOfTasks(0);
-            assertThat(markers.size(), is(3));
+            assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
             assertThat(downloadMarker.touched(), is(false));
             final var extractMarker = markers.get(1);
             assertThat(extractMarker.exists(), is(true));
             assertThat(extractMarker.touched(), is(false));
-            assertThat(Marker.isNotApplicable(markers.get(2)), is(true));
         }
 
         @Test
@@ -2331,14 +2278,13 @@ final class QuarkusCheck
                 , fs::touch
             );
             os.assertNumberOfTasks(1);
-            assertThat(markers.size(), is(3));
+            assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
             assertThat(downloadMarker.touched(), is(false));
             final var extractMarker = markers.get(1);
             assertThat(extractMarker.exists(), is(true));
             assertThat(extractMarker.touched(), is(true));
-            assertThat(Marker.isNotApplicable(markers.get(2)), is(true));
         }
 
         @Test
