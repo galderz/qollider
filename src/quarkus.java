@@ -1229,8 +1229,6 @@ final class Tasks
 
 class Git
 {
-    record MarkerURL(Repository repo, Marker marker) {}
-
     static Marker clone(
         Repository repo
         , Path parent
@@ -1249,62 +1247,13 @@ class Git
         List<Repository> repos
         , Path parent
         , Predicate<Marker> exists
-        , Function<OperatingSystem.MarkerTask, Marker> exec
+        , Consumer<OperatingSystem.Task> exec
         , Function<Marker, Boolean> touch
-    )
-    {
-        final var tasks = Git.toClone(repos, parent, exists);
-        return Git.doClone(tasks, exec, touch);
-    }
-
-    private static List<Marker> doClone(
-        Stream<OperatingSystem.MarkerTask> tasks
-        , Function<OperatingSystem.MarkerTask, Marker> exec
-        , Function<Marker, Boolean> touch
-    )
-    {
-        return tasks
-            .map(exec)
-            .map(marker -> marker.touch(touch))
-            .collect(Collectors.toList());
-    }
-
-    private static Stream<OperatingSystem.MarkerTask> toClone(
-        List<Repository> repos
-        , Path parent
-        , Predicate<Marker> exists
     )
     {
         return repos.stream()
-            .map(Git.markerURL(parent))
-            .filter(Git.needsDownload(exists))
-            .map(Git.cloneTask(parent));
-    }
-
-    private static Function<Repository, Git.MarkerURL> markerURL(Path parent)
-    {
-        return repo ->
-            new Git.MarkerURL(
-                repo
-                , Marker.clone(parent.resolve(repo.name()))
-            );
-    }
-
-    private static Function<Git.MarkerURL, OperatingSystem.MarkerTask> cloneTask(Path parent)
-    {
-        return url ->
-            new OperatingSystem.MarkerTask(
-                new OperatingSystem.Task(
-                    Git.toClone(url.repo)
-                    , parent
-                    , Stream.empty())
-                , url.marker()
-            );
-    }
-
-    private static Predicate<Git.MarkerURL> needsDownload(Predicate<Marker> exists)
-    {
-        return url -> !url.marker.query(exists).exists();
+            .map(repo -> clone(repo, parent, exists, exec, touch))
+            .collect(Collectors.toList());
     }
 
     static List<String> toClone(Repository repo)
@@ -1337,14 +1286,6 @@ class Homes
 
     static class EnvVars
     {
-        static OperatingSystem.EnvVar java()
-        {
-            return new OperatingSystem.EnvVar(
-                "JAVA_HOME"
-                , root -> root.resolve(Homes.java())
-            );
-        }
-
         static OperatingSystem.EnvVar graal()
         {
             return new OperatingSystem.EnvVar(
@@ -1403,11 +1344,6 @@ record Marker(boolean exists, boolean touched, Path path)
     static Marker build(Path path)
     {
         return of(path.resolve("build.marker"));
-    }
-
-    static Marker clone(Path path)
-    {
-        return of(path.resolve("clone.marker"));
     }
 
     static Marker of(Path path)
@@ -1858,8 +1794,17 @@ final class QuarkusCheck
         @Test
         void gitCloneSelective()
         {
+            final var args = new String[]{
+                "git"
+                , "clone"
+                , "-b"
+                , "master"
+                , "--depth"
+                , "10"
+                , "https://github.com/openjdk/jdk11u-dev"
+            };
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.clone(Path.of("jdk11u-dev"))
+                new Tasks.Exec(OperatingSystem.Task.of(args)).marker()
             );
             final var os = new RecordingOperatingSystem();
             final List<Repository> repos = Repository.of(
@@ -1868,20 +1813,14 @@ final class QuarkusCheck
                     , "https://github.com/apache/camel-quarkus/tree/quarkus-master"
                 )
             );
-            final var cloned = Git.clone(repos, Path.of(""), fs::exists, os::record, fs::touch);
-            os.assertNumberOfTasks(1);
-            os.assertMarkerTask(t ->
-            {
-                assertThat(t.task().directory(), is(Path.of("")));
-                assertThat(t.task().task().stream().findFirst(), is(Optional.of("git")));
-            });
-            assertThat(cloned.size(), is(1));
-            assertThat(cloned.get(0).touched(), is(true));
-            assertThat(cloned.get(0).path(), is(Path.of("camel-quarkus", "clone.marker")));
+            final var root = Path.of("root");
+            final var cloned = Git.clone(repos, root, fs::exists, os::record, fs::touch);
+            final var expectedTask = "git clone -b quarkus-master --depth 10 https://github.com/apache/camel-quarkus";
+            os.assertExecutedOneTask(expectedTask, root, cloned.get(1));
         }
 
         @Test
-        void gitCloneParent()
+        void gitCloneSingle()
         {
             final var fs = InMemoryFileSystem.empty();
             final var os = new RecordingOperatingSystem();
@@ -1890,16 +1829,10 @@ final class QuarkusCheck
                     "https://github.com/openjdk/jdk11u-dev/tree/master"
                 )
             );
-            final var cloned = Git.clone(repos, Path.of("graalvm"), fs::exists, os::record, fs::touch);
-            os.assertNumberOfTasks(1);
-            os.assertMarkerTask(t ->
-            {
-                assertThat(t.task().directory(), is(Path.of("graalvm")));
-                assertThat(t.task().task().stream().findFirst(), is(Optional.of("git")));
-            });
-            assertThat(cloned.size(), is(1));
-            assertThat(cloned.get(0).touched(), is(true));
-            assertThat(cloned.get(0).path(), is(Path.of("graalvm", "jdk11u-dev", "clone.marker")));
+            final var root = Path.of("graalvm");
+            final var cloned = Git.clone(repos, root, fs::exists, os::record, fs::touch);
+            final var expectedTask = "git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev";
+            os.assertExecutedOneTask(expectedTask, root, cloned.get(0));
         }
 
         @Test
