@@ -514,7 +514,7 @@ class GraalBuild implements Runnable
             };
         }
 
-        static Marker build(
+        static List<Marker> build(
             Options options
             , Supplier<Path> bootJdkHome
             , Predicate<Marker> exists
@@ -522,41 +522,21 @@ class GraalBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var task = Java.toBuild(options, bootJdkHome, exists);
-            return Java.doBuild(task, exec, touch);
-        }
-
-        private static OperatingSystem.MarkerMultiTask toBuild(
-            Options options
-            , Supplier<Path> bootJdkHome
-            , Predicate<Marker> exists
-        )
-        {
             final var jdkPath = options.jdkPath();
-            final var marker = Marker.build(jdkPath).query(exists);
-            if (marker.exists())
-            {
-                return new OperatingSystem.MarkerMultiTask(Stream.empty(), marker);
-            }
-
             final var tasks = switch (options.javaType())
                 {
                     case OPENJDK -> Java.OpenJDK.buildSteps(jdkPath, bootJdkHome);
                     case LABSJDK -> Java.LabsJDK.buildSteps(jdkPath, bootJdkHome);
                 };
 
-            return new OperatingSystem.MarkerMultiTask(tasks, marker);
-        }
-
-        private static Marker doBuild(
-            OperatingSystem.MarkerMultiTask task
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            task.task().forEach(exec);
-            final var marker = task.marker();
-            return marker.touch(touch);
+            return tasks
+                .map(t ->
+                    Tasks.Exec.lazy(
+                        new Tasks.Exec(t)
+                        , new Tasks.Exec.Effects(exists, exec, touch)
+                    )
+                )
+                .collect(Collectors.toList());
         }
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
@@ -1579,9 +1559,6 @@ class OperatingSystem
         }
     }
 
-    // TODO retrofit stream into marker task
-    record MarkerMultiTask(Stream<Task>task, Marker marker) {}
-
     record EnvVar(String name, Function<Path, Path>value) {}
 }
 
@@ -1856,12 +1833,13 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
 
-            final var marker = GraalBuild.Java.build(
+            final var markers = GraalBuild.Java.build(
                 options
                 , os::bootJdkHome
                 , fs::exists
                 , os::record, m -> true
             );
+            final var marker = markers.get(0);
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
@@ -1881,13 +1859,14 @@ final class QuarkusCheck
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
-            final var marker = GraalBuild.Java.build(
+            final var markers = GraalBuild.Java.build(
                 options
                 , os::bootJdkHome
                 , fs::exists
                 , os::record, m -> true
             );
-            assertThat(marker.touched(), is(true));
+            assertThat(markers.get(0).touched(), is(true));
+            assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
             os.assertTask(task ->
             {
@@ -1906,24 +1885,43 @@ final class QuarkusCheck
         void skipJavaOpenJDK()
         {
             final var os = new RecordingOperatingSystem();
+            final var configureArgs = new String[]{
+                "sh"
+                , "configure"
+                , "--with-conf-name=graal-server-release"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                , "--enable-aot=no"
+                , "--with-boot-jdk=boot/jdk/home"
+            };
+            final var markArgs = new String[]{
+                "make"
+                , "graal-builder-image"
+            };
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.build(Path.of("graalvm", "jdk11u-dev"))
+                new Tasks.Exec(OperatingSystem.Task.of(configureArgs)).marker()
+                , new Tasks.Exec(OperatingSystem.Task.of(markArgs)).marker()
             );
             final var options = cli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
-            final var marker = GraalBuild.Java.build(
+            final var markers = GraalBuild.Java.build(
                 options
                 , os::bootJdkHome
                 , fs::exists
                 , os::record
                 , m -> true
             );
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(false));
             os.assertNumberOfTasks(0);
+            final var configureMarker = markers.get(0);
+            assertThat(configureMarker.exists(), is(true));
+            assertThat(configureMarker.touched(), is(false));
+            final var makeMarker = markers.get(1);
+            assertThat(makeMarker.exists(), is(true));
+            assertThat(makeMarker.touched(), is(false));
         }
 
         @Test
@@ -2553,7 +2551,7 @@ final class QuarkusCheck
 
         void assertNumberOfTasks(int size)
         {
-            assertThat(tasks.size(), is(size));
+            assertThat(tasks.toString(), tasks.size(), is(size));
         }
 
         void assertTask(Consumer<OperatingSystem.Task> asserts)
