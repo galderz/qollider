@@ -74,7 +74,7 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 @Command
-public class quarkus implements Runnable
+public class qollider implements Runnable
 {
     @Spec
     CommandSpec spec;
@@ -122,7 +122,7 @@ final class Cli
 {
     static CommandLine newCli(Object... subcommands)
     {
-        final var cmdline = new CommandLine(new quarkus());
+        final var cmdline = new CommandLine(new qollider());
         // Sub-commands need to be added first,
         // for converters and other options to have effect
         Arrays.asList(subcommands).forEach(cmdline::addSubcommand);
