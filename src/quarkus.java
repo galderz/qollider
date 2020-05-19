@@ -682,47 +682,17 @@ class GraalBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
-            final var task = Graal.toBuild(options, exists);
-            return Graal.doBuild(task, exec, touch);
-        }
-
-        private static OperatingSystem.MarkerTask toBuild(Options options, Predicate<Marker> exists)
-        {
-            final var marker = Marker.build(options.graalPath()).query(exists);
-            if (marker.exists())
-            {
-                return OperatingSystem.MarkerTask.noop(marker);
-            }
-
-            return buildTask(options, marker);
-        }
-
-        private static Marker doBuild(
-            OperatingSystem.MarkerTask task
-            , Consumer<OperatingSystem.Task> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            if (OperatingSystem.Task.isNoop(task.task()))
-                return task.marker();
-
-            exec.accept(task.task());
-            final var marker = task.marker();
-            return marker.touch(touch);
-        }
-
-        private static OperatingSystem.MarkerTask buildTask(Options options, Marker marker)
-        {
-            return new OperatingSystem.MarkerTask(
-                new OperatingSystem.Task(
+            return Tasks.Exec.lazy(
+                new Tasks.Exec(new OperatingSystem.Task(
+                    // TODO use --java-home instead of JAVA_HOME env var
                     List.of(
                         Path.of("../..").resolve(options.mxPath()).toString()
                         , "build"
                     )
                     , Graal.svm(options)
                     , Stream.of(Homes.EnvVars.java())
-                )
-                , marker
+                ))
+                , new Tasks.Exec.Effects(exists, exec, touch)
             );
         }
 
@@ -1395,9 +1365,6 @@ record Marker(boolean exists, boolean touched, Path path)
 {
     static final Logger LOG = LogManager.getLogger(Marker.class);
 
-    private static final Marker NOT_APPLICABLE =
-        Marker.of(Path.of("not.applicable"));
-
     Marker query(Predicate<Marker> existsFn)
     {
         final var exists = existsFn.test(this);
@@ -2061,7 +2028,7 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.build(Path.of("graalvm", "graal"))
+                new Tasks.Exec(OperatingSystem.Task.of("../../mx/mx", "build")).marker()
             );
             final var options = cli();
             final var marker = GraalBuild.Graal.build(
