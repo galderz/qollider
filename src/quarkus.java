@@ -429,6 +429,7 @@ class GraalBuild implements Runnable
             Java.clone(options, parent, fs::exists, os::exec, fs::touch);
             Git.clone(Options.repositories(options), parent, fs::exists, os::exec, fs::touch);
 
+            // TODO book jdk should be installed in java
             Java.build(options, os::bootJdkHome, fs::exists, os::exec, fs::touch);
             Java.link(options, fs::symlink);
 
@@ -682,15 +683,17 @@ class GraalBuild implements Runnable
             , Function<Marker, Boolean> touch
         )
         {
+            final var graalVmRoot = Path.of("..", "..");
+            final var root = graalVmRoot.resolve("..");
             return Tasks.Exec.lazy(
-                new Tasks.Exec(new OperatingSystem.Task(
-                    // TODO use --java-home instead of JAVA_HOME env var
+                new Tasks.Exec(OperatingSystem.Task.of(
                     List.of(
-                        Path.of("../..").resolve(options.mxPath()).toString()
+                        graalVmRoot.resolve(options.mxPath()).toString()
                         , "build"
+                        , "--java-home"
+                        , root.resolve(Homes.java()).toString()
                     )
                     , Graal.svm(options)
-                    , Stream.of(Homes.EnvVars.java())
                 ))
                 , new Tasks.Exec.Effects(exists, exec, touch)
             );
@@ -2027,8 +2030,14 @@ final class QuarkusCheck
         void skipGraalBuild()
         {
             final var os = new RecordingOperatingSystem();
+            final var args = new String[]{
+                "../../mx/mx"
+                , "build"
+                , "--java-home"
+                , "../../../java_home"
+            };
             final var fs = InMemoryFileSystem.ofExists(
-                new Tasks.Exec(OperatingSystem.Task.of("../../mx/mx", "build")).marker()
+                new Tasks.Exec(OperatingSystem.Task.of(args)).marker()
             );
             final var options = cli();
             final var marker = GraalBuild.Graal.build(
