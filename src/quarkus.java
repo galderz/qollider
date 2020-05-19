@@ -1345,14 +1345,14 @@ class FileSystem
     static FileSystem ofSystem()
     {
         var date = LocalDate.now();
-        var formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+        var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
         LOG.info("Today is {}", today);
 
         var baseDir = Path.of(
             System.getProperty("user.home")
             , "workspace"
-            , "quarkus-with-graal"
+            , "qollider"
         );
         LOG.info("Base directory: {}", baseDir);
 
