@@ -81,6 +81,7 @@ public class qollider implements Runnable
 
     public static void main(String[] args)
     {
+        // TODO improve logging by only log 2 things: the inputs and the resulting outputs/effects
         Configurator.initialize(new DefaultConfiguration());
         Configurator.setRootLevel(Level.DEBUG);
 
@@ -803,38 +804,21 @@ class MavenBuild implements Runnable
         static Marker build(
             Options options
             , Predicate<Marker> exists
-            , Function<OperatingSystem.MarkerTask, Marker> exec
+            , Consumer<OperatingSystem.Task> exec
             , Function<Marker, Boolean> touch
         )
         {
-            final var task = Maven.toBuild(options, exists);
-            return Maven.doBuild(task, exec, touch);
-        }
+            final var project = options.project();
+            final var arguments =
+                arguments(options, project.toString())
+                    .collect(Collectors.toList());
 
-        private static OperatingSystem.MarkerTask toBuild(
-            Options options
-            , Predicate<Marker> exists
-        )
-        {
-            final var marker = Marker.build(options.project()).query(exists);
-            if (marker.exists())
-                return OperatingSystem.MarkerTask.noop(marker);
-
-            return Maven.buildTask(options, marker);
-        }
-
-        private static OperatingSystem.MarkerTask buildTask(Options options, Marker marker)
-        {
-            final var directory = marker.path().getParent();
-            final var arguments = arguments(options, directory.toString())
-                .collect(Collectors.toList());
-            return new OperatingSystem.MarkerTask(
-                new OperatingSystem.Task(
+            return Tasks.Exec.lazy(
+                new Tasks.Exec(OperatingSystem.Task.of(
                     arguments
-                    , directory
-                    , Stream.of(Homes.EnvVars.graal())
-                )
-                , marker
+                    , project
+                ))
+                , new Tasks.Exec.Effects(exists, exec, touch)
             );
         }
 
@@ -861,19 +845,6 @@ class MavenBuild implements Runnable
             return Objects.isNull(extra)
                 ? arguments
                 : Stream.concat(arguments, extra.stream());
-        }
-
-        private static Marker doBuild(
-            OperatingSystem.MarkerTask task
-            , Function<OperatingSystem.MarkerTask, Marker> exec
-            , Function<Marker, Boolean> touch
-        )
-        {
-            if (OperatingSystem.Task.isNoop(task.task()))
-                return task.marker();
-
-            final var marker = exec.apply(task);
-            return marker.touch(touch);
         }
     }
 }
@@ -1321,11 +1292,6 @@ record Marker(boolean exists, boolean touched, Path path)
         return new Marker(false, false, path);
     }
 
-    static Marker build(Path path)
-    {
-        return of(path.resolve("build.marker"));
-    }
-
     static Marker of(Path path)
     {
         return new Marker(false, false, path);
@@ -1469,12 +1435,6 @@ class OperatingSystem
         this.fs = fs;
     }
 
-    Marker exec(MarkerTask task)
-    {
-        exec(task.task);
-        return task.marker;
-    }
-
     void exec(Task task)
     {
         final var taskList = task.task.stream()
@@ -1532,30 +1492,6 @@ class OperatingSystem
             final var hash = Hashing.sha1(cmd);
             final var path = Path.of(String.format("%s.marker", hash));
             return Marker.of(path);
-        }
-
-        private static final Task NOOP = new Task(
-            Collections.emptyList()
-            , Path.of("")
-            , Stream.empty()
-        );
-
-        static Task noop()
-        {
-            return NOOP;
-        }
-
-        static boolean isNoop(Task task)
-        {
-            return task == NOOP;
-        }
-    }
-
-    record MarkerTask(Task task, Marker marker)
-    {
-        static MarkerTask noop(Marker marker)
-        {
-            return new MarkerTask(Task.noop(), marker);
         }
     }
 
@@ -2257,19 +2193,25 @@ final class QuarkusCheck
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
-            os.assertMarkerTask(task ->
+            os.assertTask(task ->
             {
-                assertThat(task.task().directory(), is(Path.of("quarkus")));
-                assertThat(task.task().task().stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(task.directory(), is(Path.of("quarkus")));
+                assertThat(task.task().stream().findFirst(), is(Optional.of("mvn")));
             });
         }
 
         @Test
         void skipQuarkus()
         {
+            final var args = new String[]{
+                "mvn"
+                , "install"
+                , "-DskipTests"
+                , "-Dformat.skip"
+            };
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.ofExists(
-                Marker.build(Path.of("quarkus"))
+                new Tasks.Exec(OperatingSystem.Task.of(args)).marker()
             );
             final var options = cli(
                 "-t"
@@ -2281,9 +2223,9 @@ final class QuarkusCheck
                 , os::record
                 , m -> true
             );
+            os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
-            os.assertNumberOfTasks(0);
         }
 
         @Test
@@ -2303,10 +2245,10 @@ final class QuarkusCheck
             );
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
-            os.assertMarkerTask(task ->
+            os.assertTask(task ->
             {
-                assertThat(task.task().directory(), is(Path.of("camel-quarkus")));
-                final var arguments = new ArrayList<>(task.task().task());
+                assertThat(task.directory(), is(Path.of("camel-quarkus")));
+                final var arguments = new ArrayList<>(task.task());
                 assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
                 assertThat(
                     arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
@@ -2334,10 +2276,10 @@ final class QuarkusCheck
             );
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
-            os.assertMarkerTask(task ->
+            os.assertTask(task ->
             {
-                assertThat(task.task().directory(), is(Path.of("camel")));
-                final var arguments = new ArrayList<>(task.task().task());
+                assertThat(task.directory(), is(Path.of("camel")));
+                final var arguments = new ArrayList<>(task.task());
                 assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
                 assertThat(
                     arguments.stream().filter(e -> e.equals("-Pfastinstall")).findFirst()
@@ -2520,12 +2462,6 @@ final class QuarkusCheck
             assertThat(success, is(true));
         }
 
-        Marker record(OperatingSystem.MarkerTask task)
-        {
-            offer(task);
-            return task.marker();
-        }
-
         Path bootJdkHome()
         {
             return Path.of("boot/jdk/home");
@@ -2557,12 +2493,6 @@ final class QuarkusCheck
         void assertTask(Consumer<OperatingSystem.Task> asserts)
         {
             final OperatingSystem.Task head = peekTask();
-            asserts.accept(head);
-        }
-
-        void assertMarkerTask(Consumer<OperatingSystem.MarkerTask> asserts)
-        {
-            final OperatingSystem.MarkerTask head = peekTask();
             asserts.accept(head);
         }
 
