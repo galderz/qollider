@@ -69,7 +69,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.Collections.emptyList;
-import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
@@ -428,14 +427,16 @@ class GraalBuild implements Runnable
         {
             final var parent = fs.mkdirs(options.parent);
 
-            Java.clone(options, parent, fs::exists, os::exec, fs::touch);
-            Git.clone(Options.repositories(options), parent, fs::exists, os::exec, fs::touch);
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
+
+            Java.clone(options, effects);
+            Git.clone(Options.repositories(options), parent, effects);
 
             // TODO book jdk should be installed in java
-            Java.build(options, os::bootJdkHome, fs::exists, os::exec, fs::touch);
+            Java.build(options, os::bootJdkHome, effects);
             Java.link(options, fs::symlink);
 
-            Graal.build(options, fs::exists, os::exec, fs::touch);
+            Graal.build(options, effects);
             Graal.link(options, fs::symlink);
         }
     }
@@ -493,35 +494,25 @@ class GraalBuild implements Runnable
 
     static final class Java
     {
-        static Marker clone(
-            Options options
-            , Path parent
-            , Predicate<Marker> exists
-            , Consumer<Tasks.Exec> exec
-            , Function<Marker, Boolean> touch
-        )
+        static Marker clone(Options options, Tasks.Exec.Effects effects)
         {
             return switch (options.jdk.type())
             {
                 case GIT ->
                     Git.clone(
                         options.jdk
-                        , parent
-                        , exists
-                        , exec
-                        , touch
+                        , options.parent
+                        , effects
                     );
                 case MERCURIAL ->
-                    Mercurial.clone(options.jdk, parent, exists, exec, touch);
+                    Mercurial.clone(options.jdk, options.parent, effects);
             };
         }
 
         static List<Marker> build(
             Options options
             , Supplier<Path> bootJdkHome
-            , Predicate<Marker> exists
-            , Consumer<Tasks.Exec> exec
-            , Function<Marker, Boolean> touch
+            , Tasks.Exec.Effects effects
         )
         {
             final var jdkPath = options.jdkPath();
@@ -532,9 +523,7 @@ class GraalBuild implements Runnable
                 };
 
             return tasks
-                .map(t ->
-                    Tasks.Exec.run(t, new Tasks.Exec.Effects(exists, exec, touch))
-                )
+                .map(t -> Tasks.Exec.run(t, effects))
                 .collect(Collectors.toList());
         }
 
@@ -653,12 +642,7 @@ class GraalBuild implements Runnable
 
     static final class Graal
     {
-        static Marker build(
-            Options options
-            , Predicate<Marker> exists
-            , Consumer<Tasks.Exec> exec
-            , Function<Marker, Boolean> touch
-        )
+        static Marker build(Options options, Tasks.Exec.Effects effects)
         {
             final var graalVmRoot = Path.of("..", "..");
             final var root = graalVmRoot.resolve("..");
@@ -672,7 +656,7 @@ class GraalBuild implements Runnable
                     )
                     , Graal.svm(options)
                 )
-                , new Tasks.Exec.Effects(exists, exec, touch)
+                , effects
             );
         }
 
@@ -782,8 +766,9 @@ class MavenBuild implements Runnable
         public void accept(Options options)
         {
             final var parent = Path.of("");
-            Git.clone(singletonList(options.tree), parent, fs::exists, os::exec, fs::touch);
-            Maven.build(options, fs::exists, os::exec, fs::touch);
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
+            Git.clone(options.tree, parent, effects);
+            Maven.build(options, effects);
         }
     }
 
@@ -797,12 +782,7 @@ class MavenBuild implements Runnable
 
     static class Maven
     {
-        static Marker build(
-            Options options
-            , Predicate<Marker> exists
-            , Consumer<Tasks.Exec> exec
-            , Function<Marker, Boolean> touch
-        )
+        static Marker build(Options options, Tasks.Exec.Effects effects)
         {
             final var project = options.project();
             final var arguments =
@@ -810,11 +790,8 @@ class MavenBuild implements Runnable
                     .collect(Collectors.toList());
 
             return Tasks.Exec.run(
-                Tasks.Exec.of(
-                    arguments
-                    , project
-                )
-                , new Tasks.Exec.Effects(exists, exec, touch)
+                Tasks.Exec.of(arguments, project)
+                , effects
             );
         }
 
@@ -1095,13 +1072,7 @@ record Repository(
 
 class Mercurial
 {
-    static Marker clone(
-        Repository repository
-        , Path parent
-        , Predicate<Marker> exists
-        , Consumer<Tasks.Exec> exec
-        , Function<Marker, Boolean> touch
-    )
+    static Marker clone(Repository repository, Path path, Tasks.Exec.Effects effects)
     {
         return Tasks.Exec.run(
             Tasks.Exec.of(
@@ -1110,9 +1081,9 @@ class Mercurial
                     , "clone"
                     , repository.cloneUri().toString()
                 )
-                , parent
+                , path
             )
-            , new Tasks.Exec.Effects(exists, exec, touch)
+            , effects
         );
     }
 }
@@ -1196,30 +1167,18 @@ final class Tasks
 
 class Git
 {
-    static Marker clone(
-        Repository repo
-        , Path parent
-        , Predicate<Marker> exists
-        , Consumer<Tasks.Exec> exec
-        , Function<Marker, Boolean> touch
-    )
+    static Marker clone(Repository repo, Path path, Tasks.Exec.Effects effects)
     {
         return Tasks.Exec.run(
-            Tasks.Exec.of(toClone(repo), parent)
-            , new Tasks.Exec.Effects(exists, exec, touch)
+            Tasks.Exec.of(toClone(repo), path)
+            , effects
         );
     }
 
-    static List<Marker> clone(
-        List<Repository> repos
-        , Path parent
-        , Predicate<Marker> exists
-        , Consumer<Tasks.Exec> exec
-        , Function<Marker, Boolean> touch
-    )
+    static List<Marker> clone(List<Repository> repos, Path path, Tasks.Exec.Effects effects)
     {
         return repos.stream()
-            .map(repo -> clone(repo, parent, exists, exec, touch))
+            .map(repo -> clone(repo, path, effects))
             .collect(Collectors.toList());
     }
 
@@ -1693,7 +1652,8 @@ final class QuarkusCheck
         {
             final var os = new RecordingOperatingSystem();
             final List<Repository> repos = emptyList();
-            final var cloned = Git.clone(repos, Path.of(""), m -> false, os::record, m -> false);
+            final var effects = new Tasks.Exec.Effects(m -> false, os::record, m -> false);
+            final var cloned = Git.clone(repos, Path.of(""), effects);
             os.assertNumberOfTasks(0);
             assertThat(cloned.size(), is(0));
         }
@@ -1721,7 +1681,8 @@ final class QuarkusCheck
                 )
             );
             final var root = Path.of("root");
-            final var cloned = Git.clone(repos, root, fs::exists, os::record, fs::touch);
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var cloned = Git.clone(repos, root, effects);
             final var expectedTask = "git clone -b quarkus-master --depth 10 https://github.com/apache/camel-quarkus";
             os.assertExecutedOneTask(expectedTask, root, cloned.get(1));
         }
@@ -1737,7 +1698,8 @@ final class QuarkusCheck
                 )
             );
             final var root = Path.of("graalvm");
-            final var cloned = Git.clone(repos, root, fs::exists, os::record, fs::touch);
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var cloned = Git.clone(repos, root, effects);
             final var expectedTask = "git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev";
             os.assertExecutedOneTask(expectedTask, root, cloned.get(0));
         }
@@ -1763,12 +1725,8 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
 
-            final var markers = GraalBuild.Java.build(
-                options
-                , os::bootJdkHome
-                , fs::exists
-                , os::record, m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
             final var marker = markers.get(0);
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
@@ -1789,12 +1747,8 @@ final class QuarkusCheck
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
-            final var markers = GraalBuild.Java.build(
-                options
-                , os::bootJdkHome
-                , fs::exists
-                , os::record, m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
@@ -1838,13 +1792,8 @@ final class QuarkusCheck
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
 
-            final var markers = GraalBuild.Java.build(
-                options
-                , os::bootJdkHome
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
             os.assertNumberOfTasks(0);
             final var configureMarker = markers.get(0);
             assertThat(configureMarker.exists(), is(true));
@@ -1871,12 +1820,8 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
-            final var marker = GraalBuild.Graal.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = GraalBuild.Graal.build(options, effects);
             final var root = Path.of("graalvm", "graal", "substratevm");
             final var expectedTask = "../../mx/mx --java-home ../../../java_home build";
             os.assertExecutedOneTask(expectedTask, root, marker);
@@ -1896,12 +1841,8 @@ final class QuarkusCheck
                 Tasks.Exec.of(args).marker()
             );
             final var options = cli();
-            final var marker = GraalBuild.Graal.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = GraalBuild.Graal.build(options, effects);
             os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
@@ -1951,8 +1892,9 @@ final class QuarkusCheck
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
-            final var root = Path.of("root");
-            final var cloned = GraalBuild.Java.clone(options, root, fs::exists, os::record, fs::touch);
+            final var root = Path.of("graalvm");
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var cloned = GraalBuild.Java.clone(options, effects);
             final var expectedTask = "git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev";
             os.assertExecutedOneTask(expectedTask, root, cloned);
         }
@@ -1966,8 +1908,9 @@ final class QuarkusCheck
                 "--jdk-tree",
                 "http://hg.openjdk.java.net/jdk8/jdk8"
             );
-            final var root = Path.of("root");
-            final var cloned = GraalBuild.Java.clone(options, root, fs::exists, os::record, fs::touch);
+            final var root = Path.of("graalvm");
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var cloned = GraalBuild.Java.clone(options, effects);
             final var expectedTask = "hg clone http://hg.openjdk.java.net/jdk8/jdk8";
             os.assertExecutedOneTask(expectedTask, root, cloned);
         }
@@ -2173,12 +2116,8 @@ final class QuarkusCheck
                 "-t"
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
-            final var marker = MavenBuild.Maven.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = MavenBuild.Maven.build(options, effects);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
@@ -2206,12 +2145,8 @@ final class QuarkusCheck
                 "-t"
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
-            final var marker = MavenBuild.Maven.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = MavenBuild.Maven.build(options, effects);
             os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
@@ -2226,12 +2161,8 @@ final class QuarkusCheck
                 "-t"
                 , "https://github.com/apache/camel-quarkus/tree/master"
             );
-            final var marker = MavenBuild.Maven.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = MavenBuild.Maven.build(options, effects);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
             os.assertTask(task ->
@@ -2257,12 +2188,8 @@ final class QuarkusCheck
                 , "-aba"
                 , "-Pfastinstall,-Pdoesnotexist"
             );
-            final var marker = MavenBuild.Maven.build(
-                options
-                , fs::exists
-                , os::record
-                , m -> true
-            );
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var marker = MavenBuild.Maven.build(options, effects);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(true));
             os.assertTask(task ->
