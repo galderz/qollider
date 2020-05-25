@@ -666,9 +666,9 @@ class GraalBuild implements Runnable
                 Tasks.Exec.of(
                     List.of(
                         graalVmRoot.resolve(options.mxPath()).toString()
-                        , "build"
                         , "--java-home"
                         , root.resolve(Homes.java()).toString()
+                        , "build"
                     )
                     , Graal.svm(options)
                 )
@@ -1877,14 +1877,9 @@ final class QuarkusCheck
                 , os::record
                 , m -> true
             );
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("../../mx/mx")));
-                assertThat(task.directory(), is(Path.of("graalvm", "graal", "substratevm")));
-            });
+            final var root = Path.of("graalvm", "graal", "substratevm");
+            final var expectedTask = "../../mx/mx --java-home ../../../java_home build";
+            os.assertExecutedOneTask(expectedTask, root, marker);
         }
 
         @Test
@@ -1893,9 +1888,9 @@ final class QuarkusCheck
             final var os = new RecordingOperatingSystem();
             final var args = new String[]{
                 "../../mx/mx"
-                , "build"
                 , "--java-home"
                 , "../../../java_home"
+                , "build"
             };
             final var fs = InMemoryFileSystem.ofExists(
                 Tasks.Exec.of(args).marker()
@@ -1907,9 +1902,9 @@ final class QuarkusCheck
                 , os::record
                 , m -> true
             );
+            os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
-            os.assertNumberOfTasks(0);
         }
 
         @Test
