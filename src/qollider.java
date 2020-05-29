@@ -1350,7 +1350,7 @@ class FileSystem
     Link symlink(Path relativeLink, Path relativeTarget)
     {
         final var link = root.resolve(relativeLink);
-        final var target = root.resolve(relativeTarget);
+        final var target = relativeTarget;
         try
         {
             if (Files.exists(link))
