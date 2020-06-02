@@ -350,7 +350,7 @@ class GraalBuild implements Runnable
     private final Consumer<Options> runner;
 
     @Option(
-        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.0-b02"
+        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b01"
         , description = "JDK source tree URL"
         , names =
         {
