@@ -537,7 +537,7 @@ class GraalBuild implements Runnable
                         case LABSJDK -> Java.LabsJDK.javaHome(jdkPath);
                     };
 
-            final var link = Homes.java();
+            final var link = Homes.graalJava();
             LOG.info("Link {} to {}", link, target);
             return symLink.apply(link, target);
         }
@@ -651,7 +651,7 @@ class GraalBuild implements Runnable
                     List.of(
                         graalVmRoot.resolve(options.mxPath()).toString()
                         , "--java-home"
-                        , root.resolve(Homes.java()).toString()
+                        , root.resolve(Homes.graalJava()).toString()
                         , "build"
                     )
                     , Graal.svm(options)
@@ -1198,10 +1198,9 @@ class Git
 
 class Homes
 {
-    static Path java()
+    static Path graalJava()
     {
-        // TODO rename to graalvm_java_home
-        return Path.of("java_home");
+        return Path.of("graalvm_java_home");
     }
 
     static Path graal()
@@ -1855,7 +1854,7 @@ final class QuarkusCheck
                 options
                 , Link::new
             );
-            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.link(), is(Homes.graalJava()));
             assertThat(linked.target(), is(Path.of("graalvm", "labs-openjdk-11", "java_home")));
         }
 
@@ -1870,7 +1869,7 @@ final class QuarkusCheck
                 options
                 , Link::new
             );
-            assertThat(linked.link(), is(Homes.java()));
+            assertThat(linked.link(), is(Homes.graalJava()));
             assertThat(linked.target(),
                 is(Path.of(
                     "graalvm"
