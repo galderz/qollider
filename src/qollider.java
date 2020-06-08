@@ -1206,8 +1206,7 @@ class Homes
 
     static Path graal()
     {
-        // TODO rename to graalvm_home
-        return Path.of("graal_home");
+        return Path.of("graalvm_home");
     }
 
     static class EnvVars
