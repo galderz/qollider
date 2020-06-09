@@ -26,6 +26,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
+import picocli.CommandLine.ParseResult;
 import picocli.CommandLine.Spec;
 
 import java.io.File;
@@ -59,6 +60,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.concurrent.Callable;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -76,6 +78,8 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 @Command
 public class qollider implements Runnable
 {
+    static final Logger LOG = LogManager.getLogger(qollider.class);
+
     @Spec
     CommandSpec spec;
 
@@ -106,6 +110,13 @@ public class qollider implements Runnable
             , quarkusTest
         );
         int exitCode = cli.execute(args);
+        final Result<?> result = cli.getExecutionResult();
+        LOG.info(
+            "Executed: {}"
+            , result.results().stream()
+                .map(Object::toString)
+                .collect(Collectors.joining(System.lineSeparator()))
+        );
         System.exit(exitCode);
     }
 
@@ -133,6 +144,7 @@ final class Cli
     }
 }
 
+// TODO remove
 @Command(
     name = "clean"
     , aliases = {"c"}
@@ -212,7 +224,7 @@ class QuarkusClean implements Runnable
 )
 class GraalGet implements Runnable
 {
-    // TODO add namespace info
+    // TODO remove
     static final Logger LOG = LogManager.getLogger(GraalGet.class);
 
     private final Consumer<Options> runner;
@@ -342,12 +354,12 @@ class GraalGet implements Runnable
     , description = "Build Graal."
     , mixinStandardHelpOptions = true
 )
-class GraalBuild implements Runnable
+class GraalBuild implements Callable<Result<GraalBuild.Options>>
 {
-    // TODO add namespace info
+    // TODO remove
     static final Logger LOG = LogManager.getLogger(GraalBuild.class);
 
-    private final Consumer<Options> runner;
+    private final Function<Options, List<?>> runner;
 
     @Option(
         defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.1-b02"
@@ -382,7 +394,7 @@ class GraalBuild implements Runnable
     )
     URI graalTree;
 
-    private GraalBuild(Consumer<Options> runner)
+    private GraalBuild(Function<Options, List<?>> runner)
     {
         this.runner = runner;
     }
@@ -392,26 +404,24 @@ class GraalBuild implements Runnable
         return new GraalBuild(new GraalBuild.RunBuild(fs, os));
     }
 
-    static GraalBuild of(Consumer<Options> runner)
+    static GraalBuild of(Function<Options, List<?>> runner)
     {
         return new GraalBuild(runner);
     }
 
     @Override
-    public void run()
+    public Result<GraalBuild.Options> call()
     {
-        LOG.info("Build");
         final var options = Options.of(
             jdkTree
             , mxTree
             , graalTree
             , Path.of("graalvm")
         );
-        LOG.info(options);
-        runner.accept(options);
+        return new Result(options, runner.apply(options));
     }
 
-    final static class RunBuild implements Consumer<Options>
+    final static class RunBuild implements Function<Options, List<?>>
     {
         final FileSystem fs;
         final OperatingSystem os;
@@ -423,21 +433,24 @@ class GraalBuild implements Runnable
         }
 
         @Override
-        public void accept(Options options)
+        public List<?> apply(Options options)
         {
             final var parent = fs.mkdirs(options.parent);
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
 
-            Java.clone(options, effects);
-            Git.clone(Options.repositories(options), parent, effects);
+            final var repos = Options.repositories(options);
+            return Arrays.asList(
+                Java.clone(options, effects)
+                , Git.clone(repos, parent, effects).toArray()
 
-            // TODO book jdk should be installed in java
-            Java.build(options, os::bootJdkHome, effects);
-            Java.link(options, fs::symlink);
+                // TODO boot jdk should be installed in java
+                , Java.build(options, os::bootJdkHome, effects)
+                , Java.link(options, fs::symlink)
 
-            Graal.build(options, effects);
-            Graal.link(options, fs::symlink);
+                , Graal.build(options, effects)
+                , Graal.link(options, fs::symlink)
+            );
         }
     }
 
@@ -468,6 +481,7 @@ class GraalBuild implements Runnable
             return Path.of(mx.name(), "mx");
         }
 
+        // TODO take advantage of URI to Repository converter (remove factory)
         static Options of(
             URI jdk
             , URI mx
@@ -687,7 +701,7 @@ class GraalBuild implements Runnable
 )
 class MavenBuild implements Runnable
 {
-    // TODO add namespace info
+    // TODO remove
     static final Logger LOG = LogManager.getLogger(MavenBuild.class);
 
     // TODO avoid duplication with MavenTest
@@ -830,6 +844,7 @@ class MavenBuild implements Runnable
 )
 class MavenTest implements Runnable
 {
+    // TODO remove
     private static final Logger LOG = LogManager.getLogger(MavenTest.class);
 
     // TODO avoid duplication with MavenBuild
@@ -1228,9 +1243,13 @@ class Homes
     }
 }
 
+// TODO track any exceptional outcome
+record Result<T>(T options, List<?> results) {}
+
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path)
 {
+    // TODO remove
     static final Logger LOG = LogManager.getLogger(Marker.class);
 
     Marker query(Predicate<Marker> existsFn)
@@ -1921,11 +1940,15 @@ final class QuarkusCheck
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var recorder = new OptionsRecorder<GraalBuild.Options>();
-            final var command = GraalBuild.of(recorder);
-            final var exitCode = Cli.newCli(command).execute(args);
+            final var command = GraalBuild.of(List::of);
+            final var cli = Cli.newCli(command);
+            final var exitCode = cli.execute(args);
             assertThat(exitCode, is(0));
-            return recorder.options;
+
+            ParseResult parseResult = cli.getParseResult();
+            CommandLine sub = parseResult.subcommand().commandSpec().commandLine();
+            final Result<GraalBuild.Options> result = sub.getExecutionResult();
+            return (GraalBuild.Options) result.results().get(0);
         }
     }
 
@@ -2206,6 +2229,7 @@ final class QuarkusCheck
             });
         }
 
+        // TODO avoid dup
         private static MavenBuild.Options cli(String... extra)
         {
             final List<String> list = new ArrayList<>();
