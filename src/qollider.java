@@ -1821,7 +1821,7 @@ final class QuarkusCheck
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = GraalBuild.Graal.build(options, effects);
             final var root = Path.of("graalvm", "graal", "substratevm");
-            final var expectedTask = "../../mx/mx --java-home ../../../java_home build";
+            final var expectedTask = "../../mx/mx --java-home ../../../graalvm_java_home build";
             os.assertExecutedOneTask(expectedTask, root, marker);
         }
 
@@ -1832,7 +1832,7 @@ final class QuarkusCheck
             final var args = new String[]{
                 "../../mx/mx"
                 , "--java-home"
-                , "../../../java_home"
+                , "../../../graalvm_java_home"
                 , "build"
             };
             final var fs = InMemoryFileSystem.ofExists(
