@@ -242,9 +242,6 @@ class QuarkusClean implements Runnable
 )
 class GraalGet implements Callable<SubResult<GraalGet.Options>>
 {
-    // TODO remove
-    static final Logger LOG = LogManager.getLogger(GraalGet.class);
-
     private final Function<Options, List<?>> runner;
 
     @Option(
@@ -276,9 +273,7 @@ class GraalGet implements Callable<SubResult<GraalGet.Options>>
     @Override
     public SubResult<GraalGet.Options> call()
     {
-        LOG.info("Graal Get");
         final var options = new Options(url, Path.of("graalvm", "graal"));
-        LOG.info(options);
         return new SubResult<>(options, runner.apply(options));
     }
 
@@ -376,9 +371,6 @@ class GraalGet implements Callable<SubResult<GraalGet.Options>>
 )
 class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
 {
-    // TODO remove
-    static final Logger LOG = LogManager.getLogger(GraalBuild.class);
-
     private final Function<Options, List<?>> runner;
 
     @Option(
@@ -572,7 +564,6 @@ class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
                     };
 
             final var link = Homes.graalJava();
-            LOG.info("Link {} to {}", link, target);
             return symLink.apply(link, target);
         }
 
@@ -721,9 +712,6 @@ class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
 )
 class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
 {
-    // TODO remove
-    static final Logger LOG = LogManager.getLogger(MavenBuild.class);
-
     // TODO avoid duplication with MavenTest
     // TODO read camel-quarkus snapshot version from pom.xml
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
@@ -779,9 +767,7 @@ class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
     @Override
     public SubResult<Options> call()
     {
-        LOG.info("Build");
         final var options = new Options(tree, additionalBuildArgs);
-        LOG.info(options);
         return new SubResult<>(options, runner.apply(options));
     }
 
@@ -833,11 +819,6 @@ class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
 
         private static Stream<String> arguments(Options options, String directory)
         {
-            LOG.info(
-                "Compute task arguments for {} with additional build args {}"
-                , directory
-                , options.additionalBuildArgs
-            );
             // TODO add -DskipITs just in case
             // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
             final var arguments = Stream.concat(
@@ -866,9 +847,6 @@ class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
 )
 class MavenTest implements Callable<SubResult<MavenTest.Options>>
 {
-    // TODO remove
-    private static final Logger LOG = LogManager.getLogger(MavenTest.class);
-
     // TODO avoid duplication with MavenBuild
     // TODO read camel-quarkus snapshot version from
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
@@ -923,7 +901,6 @@ class MavenTest implements Callable<SubResult<MavenTest.Options>>
     public SubResult<Options> call()
     {
         var options = new Options(suite, additionalTestArgs);
-        LOG.info(options);
         return new SubResult<>(options, runner.apply(options));
     }
 
@@ -1272,19 +1249,14 @@ record SubResult<T>(T options, List<?> results) {}
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path)
 {
-    // TODO remove
-    static final Logger LOG = LogManager.getLogger(Marker.class);
-
     Marker query(Predicate<Marker> existsFn)
     {
         final var exists = existsFn.test(this);
         if (exists)
         {
-            LOG.info("Path exists {}", path);
             return new Marker(true, this.touched, this.path);
         }
 
-        LOG.info("Path does not exist {}", path);
         return new Marker(false, this.touched, this.path);
     }
 
@@ -1292,18 +1264,15 @@ record Marker(boolean exists, boolean touched, Path path)
     {
         if (exists)
         {
-            LOG.info("Skip touch, path exists {}", path);
             return this;
         }
 
         final var touched = touchFn.apply(this);
         if (touched)
         {
-            LOG.info("Touched path {}", path);
             return new Marker(true, true, path);
         }
 
-        LOG.info("Could not touch path {}", path);
         return new Marker(false, false, path);
     }
 
