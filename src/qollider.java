@@ -110,12 +110,19 @@ public class qollider implements Runnable
             , quarkusTest
         );
         final var result = cli.execute(args);
-        LOG.info(
-            "Executed: {}"
-            , result.subResult().results().stream()
-                .map(Object::toString)
-                .collect(Collectors.joining(System.lineSeparator()))
-        );
+        if (0 == result.exitCode())
+        {
+            LOG.info(
+                "Executed: {}"
+                , result.subResult().results().stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining(System.lineSeparator()))
+            );
+        }
+        else
+        {
+            LOG.error("Failed executing: {}", result);
+        }
         System.exit(result.exitCode());
     }
 
