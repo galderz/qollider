@@ -102,22 +102,21 @@ public class qollider implements Runnable
         final var quarkusClean = QuarkusClean.ofSystem(fs);
         final var quarkusTest = MavenTest.ofSystem(fs, os);
 
-        final var cli = Cli.newCli(
+        final var cli = Cli.of(
             graalBuild
             , graalGet
             , mavenBuild
             , quarkusClean
             , quarkusTest
         );
-        int exitCode = cli.execute(args);
-        final Result<?> result = cli.getExecutionResult();
+        final var result = cli.execute(args);
         LOG.info(
             "Executed: {}"
-            , result.results().stream()
+            , result.subResult().results().stream()
                 .map(Object::toString)
                 .collect(Collectors.joining(System.lineSeparator()))
         );
-        System.exit(exitCode);
+        System.exit(result.exitCode());
     }
 
     @Override
@@ -132,16 +131,35 @@ public class qollider implements Runnable
 
 final class Cli
 {
-    static CommandLine newCli(Object... subcommands)
+    final CommandLine picoCli;
+
+    private Cli(CommandLine picoCli)
+    {
+        this.picoCli = picoCli;
+    }
+
+    <T> ExecResult<T> execute(String... args)
+    {
+        final var exitCode = picoCli.execute(args);
+        ParseResult parseResult = picoCli.getParseResult();
+        CommandLine sub = parseResult.subcommand().commandSpec().commandLine();
+        return new ExecResult<>(exitCode, sub.getExecutionResult());
+    }
+
+    static Cli of(Object... subcommands)
     {
         final var cmdline = new CommandLine(new qollider());
         // Sub-commands need to be added first,
         // for converters and other options to have effect
         Arrays.asList(subcommands).forEach(cmdline::addSubcommand);
-        return cmdline
-            .registerConverter(Repository.class, Repository::of)
-            .setCaseInsensitiveEnumValuesAllowed(true);
+        return new Cli(
+            cmdline
+                .registerConverter(Repository.class, Repository::of)
+                .setCaseInsensitiveEnumValuesAllowed(true)
+        );
     }
+
+    record ExecResult<T>(int exitCode, SubResult<T> subResult) {}
 }
 
 // TODO remove
@@ -222,12 +240,12 @@ class QuarkusClean implements Runnable
     , description = "Get Graal."
     , mixinStandardHelpOptions = true
 )
-class GraalGet implements Runnable
+class GraalGet implements Callable<SubResult<GraalGet.Options>>
 {
     // TODO remove
     static final Logger LOG = LogManager.getLogger(GraalGet.class);
 
-    private final Consumer<Options> runner;
+    private final Function<Options, List<?>> runner;
 
     @Option(
         description = "URL of distribution"
@@ -240,7 +258,7 @@ class GraalGet implements Runnable
     )
     URL url;
 
-    private GraalGet(Consumer<Options> runner)
+    private GraalGet(Function<Options, List<?>> runner)
     {
         this.runner = runner;
     }
@@ -250,21 +268,21 @@ class GraalGet implements Runnable
         return new GraalGet(new GraalGet.RunGet(fs, os, web));
     }
 
-    static GraalGet of(Consumer<Options> runner)
+    static GraalGet of(Function<Options, List<?>> runner)
     {
         return new GraalGet(runner);
     }
 
     @Override
-    public void run()
+    public SubResult<GraalGet.Options> call()
     {
         LOG.info("Graal Get");
         final var options = new Options(url, Path.of("graalvm", "graal"));
         LOG.info(options);
-        runner.accept(options);
+        return new SubResult<>(options, runner.apply(options));
     }
 
-    final static class RunGet implements Consumer<Options>
+    final static class RunGet implements Function<Options, List<?>>
     {
         final FileSystem fs;
         final OperatingSystem os;
@@ -278,11 +296,13 @@ class GraalGet implements Runnable
         }
 
         @Override
-        public void accept(Options options)
+        public List<?> apply(Options options)
         {
             fs.mkdirs(options.graal);
-            Graal.get(options, fs::exists, web::download, os::exec, fs::touch);
-            Graal.link(options, fs::symlink);
+            return List.of(
+                Graal.get(options, fs::exists, web::download, os::exec, fs::touch)
+                , Graal.link(options, fs::symlink)
+            );
         }
     }
 
@@ -338,10 +358,10 @@ class GraalGet implements Runnable
             return Arrays.asList(downloadMarker, extractMarker, nativeImageMarker);
         }
 
-        public static void link(Options options, BiFunction<Path, Path, Link> symLink)
+        public static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
             final var link = Homes.graal();
-            symLink.apply(link, options.graal);
+            return symLink.apply(link, options.graal);
         }
     }
 
@@ -354,7 +374,7 @@ class GraalGet implements Runnable
     , description = "Build Graal."
     , mixinStandardHelpOptions = true
 )
-class GraalBuild implements Callable<Result<GraalBuild.Options>>
+class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
 {
     // TODO remove
     static final Logger LOG = LogManager.getLogger(GraalBuild.class);
@@ -410,7 +430,7 @@ class GraalBuild implements Callable<Result<GraalBuild.Options>>
     }
 
     @Override
-    public Result<GraalBuild.Options> call()
+    public SubResult<Options> call()
     {
         final var options = Options.of(
             jdkTree
@@ -418,7 +438,7 @@ class GraalBuild implements Callable<Result<GraalBuild.Options>>
             , graalTree
             , Path.of("graalvm")
         );
-        return new Result(options, runner.apply(options));
+        return new SubResult<>(options, runner.apply(options));
     }
 
     final static class RunBuild implements Function<Options, List<?>>
@@ -440,7 +460,7 @@ class GraalBuild implements Callable<Result<GraalBuild.Options>>
             final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
 
             final var repos = Options.repositories(options);
-            return Arrays.asList(
+            return List.of(
                 Java.clone(options, effects)
                 , Git.clone(repos, parent, effects).toArray()
 
@@ -699,7 +719,7 @@ class GraalBuild implements Callable<Result<GraalBuild.Options>>
     , description = "Maven build."
     , mixinStandardHelpOptions = true
 )
-class MavenBuild implements Runnable
+class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
 {
     // TODO remove
     static final Logger LOG = LogManager.getLogger(MavenBuild.class);
@@ -717,7 +737,7 @@ class MavenBuild implements Runnable
         )
     );
 
-    private final Consumer<Options> runner;
+    private final Function<Options, List<?>> runner;
 
     @Option(
         description = "Source tree URL"
@@ -741,7 +761,7 @@ class MavenBuild implements Runnable
     )
     List<String> additionalBuildArgs = new ArrayList<>();
 
-    private MavenBuild(Consumer<Options> runner)
+    private MavenBuild(Function<Options, List<?>> runner)
     {
         this.runner = runner;
     }
@@ -751,21 +771,21 @@ class MavenBuild implements Runnable
         return new MavenBuild(new MavenBuild.RunBuild(fs, os));
     }
 
-    static MavenBuild of(Consumer<MavenBuild.Options> runner)
+    static MavenBuild of(Function<Options, List<?>> runner)
     {
         return new MavenBuild(runner);
     }
 
     @Override
-    public void run()
+    public SubResult<Options> call()
     {
         LOG.info("Build");
         final var options = new Options(tree, additionalBuildArgs);
         LOG.info(options);
-        runner.accept(options);
+        return new SubResult<>(options, runner.apply(options));
     }
 
-    final static class RunBuild implements Consumer<Options>
+    final static class RunBuild implements Function<Options, List<?>>
     {
         final FileSystem fs;
         final OperatingSystem os;
@@ -777,12 +797,14 @@ class MavenBuild implements Runnable
         }
 
         @Override
-        public void accept(Options options)
+        public List<?> apply(Options options)
         {
             final var parent = Path.of("");
             final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
-            Git.clone(options.tree, parent, effects);
-            Maven.build(options, effects);
+            return List.of(
+                Git.clone(options.tree, parent, effects)
+                , Maven.build(options, effects)
+            );
         }
     }
 
@@ -842,7 +864,7 @@ class MavenBuild implements Runnable
     , description = "Maven test."
     , mixinStandardHelpOptions = true
 )
-class MavenTest implements Runnable
+class MavenTest implements Callable<SubResult<MavenTest.Options>>
 {
     // TODO remove
     private static final Logger LOG = LogManager.getLogger(MavenTest.class);
@@ -858,7 +880,7 @@ class MavenTest implements Runnable
         )
     );
 
-    private final Consumer<Options> runner;
+    private final Function<Options, List<?>> runner;
 
     @Option(
         description = "Test suite to run"
@@ -882,7 +904,7 @@ class MavenTest implements Runnable
     )
     final List<String> additionalTestArgs = new ArrayList<>();
 
-    private MavenTest(Consumer<Options> runner)
+    private MavenTest(Function<Options, List<?>> runner)
     {
         this.runner = runner;
     }
@@ -892,20 +914,20 @@ class MavenTest implements Runnable
         return new MavenTest(new RunTest(fs, os));
     }
 
-    static MavenTest of(Consumer<Options> runner)
+    static MavenTest of(Function<Options, List<?>> runner)
     {
         return new MavenTest(runner);
     }
 
     @Override
-    public void run()
+    public SubResult<Options> call()
     {
         var options = new Options(suite, additionalTestArgs);
         LOG.info(options);
-        runner.accept(options);
+        return new SubResult<>(options, runner.apply(options));
     }
 
-    final static class RunTest implements Consumer<Options>
+    final static class RunTest implements Function<Options, List<?>>
     {
         final FileSystem fs;
         final OperatingSystem os;
@@ -917,9 +939,10 @@ class MavenTest implements Runnable
         }
 
         @Override
-        public void accept(Options options)
+        public List<?> apply(Options options)
         {
             Maven.test(options, os::exec);
+            return List.of();
         }
     }
 
@@ -1244,7 +1267,7 @@ class Homes
 }
 
 // TODO track any exceptional outcome
-record Result<T>(T options, List<?> results) {}
+record SubResult<T>(T options, List<?> results) {}
 
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path)
@@ -1934,21 +1957,7 @@ final class QuarkusCheck
 
         private static GraalBuild.Options cli(String... extra)
         {
-            final List<String> list = new ArrayList<>();
-            list.add("graal-build");
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var command = GraalBuild.of(List::of);
-            final var cli = Cli.newCli(command);
-            final var exitCode = cli.execute(args);
-            assertThat(exitCode, is(0));
-
-            ParseResult parseResult = cli.getParseResult();
-            CommandLine sub = parseResult.subcommand().commandSpec().commandLine();
-            final Result<GraalBuild.Options> result = sub.getExecutionResult();
-            return (GraalBuild.Options) result.results().get(0);
+            return MiniCli.asOptions("graal-build", GraalBuild.of(List::of), extra);
         }
     }
 
@@ -2086,40 +2095,15 @@ final class QuarkusCheck
         @Test
         void missingURL()
         {
-            final var result = cliError();
+            final var command = GraalGet.of(List::of);
+            final var result = MiniCli.asError("graal-get", command);
             assertThat(result, is(2));
-        }
-
-        private static int cliError()
-        {
-            final List<String> list = new ArrayList<>();
-            list.add("graal-get");
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var recorder = new OptionsRecorder<GraalGet.Options>();
-            final var command = GraalGet.of(recorder);
-            return Cli.newCli(command)
-                .setParameterExceptionHandler(
-                    (ex, cmdArgs) ->
-                        ex.getCommandLine().getCommandSpec().exitCodeOnInvalidInput()
-                )
-                .execute(args);
         }
 
         private static GraalGet.Options cli(String... extra)
         {
-            final List<String> list = new ArrayList<>();
-            list.add("graal-get");
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var recorder = new OptionsRecorder<GraalGet.Options>();
-            final var command = GraalGet.of(recorder);
-            final var exitCode = Cli.newCli(command).execute(args);
-            assertThat(exitCode, is(0));
-            return recorder.options;
+            final var command = GraalGet.of(List::of);
+            return MiniCli.asOptions("graal-get", command, extra);
         }
 
         static void downloadNoop(URL url, Path path) {}
@@ -2232,17 +2216,8 @@ final class QuarkusCheck
         // TODO avoid dup
         private static MavenBuild.Options cli(String... extra)
         {
-            final List<String> list = new ArrayList<>();
-            list.add("maven-build");
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var recorder = new OptionsRecorder<MavenBuild.Options>();
-            final var command = MavenBuild.of(recorder);
-            final var exitCode = Cli.newCli(command).execute(args);
-            assertThat(exitCode, is(0));
-            return recorder.options;
+            final var command = MavenBuild.of(List::of);
+            return MiniCli.asOptions("maven-build", command, extra);
         }
     }
 
@@ -2336,17 +2311,44 @@ final class QuarkusCheck
 
         private static MavenTest.Options cli(String... extra)
         {
+            final var command = MavenTest.of(List::of);
+            return MiniCli.asOptions("maven-test", command, extra);
+        }
+    }
+
+    private static final class MiniCli
+    {
+        private static <T> T asOptions(String commandName, Object command, String... extra)
+        {
             final List<String> list = new ArrayList<>();
-            list.add("maven-test");
+            list.add(commandName);
             list.addAll(Arrays.asList(extra));
             final String[] args = new String[list.size()];
             list.toArray(args);
 
-            final var recorder = new OptionsRecorder<MavenTest.Options>();
-            final var command = MavenTest.of(recorder);
-            final var exitCode = Cli.newCli(command).execute(args);
-            assertThat(exitCode, is(0));
-            return recorder.options;
+            final var cli = Cli.of(command);
+            final var result = cli.execute(args);
+            assertThat(result.exitCode(), is(0));
+
+            return (T) result.subResult().results().get(0);
+        }
+
+        private static int asError(String commandName, Object command, String...extra)
+        {
+            final List<String> list = new ArrayList<>();
+            list.add(commandName);
+            list.addAll(Arrays.asList(extra));
+            final String[] args = new String[list.size()];
+            list.toArray(args);
+
+            final var picoCli = Cli.of(command).picoCli;
+            // Force an error and make it silent
+            return picoCli
+                .setParameterExceptionHandler(
+                    (ex, cmdArgs) ->
+                        ex.getCommandLine().getCommandSpec().exitCodeOnInvalidInput()
+                )
+                .execute(args);
         }
     }
 
