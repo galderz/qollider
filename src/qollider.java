@@ -112,9 +112,16 @@ public class qollider implements Runnable
         final var result = cli.execute(args);
         if (0 == result.exitCode())
         {
+            LOG.info("Execution summary:");
+            LOG.info("Inputs:");
             LOG.info(
-                "Executed: {}"
-                , result.subResult().results().stream()
+                List.of(args).stream()
+                    .map(Object::toString)
+                    .collect(Collectors.joining(System.lineSeparator()))
+            );
+            LOG.info("Outputs:");
+            LOG.info(
+                result.outputs().stream()
                     .map(Object::toString)
                     .collect(Collectors.joining(System.lineSeparator()))
             );
@@ -145,12 +152,12 @@ final class Cli
         this.picoCli = picoCli;
     }
 
-    <T> ExecResult<T> execute(String... args)
+    Result execute(String... args)
     {
         final var exitCode = picoCli.execute(args);
         ParseResult parseResult = picoCli.getParseResult();
         CommandLine sub = parseResult.subcommand().commandSpec().commandLine();
-        return new ExecResult<>(exitCode, sub.getExecutionResult());
+        return new Result(exitCode, sub.getExecutionResult());
     }
 
     static Cli of(Object... subcommands)
@@ -166,7 +173,7 @@ final class Cli
         );
     }
 
-    record ExecResult<T>(int exitCode, SubResult<T> subResult) {}
+    record Result(int exitCode, List<?> outputs) {}
 }
 
 // TODO remove
@@ -247,7 +254,7 @@ class QuarkusClean implements Runnable
     , description = "Get Graal."
     , mixinStandardHelpOptions = true
 )
-class GraalGet implements Callable<SubResult<GraalGet.Options>>
+class GraalGet implements Callable<List<?>>
 {
     private final Function<Options, List<?>> runner;
 
@@ -278,10 +285,10 @@ class GraalGet implements Callable<SubResult<GraalGet.Options>>
     }
 
     @Override
-    public SubResult<GraalGet.Options> call()
+    public List<?> call()
     {
         final var options = new Options(url, Path.of("graalvm", "graal"));
-        return new SubResult<>(options, runner.apply(options));
+        return runner.apply(options);
     }
 
     final static class RunGet implements Function<Options, List<?>>
@@ -376,7 +383,7 @@ class GraalGet implements Callable<SubResult<GraalGet.Options>>
     , description = "Build Graal."
     , mixinStandardHelpOptions = true
 )
-class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
+class GraalBuild implements Callable<List<?>>
 {
     private final Function<Options, List<?>> runner;
 
@@ -429,7 +436,7 @@ class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
     }
 
     @Override
-    public SubResult<Options> call()
+    public List<?> call()
     {
         final var options = Options.of(
             jdkTree
@@ -437,7 +444,7 @@ class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
             , graalTree
             , Path.of("graalvm")
         );
-        return new SubResult<>(options, runner.apply(options));
+        return runner.apply(options);
     }
 
     final static class RunBuild implements Function<Options, List<?>>
@@ -717,7 +724,7 @@ class GraalBuild implements Callable<SubResult<GraalBuild.Options>>
     , description = "Maven build."
     , mixinStandardHelpOptions = true
 )
-class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
+class MavenBuild implements Callable<List<?>>
 {
     // TODO avoid duplication with MavenTest
     // TODO read camel-quarkus snapshot version from pom.xml
@@ -772,10 +779,10 @@ class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
     }
 
     @Override
-    public SubResult<Options> call()
+    public List<?> call()
     {
         final var options = new Options(tree, additionalBuildArgs);
-        return new SubResult<>(options, runner.apply(options));
+        return runner.apply(options);
     }
 
     final static class RunBuild implements Function<Options, List<?>>
@@ -852,7 +859,7 @@ class MavenBuild implements Callable<SubResult<MavenBuild.Options>>
     , description = "Maven test."
     , mixinStandardHelpOptions = true
 )
-class MavenTest implements Callable<SubResult<MavenTest.Options>>
+class MavenTest implements Callable<List<?>>
 {
     // TODO avoid duplication with MavenBuild
     // TODO read camel-quarkus snapshot version from
@@ -905,10 +912,10 @@ class MavenTest implements Callable<SubResult<MavenTest.Options>>
     }
 
     @Override
-    public SubResult<Options> call()
+    public List<?> call()
     {
         var options = new Options(suite, additionalTestArgs);
-        return new SubResult<>(options, runner.apply(options));
+        return runner.apply(options);
     }
 
     final static class RunTest implements Function<Options, List<?>>
@@ -1250,9 +1257,7 @@ class Homes
     }
 }
 
-// TODO track any exceptional outcome
-record SubResult<T>(T options, List<?> results) {}
-
+// TODO store the executed command
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path)
 {
@@ -1433,6 +1438,7 @@ class OperatingSystem
             .collect(Collectors.toList());
 
         final var directory = fs.root.resolve(exec.directory());
+        // TODO print task without commas
         LOG.debug("Execute {} in {}", taskList, directory);
         try
         {
@@ -2305,8 +2311,8 @@ final class QuarkusCheck
             final var cli = Cli.of(command);
             final var result = cli.execute(args);
             assertThat(result.exitCode(), is(0));
-
-            return (T) result.subResult().results().get(0);
+            // TODO create an umbrella Input interface for all options
+            return (T) result.outputs().get(0);
         }
 
         private static int asError(String commandName, Object command, String...extra)
@@ -2432,17 +2438,6 @@ final class QuarkusCheck
         private <T> T peekTask()
         {
             return (T) tasks.peek();
-        }
-    }
-
-    private static final class OptionsRecorder<T> implements Consumer<T>
-    {
-        T options;
-
-        @Override
-        public void accept(T options)
-        {
-            this.options = options;
         }
     }
 
