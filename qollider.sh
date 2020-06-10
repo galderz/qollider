@@ -2,65 +2,72 @@
 
 set -e
 
-SCRIPT_JDK_VERSION="14.0.1"
-SCRIPT_JDK="${SCRIPT_JDK_VERSION}.hs-adpt"
-SCRIPT_JDK_HOME="${HOME}/.sdkman/candidates/java/${SCRIPT_JDK}"
+Q_HOME="${HOME}/workspace/qollider"
 
-BOOT_JDK_VERSION="11.0.7"
-BOOT_JDK="${BOOT_JDK_VERSION}.hs-adpt"
-BOOT_JDK_HOME="${HOME}/.sdkman/candidates/java/${BOOT_JDK}"
+JAVA_HOME="undefined"
+JAVA_VERSION_MAJOR="14"
+JAVA_VERSION_BUILD="7"
+JAVA_VERSION="${JAVA_VERSION_MAJOR}.0.1"
+JAVA_URL_BASE="https://github.com/AdoptOpenJDK/openjdk${JAVA_VERSION_MAJOR}-binaries/releases/download"
 
+JBANG_HOME="${Q_HOME}/jbang"
+JBANG_EXEC="${JBANG_HOME}/bin/jbang"
 JBANG_VERSION="0.22.0.2"
 
-getSdkman() {
-    local file="${HOME}/.sdkman/bin/sdkman-init.sh"
+PLATFORM="unknown"
+
+# from https://stackoverflow.com/a/8597411/186429
+findPlatform() {
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        PLATFORM="linux"
+        JAVA_HOME="${Q_HOME}/jdk"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        PLATFORM="mac"
+        JAVA_HOME="${Q_HOME}/jdk/Contents/Home"
+    fi
+}
+
+installJDK() {
+    local file="${JAVA_HOME}/bin/java"
     if [ ! -e "${file}" ]; then
-        echo 'Installing sdkman'
-        curl -s "https://get.sdkman.io" | bash
-    fi
-    source "${file}"
-}
+        echo 'Installing Java for Qollider'
 
-installBootJDK() {
-    if [ ! -d "${BOOT_JDK_HOME}" ]; then
-        n | sdk install java ${BOOT_JDK}
-    fi
-}
+        local url="${JAVA_URL_BASE}/jdk-${JAVA_VERSION}%2B${JAVA_VERSION_BUILD}/OpenJDK${JAVA_VERSION_MAJOR}U-jdk_x64_${PLATFORM}_hotspot_${JAVA_VERSION}_${JAVA_VERSION_BUILD}.tar.gz"
+        local archive="${Q_HOME}/jdk.tar.gz"
 
-installScriptJDK() {
-    if [ ! -d "${SCRIPT_JDK_HOME}" ]; then
-        n | sdk install java ${SCRIPT_JDK}
+        mkdir -p ${JAVA_HOME}
+
+        curl --location ${url} > ${archive}
+        tar -xzvpf ${archive} -C ${JAVA_HOME} --strip-components 1
+
+        rm -drf ${archive}
     fi
 }
 
 installJBang() {
-    local directory="${HOME}/.sdkman/candidates/jbang/${JBANG_VERSION}"
-    if [ ! -d "${directory}" ]; then
-        sdk install jbang ${JBANG_VERSION}
-        n | sdk use jbang ${JBANG_VERSION}
-    fi
-}
+    local file="${JBANG_EXEC}"
+    if [ ! -e "${file}" ]; then
+        local url="https://github.com/jbangdev/jbang/releases/download/v${JBANG_VERSION}/jbang-${JBANG_VERSION}.tar"
+        local archive="${Q_HOME}/jbang.tar"
 
-installMaven() {
-    local directory="${HOME}/.sdkman/candidates/maven"
-    if [ ! -d "${directory}" ]; then
-        n | sdk install maven || true
+        mkdir -p ${JBANG_HOME}
+
+        curl --location ${url} > ${archive}
+        tar -xzvpf ${archive} -C ${JBANG_HOME} --strip-components 1
+
+        rm -drf ${archive}
     fi
 }
 
 run() {
-    source ${HOME}/.sdkman/bin/sdkman-init.sh
-    JAVA_HOME=${SCRIPT_JDK_HOME}
-        BOOT_JDK_HOME=${BOOT_JDK_HOME} \
-        jbang src/qollider.java "$@"
+    JAVA_HOME=${JAVA_HOME} ${JBANG_EXEC} src/qollider.java "$@"
 }
 
 main() {
-    getSdkman
-    installBootJDK
-    installScriptJDK
+    mkdir -p ${Q_HOME}
+    findPlatform
+    installJDK
     installJBang
-    installMaven
     run "$@"
 }
 
