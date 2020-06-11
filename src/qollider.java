@@ -66,6 +66,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -307,8 +308,12 @@ class GraalGet implements Callable<List<?>>
         public List<?> apply(Options options)
         {
             fs.mkdirs(options.graal);
+
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, web::download, fs::touch, os::type);
+
             return List.of(
-                Graal.get(options, fs::exists, web::download, os::exec, fs::touch)
+                Graal.get(options, exec, download)
                 , Graal.link(options, fs::symlink)
             );
         }
@@ -318,17 +323,12 @@ class GraalGet implements Callable<List<?>>
     {
         static List<Marker> get(
             Options options
-            , Predicate<Marker> exists
-            , Consumer<Tasks.Download> download
-            , Consumer<Tasks.Exec> exec
-            , Function<Marker, Boolean> touch
+            , Tasks.Exec.Effects exec
+            , Tasks.Download.Effects download
         )
         {
-            final var installMarkers = Tasks.Install.install(
-                new Tasks.Install(options.url, options.graal)
-                , new Tasks.Download.Effects(exists, download, touch)
-                , new Tasks.Exec.Effects(exists, exec, touch)
-            );
+            final var install = new Tasks.Install(options.url, options.graal);
+            final var installMarkers = Tasks.Install.install(install, download, exec);
 
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
@@ -343,7 +343,7 @@ class GraalGet implements Callable<List<?>>
                     )
                     , Path.of("graal", "bin")
                 )
-                , new Tasks.Exec.Effects(exists, exec, touch)
+                , exec
             );
 
             return Lists.append(nativeImageMarker, installMarkers);
@@ -449,7 +449,7 @@ class GraalBuild implements Callable<List<?>>
             fs.mkdirs(options.bootJdkPath());
 
             final var exec = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
-            final var download = new Tasks.Download.Effects(fs::exists, web::download, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, web::download, fs::touch, os::type);
 
             // TODO unroll git clones
             final var repos = Options.repositories(options);
@@ -458,7 +458,7 @@ class GraalBuild implements Callable<List<?>>
                 , Git.clone(repos, options.parent, exec).toArray()
 
                 , Java.install(options, exec, download)
-                , Java.build(options, exec)
+                , Java.build(options, exec, os::type)
                 , Java.link(options, fs::symlink)
 
                 , Graal.build(options, exec)
@@ -497,6 +497,14 @@ class GraalBuild implements Callable<List<?>>
         Path bootJdkPath()
         {
             return parent.resolve("boot-jdk");
+        }
+
+        Path bootJdkHome(Supplier<OperatingSystem.Type> osType)
+        {
+            final var root = parent.resolve("boot-jdk");
+            return osType.get().isMac()
+                ? root.resolve(Path.of("Contents", "Home"))
+                : root;
         }
 
         // TODO take advantage of URI to Repository converter (remove factory)
@@ -544,12 +552,15 @@ class GraalBuild implements Callable<List<?>>
         static List<Marker> build(
             Options options
             , Tasks.Exec.Effects effects
+            , Supplier<OperatingSystem.Type> osType
         )
         {
+            // TODO consider creating a symlink for boot_java_home under graalvm/
+            final var bootJdkHome = Path.of("..", "..").resolve(options.bootJdkHome(osType));
             final var tasks = switch (options.javaType())
                 {
-                    case OPENJDK -> Java.OpenJDK.buildSteps(options);
-                    case LABSJDK -> Java.LabsJDK.buildSteps(options);
+                    case OPENJDK -> Java.OpenJDK.buildSteps(options, bootJdkHome);
+                    case LABSJDK -> Java.LabsJDK.buildSteps(options, bootJdkHome);
                 };
 
             return tasks
@@ -586,10 +597,8 @@ class GraalBuild implements Callable<List<?>>
                 , javaVersionMajor
             );
 
-            final var os = OperatingSystem.type() == OperatingSystem.Type.MACOSX
-                ? "mac"
-                : OperatingSystem.type().show();
-
+            final var osType = download.osType().get();
+            final var javaOsType = osType.isMac() ? "mac" : osType;
             final var arch = "x64";
 
             final var url = URLs.of(
@@ -600,7 +609,7 @@ class GraalBuild implements Callable<List<?>>
                     , javaVersionBuild
                     , javaVersionMajor
                     , arch
-                    , os
+                    , javaOsType
                     , javaVersion
                     , javaVersionBuild
                 )
@@ -615,10 +624,10 @@ class GraalBuild implements Callable<List<?>>
 
         private static final class OpenJDK
         {
-            static Stream<Tasks.Exec> buildSteps(Options options)
+            static Stream<Tasks.Exec> buildSteps(Options options, Path bootJdkHome)
             {
                 return Stream.of(
-                    configureSh(options)
+                    configureSh(options, bootJdkHome)
                     , makeGraalJDK(options)
                 );
             }
@@ -635,7 +644,7 @@ class GraalBuild implements Callable<List<?>>
                 );
             }
 
-            private static Tasks.Exec configureSh(Options options)
+            private static Tasks.Exec configureSh(Options options, Path bootJdkHome)
             {
                 return Tasks.Exec.of(
                     List.of(
@@ -646,7 +655,7 @@ class GraalBuild implements Callable<List<?>>
                         , "--with-jvm-features=graal"
                         , "--with-jvm-variants=server"
                         , "--enable-aot=no"
-                        , String.format("--with-boot-jdk=%s", options.bootJdkPath())
+                        , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
                     )
                     , options.jdkPath()
                 );
@@ -666,9 +675,9 @@ class GraalBuild implements Callable<List<?>>
 
         private static final class LabsJDK
         {
-            static Stream<Tasks.Exec> buildSteps(Options options)
+            static Stream<Tasks.Exec> buildSteps(Options options, Path bootJdkHome)
             {
-                return Stream.of(buildJDK(options));
+                return Stream.of(buildJDK(options, bootJdkHome));
             }
 
             static Path javaHome(Path jdk)
@@ -676,15 +685,14 @@ class GraalBuild implements Callable<List<?>>
                 return jdk.resolve("java_home");
             }
 
-            private static Tasks.Exec buildJDK(Options options)
+            private static Tasks.Exec buildJDK(Options options, Path bootJdkHome)
             {
                 return Tasks.Exec.of(
                     List.of(
                         "python"
                         , "build_labsjdk.py"
                         , "--boot-jdk"
-                        // TODO temporary Contents/Home
-                        , Path.of("..", "..").resolve(options.bootJdkPath().resolve(Path.of("Contents", "Home"))).toString()
+                        , bootJdkHome.toString()
                     )
                     , options.jdkPath()
                 );
@@ -1256,6 +1264,7 @@ final class Tasks
             Predicate<Marker> exists
             , Consumer<Download> download
             , Function<Marker, Boolean> touch
+            , Supplier<OperatingSystem.Type> osType
         ) {}
     }
 }
@@ -1526,7 +1535,7 @@ class OperatingSystem
         }
     }
 
-    public enum Type
+    enum Type
     {
         WINDOWS
         , MACOSX
@@ -1534,13 +1543,19 @@ class OperatingSystem
         , OTHER
         ;
 
-        String show()
+        boolean isMac()
         {
-            return this.toString().toLowerCase();
+            return this == MACOSX;
+        }
+
+        @Override
+        public String toString()
+        {
+            return super.toString().toLowerCase();
         }
     }
 
-    public static Type type()
+    Type type()
     {
         String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
 
@@ -1770,7 +1785,7 @@ final class QuarkusCheck
         @Test
         void gitCloneEmpty()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final List<Repository> repos = emptyList();
             final var effects = new Tasks.Exec.Effects(m -> false, os::record, m -> false);
             final var cloned = Git.clone(repos, Path.of(""), effects);
@@ -1793,7 +1808,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.ofExists(
                 Tasks.Exec.of(args).marker()
             );
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final List<Repository> repos = Repository.of(
                 List.of(
                     "https://github.com/openjdk/jdk11u-dev/tree/master"
@@ -1811,7 +1826,7 @@ final class QuarkusCheck
         void gitCloneSingle()
         {
             final var fs = InMemoryFileSystem.empty();
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final List<Repository> repos = Repository.of(
                 List.of(
                     "https://github.com/openjdk/jdk11u-dev/tree/master"
@@ -1841,12 +1856,12 @@ final class QuarkusCheck
         @Test
         void javaLabsJDK()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects);
+            final var markers = GraalBuild.Java.build(options, effects, os::type);
             final var marker = markers.get(0);
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
@@ -1860,7 +1875,7 @@ final class QuarkusCheck
         @Test
         void javaOpenJDK()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "--jdk-tree",
@@ -1868,7 +1883,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects);
+            final var markers = GraalBuild.Java.build(options, effects, os::type);
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
@@ -1888,7 +1903,7 @@ final class QuarkusCheck
         @Test
         void skipJavaOpenJDK()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var configureArgs = new String[]{
                 "sh"
                 , "configure"
@@ -1897,7 +1912,7 @@ final class QuarkusCheck
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=graalvm/boot-jdk"
+                , "--with-boot-jdk=../../graalvm/boot-jdk/Contents/Home"
             };
             final var markArgs = new String[]{
                 "make"
@@ -1913,7 +1928,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects);
+            final var markers = GraalBuild.Java.build(options, effects, os::type);
             os.assertNumberOfTasks(0);
             final var configureMarker = markers.get(0);
             assertThat(configureMarker.exists(), is(true));
@@ -1926,7 +1941,7 @@ final class QuarkusCheck
         @Test
         void skipJavaLabsJDK()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var configureArgs = new String[]{
                 "python"
                 , "build_labsjdk.py"
@@ -1939,7 +1954,7 @@ final class QuarkusCheck
             final var options = cli();
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects);
+            final var markers = GraalBuild.Java.build(options, effects, os::type);
             os.assertNumberOfTasks(0);
             final var marker = markers.get(0);
             assertThat(marker.exists(), is(true));
@@ -1960,7 +1975,7 @@ final class QuarkusCheck
         @Test
         void graalBuild()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
@@ -1973,7 +1988,7 @@ final class QuarkusCheck
         @Test
         void skipGraalBuild()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var args = new String[]{
                 "../../mx/mx"
                 , "--java-home"
@@ -2030,7 +2045,7 @@ final class QuarkusCheck
         void javaCloneGit()
         {
             final var fs = InMemoryFileSystem.empty();
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
@@ -2046,7 +2061,7 @@ final class QuarkusCheck
         void javaCloneMercurial()
         {
             final var fs = InMemoryFileSystem.empty();
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli(
                 "--jdk-tree",
                 "http://hg.openjdk.java.net/jdk8/jdk8"
@@ -2062,11 +2077,11 @@ final class QuarkusCheck
         void javaInstall()
         {
             final var fs = InMemoryFileSystem.empty();
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var web = new RecordingWeb();
             final var options = cli();
             final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Tasks.Download.Effects(fs::exists, web::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, web::record, fs::touch, os::type);
             final var markers = GraalBuild.Java.install(options, exec, download);
             final var downloadTask = web.tasks.remove();
             final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
@@ -2093,19 +2108,15 @@ final class QuarkusCheck
         @Test
         void get()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "--url",
                 "https://doestnotexist.com/archive.tar.gz"
             );
-            final var markers = GraalGet.Graal.get(
-                options
-                , fs::exists
-                , RecordingWeb::noop
-                , os::record
-                , fs::touch
-            );
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var markers = GraalGet.Graal.get(options, exec, download);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
@@ -2125,19 +2136,15 @@ final class QuarkusCheck
         @Test
         void getAndDownloadNativeImage()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "--url",
                 "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz"
             );
-            final var markers = GraalGet.Graal.get(
-                options
-                , fs::exists
-                , RecordingWeb::noop
-                , os::record
-                , fs::touch
-            );
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var markers = GraalGet.Graal.get(options, exec, download);
             assertThat(markers.size(), is(3));
             final var downloadMarker = markers.get(0);
             assertThat(downloadMarker.exists(), is(true));
@@ -2168,18 +2175,14 @@ final class QuarkusCheck
 
             final var options = cli("--url", url);
 
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
                 new Tasks.Download(URLs.of(url), downloadPath).marker()
                 , Tasks.Exec.of(extractArgs).marker()
             );
-            final var markers = GraalGet.Graal.get(
-                options
-                , fs::exists
-                , RecordingWeb::noop
-                , os::record
-                , fs::touch
-            );
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var markers = GraalGet.Graal.get(options, exec, download);
             os.assertNumberOfTasks(0);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
@@ -2198,16 +2201,12 @@ final class QuarkusCheck
             final var marker = new Tasks.Download(URLs.of(url), path).marker();
             final var options = cli("--url", url);
 
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(marker);
 
-            final var markers = GraalGet.Graal.get(
-                options
-                , fs::exists
-                , RecordingWeb::noop
-                , os::record
-                , fs::touch
-            );
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var markers = GraalGet.Graal.get(options, exec, download);
             os.assertNumberOfTasks(1);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
@@ -2239,7 +2238,7 @@ final class QuarkusCheck
         @Test
         void quarkus()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
@@ -2266,7 +2265,7 @@ final class QuarkusCheck
                 , "-DskipTests"
                 , "-Dformat.skip"
             };
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
                 Tasks.Exec.of(args).marker()
             );
@@ -2284,7 +2283,7 @@ final class QuarkusCheck
         @Test
         void camelQuarkus()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
@@ -2309,7 +2308,7 @@ final class QuarkusCheck
         @Test
         void camel()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
@@ -2366,7 +2365,7 @@ final class QuarkusCheck
         @Test
         void extraArguments()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli(
                 "--suite", "suite-a"
                 , "--additional-test-args", "p1,:p2,:p3,-p4"
@@ -2385,7 +2384,7 @@ final class QuarkusCheck
         @Test
         void suite()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli("--suite", "suite-a");
             MavenTest.Maven.test(options, os::record);
 
@@ -2397,7 +2396,7 @@ final class QuarkusCheck
         @Test
         void quarkus()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli("-s", "quarkus");
             MavenTest.Maven.test(options, os::record);
 
@@ -2412,7 +2411,7 @@ final class QuarkusCheck
         @Test
         void quarkusPlatform()
         {
-            final var os = new RecordingOperatingSystem();
+            final var os = RecordingOperatingSystem.macOS();
             final var options = cli("-s", "quarkus-platform");
             MavenTest.Maven.test(options, os::record);
 
@@ -2515,6 +2514,22 @@ final class QuarkusCheck
     private static final class RecordingOperatingSystem
     {
         private final Queue<Object> tasks = new ArrayDeque<>();
+        private final OperatingSystem.Type type;
+
+        private RecordingOperatingSystem(OperatingSystem.Type type)
+        {
+            this.type = type;
+        }
+
+        static RecordingOperatingSystem macOS()
+        {
+            return new RecordingOperatingSystem(OperatingSystem.Type.MACOSX);
+        }
+
+        public OperatingSystem.Type type()
+        {
+            return type;
+        }
 
         void record(Tasks.Exec task)
         {
