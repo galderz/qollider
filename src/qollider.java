@@ -56,17 +56,16 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.Callable;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -96,7 +95,7 @@ public class qollider implements Runnable
         final var os = new OperatingSystem(fs);
         final var web = new Web(fs);
 
-        final var graalBuild = GraalBuild.ofSystem(fs, os);
+        final var graalBuild = GraalBuild.ofSystem(fs, os, web);
         final var graalGet = GraalGet.ofSystem(fs, os, web);
         final var mavenBuild = MavenBuild.ofSystem(fs, os);
         final var quarkusClean = QuarkusClean.ofSystem(fs);
@@ -320,37 +319,20 @@ class GraalGet implements Callable<List<?>>
         static List<Marker> get(
             Options options
             , Predicate<Marker> exists
-            , BiConsumer<URL, Path> download
+            , Consumer<Tasks.Download> download
             , Consumer<Tasks.Exec> exec
             , Function<Marker, Boolean> touch
         )
         {
-            final var url = options.url;
-            final var fileName = Path.of(url.getFile()).getFileName();
-            final var directory = Path.of("downloads");
-            final var tarPath = directory.resolve(fileName);
-
-            final var downloadMarker = Tasks.Download.lazy(
-                new Tasks.Download(options.url, tarPath)
+            final var installMarkers = Tasks.Install.install(
+                new Tasks.Install(options.url, options.graal)
                 , new Tasks.Download.Effects(exists, download, touch)
-            );
-
-            final var extractMarker = Tasks.Exec.run(
-                Tasks.Exec.of(
-                    "tar"
-                    , "-xzvpf"
-                    , tarPath.toString()
-                    , "-C"
-                    , options.graal.toString()
-                    , "--strip-components"
-                    , "1"
-                )
                 , new Tasks.Exec.Effects(exists, exec, touch)
             );
 
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
-                return Arrays.asList(downloadMarker, extractMarker);
+                return installMarkers;
 
             final var nativeImageMarker = Tasks.Exec.run(
                 Tasks.Exec.of(
@@ -364,7 +346,7 @@ class GraalGet implements Callable<List<?>>
                 , new Tasks.Exec.Effects(exists, exec, touch)
             );
 
-            return Arrays.asList(downloadMarker, extractMarker, nativeImageMarker);
+            return Lists.append(nativeImageMarker, installMarkers);
         }
 
         public static Link link(Options options, BiFunction<Path, Path, Link> symLink)
@@ -425,9 +407,9 @@ class GraalBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static GraalBuild ofSystem(FileSystem fs, OperatingSystem os)
+    static GraalBuild ofSystem(FileSystem fs, OperatingSystem os, Web web)
     {
-        return new GraalBuild(new GraalBuild.RunBuild(fs, os));
+        return new GraalBuild(new GraalBuild.RunBuild(fs, os, web));
     }
 
     static GraalBuild of(Function<Options, List<?>> runner)
@@ -451,30 +433,35 @@ class GraalBuild implements Callable<List<?>>
     {
         final FileSystem fs;
         final OperatingSystem os;
+        final Web web;
 
-        RunBuild(FileSystem fs, OperatingSystem os)
+        RunBuild(FileSystem fs, OperatingSystem os, Web web)
         {
             this.fs = fs;
             this.os = os;
+            this.web = web;
         }
 
         @Override
         public List<?> apply(Options options)
         {
-            final var parent = fs.mkdirs(options.parent);
+            fs.mkdirs(options.parent);
+            fs.mkdirs(options.bootJdkPath());
 
-            final var effects = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::exec, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, web::download, fs::touch);
 
+            // TODO unroll git clones
             final var repos = Options.repositories(options);
             return List.of(
-                Java.clone(options, effects)
-                , Git.clone(repos, parent, effects).toArray()
+                Java.clone(options, exec)
+                , Git.clone(repos, options.parent, exec).toArray()
 
-                // TODO boot jdk should be installed in java
-                , Java.build(options, os::bootJdkHome, effects)
+                , Java.install(options, exec, download)
+                , Java.build(options, exec)
                 , Java.link(options, fs::symlink)
 
-                , Graal.build(options, effects)
+                , Graal.build(options, exec)
                 , Graal.link(options, fs::symlink)
             );
         }
@@ -505,6 +492,11 @@ class GraalBuild implements Callable<List<?>>
         Path mxPath()
         {
             return Path.of(mx.name(), "mx");
+        }
+
+        Path bootJdkPath()
+        {
+            return parent.resolve("boot-jdk");
         }
 
         // TODO take advantage of URI to Repository converter (remove factory)
@@ -551,15 +543,13 @@ class GraalBuild implements Callable<List<?>>
 
         static List<Marker> build(
             Options options
-            , Supplier<Path> bootJdkHome
             , Tasks.Exec.Effects effects
         )
         {
-            final var jdkPath = options.jdkPath();
             final var tasks = switch (options.javaType())
                 {
-                    case OPENJDK -> Java.OpenJDK.buildSteps(jdkPath, bootJdkHome);
-                    case LABSJDK -> Java.LabsJDK.buildSteps(jdkPath, bootJdkHome);
+                    case OPENJDK -> Java.OpenJDK.buildSteps(options);
+                    case LABSJDK -> Java.LabsJDK.buildSteps(options);
                 };
 
             return tasks
@@ -581,16 +571,55 @@ class GraalBuild implements Callable<List<?>>
             return symLink.apply(link, target);
         }
 
+        // TODO create a record to capture Java version info (major, minor, micro, build)
+        static List<Marker> install(
+            Options options
+            , Tasks.Exec.Effects exec
+            , Tasks.Download.Effects download
+        )
+        {
+            final var javaVersionMajor = "11";
+            final var javaVersionBuild = "10";
+            final var javaVersion = String.format("%s.0.7", javaVersionMajor);
+            final var javaBaseUrl = String.format(
+                "https://github.com/AdoptOpenJDK/openjdk%s-binaries/releases/download"
+                , javaVersionMajor
+            );
+
+            final var os = OperatingSystem.type() == OperatingSystem.Type.MACOSX
+                ? "mac"
+                : OperatingSystem.type().show();
+
+            final var arch = "x64";
+
+            final var url = URLs.of(
+                String.format(
+                    "%s/jdk-%s%%2B%s/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
+                    , javaBaseUrl
+                    , javaVersion
+                    , javaVersionBuild
+                    , javaVersionMajor
+                    , arch
+                    , os
+                    , javaVersion
+                    , javaVersionBuild
+                )
+            );
+
+            return Tasks.Install.install(
+                new Tasks.Install(url, options.bootJdkPath())
+                , download
+                , exec
+            );
+        }
+
         private static final class OpenJDK
         {
-            static Stream<Tasks.Exec> buildSteps(
-                Path jdkPath
-                , Supplier<Path> bootJdkHome
-            )
+            static Stream<Tasks.Exec> buildSteps(Options options)
             {
                 return Stream.of(
-                    configureSh(jdkPath, bootJdkHome)
-                    , makeGraalJDK(jdkPath)
+                    configureSh(options)
+                    , makeGraalJDK(options)
                 );
             }
 
@@ -606,7 +635,7 @@ class GraalBuild implements Callable<List<?>>
                 );
             }
 
-            private static Tasks.Exec configureSh(Path jdk, Supplier<Path> bootJdkHome)
+            private static Tasks.Exec configureSh(Options options)
             {
                 return Tasks.Exec.of(
                     List.of(
@@ -617,29 +646,29 @@ class GraalBuild implements Callable<List<?>>
                         , "--with-jvm-features=graal"
                         , "--with-jvm-variants=server"
                         , "--enable-aot=no"
-                        , String.format("--with-boot-jdk=%s", bootJdkHome.get())
+                        , String.format("--with-boot-jdk=%s", options.bootJdkPath())
                     )
-                    , jdk
+                    , options.jdkPath()
                 );
             }
 
-            private static Tasks.Exec makeGraalJDK(Path jdk)
+            private static Tasks.Exec makeGraalJDK(Options options)
             {
                 return Tasks.Exec.of(
                     List.of(
                         "make"
                         , "graal-builder-image"
                     )
-                    , jdk
+                    , options.jdkPath()
                 );
             }
         }
 
         private static final class LabsJDK
         {
-            static Stream<Tasks.Exec> buildSteps(Path jdk, Supplier<Path> bootJdkPath)
+            static Stream<Tasks.Exec> buildSteps(Options options)
             {
-                return Stream.of(buildJDK(jdk, bootJdkPath));
+                return Stream.of(buildJDK(options));
             }
 
             static Path javaHome(Path jdk)
@@ -647,16 +676,17 @@ class GraalBuild implements Callable<List<?>>
                 return jdk.resolve("java_home");
             }
 
-            private static Tasks.Exec buildJDK(Path jdk, Supplier<Path> bootJdkPath)
+            private static Tasks.Exec buildJDK(Options options)
             {
-                // TODO pass boot jdk via --boot-jdk (e.g. python build_labsjdk.py --boot-jdk ${HOME}/.sdkman/candidates/java/11.0.7.hs-adpt)
                 return Tasks.Exec.of(
                     List.of(
                         "python"
                         , "build_labsjdk.py"
+                        , "--boot-jdk"
+                        // TODO temporary Contents/Home
+                        , Path.of("..", "..").resolve(options.bootJdkPath().resolve(Path.of("Contents", "Home"))).toString()
                     )
-                    , jdk
-                    , Homes.EnvVars.bootJava(bootJdkPath)
+                    , options.jdkPath()
                 );
             }
         }
@@ -1124,6 +1154,42 @@ record EnvVar(
 
 final class Tasks
 {
+    // Install = Download + Extract
+    record Install(URL url, Path path)
+    {
+        static List<Marker> install(
+            Install install
+            , Download.Effects download
+            , Exec.Effects exec
+        )
+        {
+            final var url = install.url;
+            final var fileName = Path.of(url.getFile()).getFileName();
+            final var directory = Path.of("downloads");
+            final var tarPath = directory.resolve(fileName);
+
+            final var downloadMarker = Download.lazy(
+                new Download(url, tarPath)
+                , download
+            );
+
+            final var extractMarker = Exec.run(
+                Exec.of(
+                    "tar"
+                    , "-xzvpf"
+                    , tarPath.toString()
+                    , "-C"
+                    , install.path.toString()
+                    , "--strip-components"
+                    , "1"
+                )
+                , exec
+            );
+
+            return List.of(downloadMarker, extractMarker);
+        }
+    }
+
     record Exec(
         List<String> args
         , Path directory
@@ -1173,7 +1239,7 @@ final class Tasks
             if (marker.exists())
                 return marker;
 
-            effects.download.accept(task.url, task.path);
+            effects.download.accept(task);
             return marker.touch(effects.touch);
         }
 
@@ -1188,7 +1254,7 @@ final class Tasks
 
         record Effects(
             Predicate<Marker> exists
-            , BiConsumer<URL, Path> download
+            , Consumer<Download> download
             , Function<Marker, Boolean> touch
         ) {}
     }
@@ -1246,14 +1312,6 @@ class Homes
                 , root -> root.resolve(Homes.graal())
             );
         }
-
-        static EnvVar bootJava(Supplier<Path> path)
-        {
-            return new EnvVar(
-                "JAVA_HOME"
-                , ignore -> path.get()
-            );
-        }
     }
 }
 
@@ -1309,6 +1367,7 @@ class FileSystem
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
+        // TODO remove
         LOG.info("Today is {}", today);
 
         var baseDir = Path.of(
@@ -1316,9 +1375,11 @@ class FileSystem
             , "workspace"
             , "qollider"
         );
+        // TODO remove
         LOG.info("Base directory: {}", baseDir);
 
         final var path = baseDir.resolve(today);
+        // TODO remove
         LOG.info("Root path: {}", path);
 
         return new FileSystem(idempotentMkDirs(path));
@@ -1338,9 +1399,9 @@ class FileSystem
         return directory;
     }
 
-    Path mkdirs(Path directory)
+    void mkdirs(Path directory)
     {
-        return FileSystem.idempotentMkDirs(root.resolve(directory));
+        FileSystem.idempotentMkDirs(root.resolve(directory));
     }
 
     boolean exists(Marker marker)
@@ -1371,14 +1432,13 @@ class FileSystem
     Link symlink(Path relativeLink, Path relativeTarget)
     {
         final var link = root.resolve(relativeLink);
-        final var target = relativeTarget;
         try
         {
             if (Files.exists(link))
                 Files.delete(link);
 
-            final var symbolicLink = Files.createSymbolicLink(link, target);
-            return new Link(symbolicLink, target);
+            final var symbolicLink = Files.createSymbolicLink(link, relativeTarget);
+            return new Link(symbolicLink, relativeTarget);
         }
         catch (IOException e)
         {
@@ -1466,11 +1526,35 @@ class OperatingSystem
         }
     }
 
-    Path bootJdkHome()
+    public enum Type
     {
-        return Path.of(System.getenv("BOOT_JDK_HOME"));
+        WINDOWS
+        , MACOSX
+        , LINUX
+        , OTHER
+        ;
+
+        String show()
+        {
+            return this.toString().toLowerCase();
+        }
     }
 
+    public static Type type()
+    {
+        String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
+
+        if ((OS.contains("mac")) || (OS.contains("darwin")))
+            return Type.MACOSX;
+
+        if (OS.contains("win"))
+            return Type.WINDOWS;
+
+        if (OS.contains("nux"))
+            return Type.LINUX;
+
+        return Type.OTHER;
+    }
 }
 
 final class Hashing
@@ -1508,19 +1592,18 @@ final class Web
         this.fs = fs;
     }
 
-    // TODO add download progress
-    void download(URL url, Path file)
+    void download(Tasks.Download download)
     {
         try
         {
             final var urlChannel = new DownloadProgressChannel(
-                Channels.newChannel(url.openStream())
+                Channels.newChannel(download.url().openStream())
             );
 
             // Create any parent directories as needed
-            fs.mkdirs(file.getParent());
+            fs.mkdirs(download.path().getParent());
 
-            final var path = fs.root.resolve(file);
+            final var path = fs.root.resolve(download.path());
             final var os = new FileOutputStream(path.toFile());
             final var fileChannel = os.getChannel();
 
@@ -1613,6 +1696,21 @@ final class URLs
         {
             throw new RuntimeException(e);
         }
+    }
+
+    static URL of(String format, Object... args)
+    {
+        return URLs.of(String.format(format, args));
+    }
+}
+
+final class Lists
+{
+    static <E> List<E> append(E element, List<E> list)
+    {
+        final var result = new ArrayList<>(list);
+        result.add(element);
+        return Collections.unmodifiableList(result);
     }
 }
 
@@ -1748,7 +1846,7 @@ final class QuarkusCheck
             final var options = cli();
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
+            final var markers = GraalBuild.Java.build(options, effects);
             final var marker = markers.get(0);
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
@@ -1770,7 +1868,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
+            final var markers = GraalBuild.Java.build(options, effects);
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
@@ -1799,7 +1897,7 @@ final class QuarkusCheck
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=boot/jdk/home"
+                , "--with-boot-jdk=graalvm/boot-jdk"
             };
             final var markArgs = new String[]{
                 "make"
@@ -1815,7 +1913,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, os::bootJdkHome, effects);
+            final var markers = GraalBuild.Java.build(options, effects);
             os.assertNumberOfTasks(0);
             final var configureMarker = markers.get(0);
             assertThat(configureMarker.exists(), is(true));
@@ -1823,6 +1921,29 @@ final class QuarkusCheck
             final var makeMarker = markers.get(1);
             assertThat(makeMarker.exists(), is(true));
             assertThat(makeMarker.touched(), is(false));
+        }
+
+        @Test
+        void skipJavaLabsJDK()
+        {
+            final var os = new RecordingOperatingSystem();
+            final var configureArgs = new String[]{
+                "python"
+                , "build_labsjdk.py"
+                , "--boot-jdk"
+                , "../../graalvm/boot-jdk/Contents/Home"
+            };
+            final var fs = InMemoryFileSystem.ofExists(
+                Tasks.Exec.of(configureArgs).marker()
+            );
+            final var options = cli();
+
+            final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
+            final var markers = GraalBuild.Java.build(options, effects);
+            os.assertNumberOfTasks(0);
+            final var marker = markers.get(0);
+            assertThat(marker.exists(), is(true));
+            assertThat(marker.touched(), is(false));
         }
 
         @Test
@@ -1937,6 +2058,29 @@ final class QuarkusCheck
             os.assertExecutedOneTask(expectedTask, root, cloned);
         }
 
+        @Test
+        void javaInstall()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = new RecordingOperatingSystem();
+            final var web = new RecordingWeb();
+            final var options = cli();
+            final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var download = new Tasks.Download.Effects(fs::exists, web::record, fs::touch);
+            final var markers = GraalBuild.Java.install(options, exec, download);
+            final var downloadTask = web.tasks.remove();
+            final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
+            final var expected = URLs.of("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
+            assertThat(downloadTask.url(), is(expected));
+            assertThat(downloadTask.path(), is(Path.of("downloads", tarName)));
+            assertThat(markers.get(0).touched(), is(true));
+            os.assertExecutedOneTask(
+                String.format("tar -xzvpf downloads/%s -C graalvm/boot-jdk --strip-components 1", tarName)
+                , Path.of("")
+                , markers.get(1)
+            );
+        }
+
         private static GraalBuild.Options cli(String... extra)
         {
             return MiniCli.asOptions("graal-build", GraalBuild.of(List::of), extra);
@@ -1958,7 +2102,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , CheckGraalGet::downloadNoop
+                , RecordingWeb::noop
                 , os::record
                 , fs::touch
             );
@@ -1990,7 +2134,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , CheckGraalGet::downloadNoop
+                , RecordingWeb::noop
                 , os::record
                 , fs::touch
             );
@@ -2032,7 +2176,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , CheckGraalGet::downloadNoop
+                , RecordingWeb::noop
                 , os::record
                 , fs::touch
             );
@@ -2060,7 +2204,7 @@ final class QuarkusCheck
             final var markers = GraalGet.Graal.get(
                 options
                 , fs::exists
-                , CheckGraalGet::downloadNoop
+                , RecordingWeb::noop
                 , os::record
                 , fs::touch
             );
@@ -2087,8 +2231,6 @@ final class QuarkusCheck
             final var command = GraalGet.of(List::of);
             return MiniCli.asOptions("graal-get", command, extra);
         }
-
-        static void downloadNoop(URL url, Path path) {}
     }
 
     @ExtendWith(LoggingExtension.class)
@@ -2369,6 +2511,7 @@ final class QuarkusCheck
         }
     }
 
+    // TODO remove and rely solely on returned markers
     private static final class RecordingOperatingSystem
     {
         private final Queue<Object> tasks = new ArrayDeque<>();
@@ -2384,14 +2527,16 @@ final class QuarkusCheck
             assertThat(success, is(true));
         }
 
-        Path bootJdkHome()
-        {
-            return Path.of("boot/jdk/home");
-        }
-
+        // TODO rename to assertOneTask
         void assertExecutedOneTask(String expected, Path directory, Marker result)
         {
             assertNumberOfTasks(1);
+            assertExecutedTask(expected, directory, result);
+        }
+
+        // TODO rename to assertTask
+        void assertExecutedTask(String expected, Path directory, Marker result)
+        {
             assertTask(t ->
             {
                 assertThat(t.directory(), is(directory));
@@ -2412,12 +2557,14 @@ final class QuarkusCheck
             assertThat(tasks.toString(), tasks.size(), is(size));
         }
 
+        @Deprecated
         void assertTask(Consumer<Tasks.Exec> asserts)
         {
             final Tasks.Exec head = peekTask();
             asserts.accept(head);
         }
 
+        @Deprecated
         void assertAllTasks(Consumer<Tasks.Exec> asserts)
         {
             for (Object object : tasks)
@@ -2439,6 +2586,19 @@ final class QuarkusCheck
         {
             return (T) tasks.peek();
         }
+    }
+
+    // TODO merge with RecordingOperatingSystem? Or wait until no need for record?
+    private static final class RecordingWeb
+    {
+        private final Queue<Tasks.Download> tasks = new ArrayDeque<>();
+
+        void record(Tasks.Download task)
+        {
+            tasks.offer(task);
+        }
+
+        static void noop(Tasks.Download task) {}
     }
 
     public static void main(String[] args)
