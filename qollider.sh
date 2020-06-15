@@ -53,7 +53,7 @@ installJBang() {
         mkdir -p ${JBANG_HOME}
 
         curl --location ${url} > ${archive}
-        tar -xzvpf ${archive} -C ${JBANG_HOME} --strip-components 1
+        tar -xvpf ${archive} -C ${JBANG_HOME} --strip-components 1
 
         rm -drf ${archive}
     fi
