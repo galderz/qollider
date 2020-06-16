@@ -879,6 +879,7 @@ class MavenBuild implements Callable<List<?>>
                     , "install"
                     , "-DskipTests"
                     , "-DskipITs"
+                    , "-Denforcer.skip"
                     , "-Dformat.skip"
                 )
                 , options.additionalBuildArgs.stream()
