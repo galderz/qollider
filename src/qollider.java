@@ -2264,6 +2264,8 @@ final class QuarkusCheck
                 "mvn"
                 , "install"
                 , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
                 , "-Dformat.skip"
             };
             final var os = RecordingOperatingSystem.macOS();
