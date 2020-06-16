@@ -871,7 +871,6 @@ class MavenBuild implements Callable<List<?>>
 
         private static Stream<String> arguments(Options options, String directory)
         {
-            // TODO add -DskipITs just in case
             // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
             final var arguments = Stream.concat(
                 Stream.of(
