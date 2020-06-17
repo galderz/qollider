@@ -1278,8 +1278,6 @@ record Link(Path link, Path target) {}
 // Dependency
 class FileSystem
 {
-    static final Logger LOG = LogManager.getLogger(FileSystem.class);
-
     final Path root;
 
     static FileSystem ofSystem()
@@ -1287,22 +1285,12 @@ class FileSystem
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
-        // TODO remove
-        LOG.info("Today is {}", today);
-
-        // TODO consider ${HOME}/.qollider instead
         var baseDir = Path.of(
             System.getProperty("user.home")
-            , "workspace"
-            , "qollider"
+            , ".qollider"
+            , "cache"
         );
-        // TODO remove
-        LOG.info("Base directory: {}", baseDir);
-
         final var path = baseDir.resolve(today);
-        // TODO remove
-        LOG.info("Root path: {}", path);
-
         return new FileSystem(idempotentMkDirs(path));
     }
 

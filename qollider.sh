@@ -2,7 +2,7 @@
 
 set -e
 
-Q_HOME="${HOME}/workspace/qollider"
+Q_HOME="${HOME}/.qollider"
 
 JAVA_HOME="undefined"
 JAVA_VERSION_MAJOR="14"
