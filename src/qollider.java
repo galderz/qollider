@@ -96,17 +96,18 @@ public class qollider implements Runnable
         final var os = new OperatingSystem(fs);
         final var web = new Web(fs);
 
+        // TODO consider collapsing graal-build and maven-build into build
+        // depending on the tree passed in, the code could multiplex.
+        // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintanance of code)
         final var graalBuild = GraalBuild.ofSystem(fs, os, web);
         final var graalGet = GraalGet.ofSystem(fs, os, web);
         final var mavenBuild = MavenBuild.ofSystem(fs, os);
-        final var quarkusClean = QuarkusClean.ofSystem(fs);
         final var quarkusTest = MavenTest.ofSystem(fs, os);
 
         final var cli = Cli.of(
             graalBuild
             , graalGet
             , mavenBuild
-            , quarkusClean
             , quarkusTest
         );
         final var result = cli.execute(args);
@@ -174,78 +175,6 @@ final class Cli
     }
 
     record Result(int exitCode, List<?> outputs) {}
-}
-
-// TODO remove
-@Command(
-    name = "clean"
-    , aliases = {"c"}
-    , description = "Clean quarkus."
-    , mixinStandardHelpOptions = true
-)
-class QuarkusClean implements Runnable
-{
-    static final Logger LOG = LogManager.getLogger(QuarkusClean.class);
-
-    private final Consumer<List<String>> runner;
-
-    @Option(
-        description = "Individual projects to clean."
-        , names =
-        {
-            "-p"
-            , "--projects"
-        }
-        , split = ","
-    )
-    List<String> projects = new ArrayList<>();
-
-    private QuarkusClean(Consumer<List<String>> runner)
-    {
-        this.runner = runner;
-    }
-
-    static QuarkusClean ofSystem(FileSystem fs)
-    {
-        return new QuarkusClean(new RunClean(fs));
-    }
-
-    @Override
-    public void run()
-    {
-        LOG.info("Clean!");
-        runner.accept(projects);
-    }
-
-    private static final class RunClean implements Consumer<List<String>>
-    {
-        private final FileSystem fs;
-
-        public RunClean(FileSystem fs)
-        {
-            this.fs = fs;
-        }
-
-        @Override
-        public void accept(List<String> projects)
-        {
-            clean(projects, fs::deleteRecursive);
-        }
-    }
-
-    static void clean(List<String> projects, Consumer<Path> delete)
-    {
-        if (projects.isEmpty())
-        {
-            delete.accept(Path.of(""));
-        }
-        else
-        {
-            projects.stream()
-                .map(Path::of)
-                .forEach(delete);
-        }
-    }
 }
 
 @Command(
@@ -499,6 +428,7 @@ class GraalBuild implements Callable<List<?>>
             return parent.resolve("boot-jdk");
         }
 
+        // TODO consider downloading/extracting boot-jdk to root level, it doesn't change that often
         Path bootJdkHome(Supplier<OperatingSystem.Type> osType)
         {
             final var root = parent.resolve("boot-jdk");
@@ -1380,6 +1310,7 @@ class FileSystem
         // TODO remove
         LOG.info("Today is {}", today);
 
+        // TODO consider ${HOME}/.qollider instead
         var baseDir = Path.of(
             System.getProperty("user.home")
             , "workspace"
