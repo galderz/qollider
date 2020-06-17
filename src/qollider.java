@@ -265,12 +265,10 @@ class GraalGet implements Callable<List<?>>
 
             final var nativeImageMarker = Tasks.Exec.run(
                 Tasks.Exec.of(
-                    List.of(
-                        "./gu"
-                        , "install"
-                        , "native-image"
-                    )
-                    , Path.of("graal", "bin")
+                    Path.of("graal", "bin")
+                    , "./gu"
+                    , "install"
+                    , "native-image"
                 )
                 , exec
             );
@@ -577,28 +575,24 @@ class GraalBuild implements Callable<List<?>>
             private static Tasks.Exec configureSh(Options options, Path bootJdkHome)
             {
                 return Tasks.Exec.of(
-                    List.of(
-                        "sh"
-                        , "configure"
-                        , "--with-conf-name=graal-server-release"
-                        , "--disable-warnings-as-errors"
-                        , "--with-jvm-features=graal"
-                        , "--with-jvm-variants=server"
-                        , "--enable-aot=no"
-                        , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
-                    )
-                    , options.jdkPath()
+                    options.jdkPath()
+                    , "sh"
+                    , "configure"
+                    , "--with-conf-name=graal-server-release"
+                    , "--disable-warnings-as-errors"
+                    , "--with-jvm-features=graal"
+                    , "--with-jvm-variants=server"
+                    , "--enable-aot=no"
+                    , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
                 );
             }
 
             private static Tasks.Exec makeGraalJDK(Options options)
             {
                 return Tasks.Exec.of(
-                    List.of(
-                        "make"
-                        , "graal-builder-image"
-                    )
-                    , options.jdkPath()
+                    options.jdkPath()
+                    , "make"
+                    , "graal-builder-image"
                 );
             }
         }
@@ -618,13 +612,11 @@ class GraalBuild implements Callable<List<?>>
             private static Tasks.Exec buildJDK(Options options, Path bootJdkHome)
             {
                 return Tasks.Exec.of(
-                    List.of(
-                        "python"
-                        , "build_labsjdk.py"
-                        , "--boot-jdk"
-                        , bootJdkHome.toString()
-                    )
-                    , options.jdkPath()
+                    options.jdkPath()
+                    , "python"
+                    , "build_labsjdk.py"
+                    , "--boot-jdk"
+                    , bootJdkHome.toString()
                 );
             }
         }
@@ -655,13 +647,11 @@ class GraalBuild implements Callable<List<?>>
             final var root = graalVmRoot.resolve("..");
             return Tasks.Exec.run(
                 Tasks.Exec.of(
-                    List.of(
-                        graalVmRoot.resolve(options.mxPath()).toString()
-                        , "--java-home"
-                        , root.resolve(Homes.graalJava()).toString()
-                        , "build"
-                    )
-                    , Graal.svm(options)
+                    Graal.svm(options)
+                    , graalVmRoot.resolve(options.mxPath()).toString()
+                    , "--java-home"
+                    , root.resolve(Homes.graalJava()).toString()
+                    , "build"
                 )
                 , effects
             );
@@ -791,10 +781,10 @@ class MavenBuild implements Callable<List<?>>
             final var project = options.project();
             final var arguments =
                 arguments(options, project.toString())
-                    .collect(Collectors.toList());
+                    .toArray(String[]::new);
 
             return Tasks.Exec.run(
-                Tasks.Exec.of(arguments, project)
+                Tasks.Exec.of(project, arguments)
                 , effects
             );
         }
@@ -927,11 +917,11 @@ class MavenTest implements Callable<List<?>>
         private static Tasks.Exec toTest(Options options)
         {
             final var directory = Maven.suitePath(options.suite);
-            final var arguments = arguments(options, directory).collect(Collectors.toList());
+            final var arguments = arguments(options, directory).toArray(String[]::new);
             return Tasks.Exec.of(
-                arguments
-                , directory
-                , Homes.EnvVars.graal()
+                directory
+                , List.of(Homes.EnvVars.graal())
+                , arguments
             );
         }
 
@@ -1074,12 +1064,10 @@ class Mercurial
     {
         return Tasks.Exec.run(
             Tasks.Exec.of(
-                List.of(
-                    "hg"
-                    , "clone"
-                    , repository.cloneUri().toString()
-                )
-                , path
+                path
+                , "hg"
+                , "clone"
+                , repository.cloneUri().toString()
             )
             , effects
         );
@@ -1135,32 +1123,29 @@ final class Tasks
         , List<EnvVar> envVars
     )
     {
-        static Exec of(List<String> task, Path path, EnvVar... envVars)
+        static Exec of(Path path, List<EnvVar> envVars, String... args)
         {
-            return new Exec(task, path, Arrays.asList(envVars));
+            return new Exec(List.of(args), path, envVars);
         }
 
-        static Exec of(String... task)
+        static Exec of(Path path, String... args)
         {
-            return new Exec(Arrays.asList(task), Path.of(""), emptyList());
+            return new Exec(List.of(args), path, List.of());
+        }
+
+        static Exec of(String... args)
+        {
+            return new Exec(Arrays.asList(args), Path.of(""), emptyList());
         }
 
         static Marker run(Exec exec, Effects effects)
         {
-            final var marker = exec.marker().query(effects.exists);
+            final var marker = Marker.of(exec).query(effects.exists);
             if (marker.exists())
                 return marker;
 
             effects.exec().accept(exec);
             return marker.touch(effects.touch);
-        }
-
-        Marker marker()
-        {
-            final var cmd = String.join(" ", args);
-            final var hash = Hashing.sha1(cmd);
-            final var path = Path.of(String.format("%s.marker", hash));
-            return Marker.of(path);
         }
 
         record Effects(
@@ -1174,21 +1159,12 @@ final class Tasks
     {
         static Marker lazy(Download task, Effects effects)
         {
-            final var marker = task.marker().query(effects.exists);
+            final var marker = Marker.of(task).query(effects.exists);
             if (marker.exists())
                 return marker;
 
             effects.download.accept(task);
             return marker.touch(effects.touch);
-        }
-
-        // TODO duplicate & make it not rely on internal toString() definitions
-        Marker marker()
-        {
-            final var cmd = this.toString();
-            final var hash = Hashing.sha1(cmd);
-            final var path = Path.of(String.format("%s.marker", hash));
-            return Marker.of(path);
         }
 
         record Effects(
@@ -1205,7 +1181,7 @@ class Git
     static Marker clone(Repository repo, Path path, Tasks.Exec.Effects effects)
     {
         return Tasks.Exec.run(
-            Tasks.Exec.of(toClone(repo), path)
+            Tasks.Exec.of(path, toClone(repo))
             , effects
         );
     }
@@ -1217,9 +1193,9 @@ class Git
             .collect(Collectors.toList());
     }
 
-    static List<String> toClone(Repository repo)
+    static String[] toClone(Repository repo)
     {
-        return List.of(
+        return new String[]{
             "git"
             , "clone"
             , "-b"
@@ -1227,7 +1203,7 @@ class Git
             , "--depth"
             , "10"
             , repo.cloneUri().toString()
-        );
+        };
     }
 }
 
@@ -1255,19 +1231,18 @@ class Homes
     }
 }
 
-// TODO store the executed command
 // Boundary value
-record Marker(boolean exists, boolean touched, Path path)
+record Marker(boolean exists, boolean touched, Path path, String info)
 {
     Marker query(Predicate<Marker> existsFn)
     {
         final var exists = existsFn.test(this);
         if (exists)
         {
-            return new Marker(true, this.touched, this.path);
+            return new Marker(true, touched, path, info);
         }
 
-        return new Marker(false, this.touched, this.path);
+        return new Marker(false, touched, path, info);
     }
 
     Marker touch(Function<Marker, Boolean> touchFn)
@@ -1280,15 +1255,18 @@ record Marker(boolean exists, boolean touched, Path path)
         final var touched = touchFn.apply(this);
         if (touched)
         {
-            return new Marker(true, true, path);
+            return new Marker(true, true, path, info);
         }
 
-        return new Marker(false, false, path);
+        return new Marker(false, false, path, info);
     }
 
-    static Marker of(Path path)
+    static Marker of(Object cmd)
     {
-        return new Marker(false, false, path);
+        final var info = cmd.toString();
+        final var hash = Hashing.sha1(info);
+        final var path = Path.of(String.format("%s.marker", hash));
+        return new Marker(false, false, path, info);
     }
 }
 
@@ -1352,22 +1330,16 @@ class FileSystem
 
     boolean touch(Marker marker)
     {
-        long timestamp = System.currentTimeMillis();
         final var path = root.resolve(marker.path());
-        final var file = path.toFile();
-        if (!file.exists())
+        try
         {
-            try
-            {
-                new FileOutputStream(file).close();
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
+            Files.writeString(path, marker.info());
+            return true;
         }
-
-        return file.setLastModified(timestamp);
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     Link symlink(Path relativeLink, Path relativeTarget)
@@ -1387,6 +1359,7 @@ class FileSystem
         }
     }
 
+    // TODO use again when reimplementing clean
     void deleteRecursive(Path relative)
     {
         try
@@ -1738,7 +1711,7 @@ final class QuarkusCheck
                 , "https://github.com/openjdk/jdk11u-dev"
             };
             final var fs = InMemoryFileSystem.ofExists(
-                Tasks.Exec.of(args).marker()
+                Marker.of(Tasks.Exec.of(args))
             );
             final var os = RecordingOperatingSystem.macOS();
             final List<Repository> repos = Repository.of(
@@ -1747,11 +1720,18 @@ final class QuarkusCheck
                     , "https://github.com/apache/camel-quarkus/tree/quarkus-master"
                 )
             );
-            final var root = Path.of("root");
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, root, effects);
-            final var expectedTask = "git clone -b quarkus-master --depth 10 https://github.com/apache/camel-quarkus";
-            os.assertExecutedOneTask(expectedTask, root, cloned.get(1));
+            final var cloned = Git.clone(repos, Path.of(""), effects);
+            final var expected = Tasks.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , "quarkus-master"
+                , "--depth"
+                , "10"
+                , "https://github.com/apache/camel-quarkus"
+            );
+            os.assertExecutedOneTask(expected, cloned.get(1));
         }
 
         @Test
@@ -1764,11 +1744,19 @@ final class QuarkusCheck
                     "https://github.com/openjdk/jdk11u-dev/tree/master"
                 )
             );
-            final var root = Path.of("graalvm");
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, root, effects);
-            final var expectedTask = "git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev";
-            os.assertExecutedOneTask(expectedTask, root, cloned.get(0));
+            final var cloned = Git.clone(repos, Path.of("graalvm"), effects);
+            final var expected = Tasks.Exec.of(
+                Path.of("graalvm")
+                ,"git"
+                , "clone"
+                , "-b"
+                , "master"
+                , "--depth"
+                , "10"
+                , "https://github.com/openjdk/jdk11u-dev"
+            );
+            os.assertExecutedOneTask(expected, cloned.get(0));
         }
 
         @Test
@@ -1836,8 +1824,9 @@ final class QuarkusCheck
         void skipJavaOpenJDK()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var configureArgs = new String[]{
-                "sh"
+            final var configure = Tasks.Exec.of(
+                Path.of("graalvm", "jdk11u-dev")
+                , "sh"
                 , "configure"
                 , "--with-conf-name=graal-server-release"
                 , "--disable-warnings-as-errors"
@@ -1845,14 +1834,15 @@ final class QuarkusCheck
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=../../graalvm/boot-jdk/Contents/Home"
-            };
-            final var markArgs = new String[]{
-                "make"
+            );
+            final var make = Tasks.Exec.of(
+                Path.of("graalvm", "jdk11u-dev")
+                , "make"
                 , "graal-builder-image"
-            };
+            );
             final var fs = InMemoryFileSystem.ofExists(
-                Tasks.Exec.of(configureArgs).marker()
-                , Tasks.Exec.of(markArgs).marker()
+                Marker.of(configure)
+                , Marker.of(make)
             );
             final var options = cli(
                 "--jdk-tree",
@@ -1874,15 +1864,14 @@ final class QuarkusCheck
         void skipJavaLabsJDK()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var configureArgs = new String[]{
-                "python"
+            final var configure = Tasks.Exec.of(
+                Path.of("graalvm", "labs-openjdk-11")
+                , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
                 , "../../graalvm/boot-jdk/Contents/Home"
-            };
-            final var fs = InMemoryFileSystem.ofExists(
-                Tasks.Exec.of(configureArgs).marker()
             );
+            final var fs = InMemoryFileSystem.ofExists(Marker.of(configure));
             final var options = cli();
 
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
@@ -1912,24 +1901,29 @@ final class QuarkusCheck
             final var options = cli();
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = GraalBuild.Graal.build(options, effects);
-            final var root = Path.of("graalvm", "graal", "substratevm");
-            final var expectedTask = "../../mx/mx --java-home ../../../graalvm_java_home build";
-            os.assertExecutedOneTask(expectedTask, root, marker);
+
+            final var expected = Tasks.Exec.of(
+                Path.of("graalvm", "graal", "substratevm")
+                , "../../mx/mx"
+                , "--java-home"
+                , "../../../graalvm_java_home"
+                , "build"
+            );
+            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
         void skipGraalBuild()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var args = new String[]{
-                "../../mx/mx"
+            final var task = Tasks.Exec.of(
+                Path.of("graalvm", "graal", "substratevm")
+                , "../../mx/mx"
                 , "--java-home"
                 , "../../../graalvm_java_home"
                 , "build"
-            };
-            final var fs = InMemoryFileSystem.ofExists(
-                Tasks.Exec.of(args).marker()
             );
+            final var fs = InMemoryFileSystem.ofExists(Marker.of(task));
             final var options = cli();
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = GraalBuild.Graal.build(options, effects);
@@ -1982,11 +1976,19 @@ final class QuarkusCheck
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
-            final var root = Path.of("graalvm");
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
             final var cloned = GraalBuild.Java.clone(options, effects);
-            final var expectedTask = "git clone -b master --depth 10 https://github.com/openjdk/jdk11u-dev";
-            os.assertExecutedOneTask(expectedTask, root, cloned);
+            final var expected = Tasks.Exec.of(
+                Path.of("graalvm")
+                , "git"
+                , "clone"
+                , "-b"
+                , "master"
+                , "--depth"
+                , "10"
+                , "https://github.com/openjdk/jdk11u-dev"
+            );
+            os.assertExecutedOneTask(expected,  cloned);
         }
 
         @Test
@@ -1998,11 +2000,15 @@ final class QuarkusCheck
                 "--jdk-tree",
                 "http://hg.openjdk.java.net/jdk8/jdk8"
             );
-            final var root = Path.of("graalvm");
             final var effects = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
             final var cloned = GraalBuild.Java.clone(options, effects);
-            final var expectedTask = "hg clone http://hg.openjdk.java.net/jdk8/jdk8";
-            os.assertExecutedOneTask(expectedTask, root, cloned);
+            final var expected = Tasks.Exec.of(
+                Path.of("graalvm")
+                , "hg"
+                , "clone"
+                , "http://hg.openjdk.java.net/jdk8/jdk8"
+            );
+            os.assertExecutedOneTask(expected, cloned);
         }
 
         @Test
@@ -2017,15 +2023,20 @@ final class QuarkusCheck
             final var markers = GraalBuild.Java.install(options, exec, download);
             final var downloadTask = web.tasks.remove();
             final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
-            final var expected = URLs.of("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
-            assertThat(downloadTask.url(), is(expected));
+            final var url = URLs.of("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
+            assertThat(downloadTask.url(), is(url));
             assertThat(downloadTask.path(), is(Path.of("downloads", tarName)));
             assertThat(markers.get(0).touched(), is(true));
-            os.assertExecutedOneTask(
-                String.format("tar -xzvpf downloads/%s -C graalvm/boot-jdk --strip-components 1", tarName)
-                , Path.of("")
-                , markers.get(1)
+            final var expected = Tasks.Exec.of(
+                "tar",
+                "-xzvpf"
+                , String.format("downloads/%s", tarName)
+                , "-C"
+                , "graalvm/boot-jdk"
+                , "--strip-components"
+                , "1"
             );
+            os.assertExecutedOneTask(expected, markers.get(1));
         }
 
         private static GraalBuild.Options cli(String... extra)
@@ -2109,8 +2120,8 @@ final class QuarkusCheck
 
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
-                new Tasks.Download(URLs.of(url), downloadPath).marker()
-                , Tasks.Exec.of(extractArgs).marker()
+                Marker.of(new Tasks.Download(URLs.of(url), downloadPath))
+                , Marker.of(Tasks.Exec.of(extractArgs))
             );
             final var exec = new Tasks.Exec.Effects(fs::exists, os::record, fs::touch);
             final var download = new Tasks.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
@@ -2130,7 +2141,7 @@ final class QuarkusCheck
         {
             final var url = "https://skip.only/download";
             final var path = Path.of("downloads", "download");
-            final var marker = new Tasks.Download(URLs.of(url), path).marker();
+            final var marker = Marker.of(new Tasks.Download(URLs.of(url), path));
             final var options = cli("--url", url);
 
             final var os = RecordingOperatingSystem.macOS();
@@ -2201,7 +2212,7 @@ final class QuarkusCheck
             };
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
-                Tasks.Exec.of(args).marker()
+                Marker.of(Tasks.Exec.of(Path.of("quarkus"), args))
             );
             final var options = cli(
                 "-t"
@@ -2477,27 +2488,21 @@ final class QuarkusCheck
         }
 
         // TODO rename to assertOneTask
-        void assertExecutedOneTask(String expected, Path directory, Marker result)
+        void assertExecutedOneTask(Object expected, Marker result)
         {
             assertNumberOfTasks(1);
-            assertExecutedTask(expected, directory, result);
+            assertExecutedTask(expected, result);
         }
 
         // TODO rename to assertTask
-        void assertExecutedTask(String expected, Path directory, Marker result)
+        void assertExecutedTask(Object expected, Marker result)
         {
-            assertTask(t ->
-            {
-                assertThat(t.directory(), is(directory));
-                assertThat(
-                    String.join(" ", t.args())
-                    , is(equalTo(expected))
-                );
-            });
+            final var actual = peekTask();
+            assertThat(actual, is(expected));
             assertThat(result.touched(), is(true));
             assertThat(
                 result.path()
-                , is(Path.of(String.format("%s.marker", Hashing.sha1(expected))))
+                , is(Path.of(String.format("%s.marker", Hashing.sha1(expected.toString()))))
             );
         }
 
