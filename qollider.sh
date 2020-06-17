@@ -12,7 +12,7 @@ JAVA_URL_BASE="https://github.com/AdoptOpenJDK/openjdk${JAVA_VERSION_MAJOR}-bina
 
 JBANG_HOME="${Q_HOME}/jbang"
 JBANG_EXEC="${JBANG_HOME}/bin/jbang"
-JBANG_VERSION="0.22.0.2"
+JBANG_VERSION="0.31.0"
 
 PLATFORM="unknown"
 
