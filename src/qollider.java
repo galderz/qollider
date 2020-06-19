@@ -351,7 +351,6 @@ class GraalBuild implements Callable<List<?>>
             jdkTree
             , mxTree
             , graalTree
-            , Path.of("graalvm")
         );
         return runner.apply(options);
     }
@@ -372,8 +371,7 @@ class GraalBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            fs.mkdirs(options.parent);
-            fs.mkdirs(options.bootJdkPath());
+            fs.mkdirs(Path.of("boot-jdk"));
 
             final var exec = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
             final var download = new Steps.Download.Effects(fs::exists, web::download, fs::touch, os::type);
@@ -382,7 +380,7 @@ class GraalBuild implements Callable<List<?>>
             final var repos = Options.repositories(options);
             return List.of(
                 Java.clone(options, exec)
-                , Git.clone(repos, options.parent, exec).toArray()
+                , Git.clone(repos, exec).toArray()
 
                 , Java.install(options, exec, download)
                 , Java.build(options, exec, os::type)
@@ -398,7 +396,6 @@ class GraalBuild implements Callable<List<?>>
         Repository jdk
         , Repository mx
         , Repository graal
-        , Path parent
     )
     {
         Java.Type javaType()
@@ -406,30 +403,15 @@ class GraalBuild implements Callable<List<?>>
             return Java.type(jdk);
         }
 
-        Path jdkPath()
-        {
-            return parent.resolve(jdk.name());
-        }
-
-        Path graalPath()
-        {
-            return parent.resolve(graal.name());
-        }
-
         Path mxPath()
         {
             return Path.of(mx.name(), "mx");
         }
 
-        Path bootJdkPath()
-        {
-            return parent.resolve("boot-jdk");
-        }
-
         // TODO consider downloading/extracting boot-jdk to root level, it doesn't change that often
         Path bootJdkHome(Supplier<OperatingSystem.Type> osType)
         {
-            final var root = parent.resolve("boot-jdk");
+            final var root = Path.of("boot-jdk");
             return osType.get().isMac()
                 ? root.resolve(Path.of("Contents", "Home"))
                 : root;
@@ -440,14 +422,12 @@ class GraalBuild implements Callable<List<?>>
             URI jdk
             , URI mx
             , URI graal
-            , Path parent
         )
         {
             return new Options(
                 Repository.of(jdk)
                 , Repository.of(mx)
                 , Repository.of(graal)
-                , parent
             );
         }
 
@@ -469,11 +449,10 @@ class GraalBuild implements Callable<List<?>>
                 case GIT ->
                     Git.clone(
                         options.jdk
-                        , options.parent
                         , effects
                     );
                 case MERCURIAL ->
-                    Mercurial.clone(options.jdk, options.parent, effects);
+                    Mercurial.clone(options.jdk, effects);
             };
         }
 
@@ -498,7 +477,7 @@ class GraalBuild implements Callable<List<?>>
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var jdkPath = options.jdkPath();
+            final var jdkPath = Path.of(options.jdk.name());
             final var target =
                 switch (options.javaType())
                     {
@@ -544,7 +523,7 @@ class GraalBuild implements Callable<List<?>>
             );
 
             return Steps.Install.install(
-                new Steps.Install(url, options.bootJdkPath())
+                new Steps.Install(url, Path.of("boot-jdk"))
                 , download
                 , exec
             );
@@ -575,7 +554,7 @@ class GraalBuild implements Callable<List<?>>
             private static Steps.Exec configureSh(Options options, Path bootJdkHome)
             {
                 return Steps.Exec.of(
-                    options.jdkPath()
+                    Path.of(options.jdk.name())
                     , "sh"
                     , "configure"
                     , "--with-conf-name=graal-server-release"
@@ -590,7 +569,7 @@ class GraalBuild implements Callable<List<?>>
             private static Steps.Exec makeGraalJDK(Options options)
             {
                 return Steps.Exec.of(
-                    options.jdkPath()
+                    Path.of(options.jdk.name())
                     , "make"
                     , "graal-builder-image"
                 );
@@ -612,7 +591,7 @@ class GraalBuild implements Callable<List<?>>
             private static Steps.Exec buildJDK(Options options, Path bootJdkHome)
             {
                 return Steps.Exec.of(
-                    options.jdkPath()
+                    Path.of(options.jdk.name())
                     , "python"
                     , "build_labsjdk.py"
                     , "--boot-jdk"
@@ -659,11 +638,10 @@ class GraalBuild implements Callable<List<?>>
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var target = options.graalPath().resolve(
-                Path.of(
-                    "sdk"
-                    , "latest_graalvm_home"
-                )
+            final var target = Path.of(
+                options.graal.name()
+                ,"sdk"
+                , "latest_graalvm_home"
             );
 
             return symLink.apply(Homes.graal(), target);
@@ -671,7 +649,7 @@ class GraalBuild implements Callable<List<?>>
 
         static Path svm(Options options)
         {
-            return options.graalPath().resolve("substratevm");
+            return Path.of(options.graal.name(), "substratevm");
         }
     }
 }
@@ -757,10 +735,9 @@ class MavenBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            final var parent = Path.of("");
             final var effects = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
             return List.of(
-                Git.clone(options.tree, parent, effects)
+                Git.clone(options.tree, effects)
                 , Maven.build(options, effects)
             );
         }
@@ -1060,12 +1037,11 @@ record Repository(
 
 class Mercurial
 {
-    static Marker clone(Repository repository, Path path, Steps.Exec.Effects effects)
+    static Marker clone(Repository repository, Steps.Exec.Effects effects)
     {
         return Steps.Exec.run(
             Steps.Exec.of(
-                path
-                , "hg"
+                "hg"
                 , "clone"
                 , repository.cloneUri().toString()
             )
@@ -1180,18 +1156,18 @@ final class Steps
 
 class Git
 {
-    static Marker clone(Repository repo, Path path, Steps.Exec.Effects effects)
+    static Marker clone(Repository repo, Steps.Exec.Effects effects)
     {
         return Steps.Exec.run(
-            Steps.Exec.of(path, toClone(repo))
+            Steps.Exec.of(toClone(repo))
             , effects
         );
     }
 
-    static List<Marker> clone(List<Repository> repos, Path path, Steps.Exec.Effects effects)
+    static List<Marker> clone(List<Repository> repos, Steps.Exec.Effects effects)
     {
         return repos.stream()
-            .map(repo -> clone(repo, path, effects))
+            .map(repo -> clone(repo, effects))
             .collect(Collectors.toList());
     }
 
@@ -1683,7 +1659,7 @@ final class QuarkusCheck
             final var os = RecordingOperatingSystem.macOS();
             final List<Repository> repos = emptyList();
             final var effects = new Steps.Exec.Effects(m -> false, os::record, m -> false);
-            final var cloned = Git.clone(repos, Path.of(""), effects);
+            final var cloned = Git.clone(repos, effects);
             os.assertNumberOfTasks(0);
             assertThat(cloned.size(), is(0));
         }
@@ -1709,7 +1685,7 @@ final class QuarkusCheck
                 )
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, Path.of(""), effects);
+            final var cloned = Git.clone(repos, effects);
             final var expected = Steps.Exec.of(
                 "git"
                 , "clone"
@@ -1733,10 +1709,9 @@ final class QuarkusCheck
                 )
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, Path.of("graalvm"), effects);
+            final var cloned = Git.clone(repos, effects);
             final var expected = Steps.Exec.of(
-                Path.of("graalvm")
-                ,"git"
+                "git"
                 , "clone"
                 , "-b"
                 , "master"
@@ -1776,7 +1751,7 @@ final class QuarkusCheck
             os.assertTask(task ->
             {
                 assertThat(task.args().stream().findFirst(), is(Optional.of("python")));
-                assertThat(task.directory(), is(Path.of("graalvm", "labs-openjdk-11")));
+                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
             });
         }
 
@@ -1798,13 +1773,13 @@ final class QuarkusCheck
             os.assertTask(task ->
             {
                 assertThat(task.args().stream().findFirst(), is(Optional.of("sh")));
-                assertThat(task.directory(), is(Path.of("graalvm", "jdk11u-dev")));
+                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
             });
             os.forward();
             os.assertTask(task ->
             {
                 assertThat(task.args().stream().findFirst(), is(Optional.of("make")));
-                assertThat(task.directory(), is(Path.of("graalvm", "jdk11u-dev")));
+                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
             });
         }
 
@@ -1813,7 +1788,7 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var configure = Steps.Exec.of(
-                Path.of("graalvm", "jdk11u-dev")
+                Path.of("jdk11u-dev")
                 , "sh"
                 , "configure"
                 , "--with-conf-name=graal-server-release"
@@ -1821,10 +1796,10 @@ final class QuarkusCheck
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=../../graalvm/boot-jdk/Contents/Home"
+                , "--with-boot-jdk=../../boot-jdk/Contents/Home"
             );
             final var make = Steps.Exec.of(
-                Path.of("graalvm", "jdk11u-dev")
+                Path.of("jdk11u-dev")
                 , "make"
                 , "graal-builder-image"
             );
@@ -1850,11 +1825,11 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var configure = Steps.Exec.of(
-                Path.of("graalvm", "labs-openjdk-11")
+                Path.of("labs-openjdk-11")
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , "../../graalvm/boot-jdk/Contents/Home"
+                , "../../boot-jdk/Contents/Home"
             );
             final var fs = InMemoryFileSystem.ofExists(configure);
             final var options = cli();
@@ -1888,7 +1863,7 @@ final class QuarkusCheck
             final var marker = GraalBuild.Graal.build(options, effects);
 
             final var expected = Steps.Exec.of(
-                Path.of("graalvm", "graal", "substratevm")
+                Path.of("graal", "substratevm")
                 , "../../mx/mx"
                 , "--java-home"
                 , "../../../graalvm_java_home"
@@ -1902,7 +1877,7 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var step = Steps.Exec.of(
-                Path.of("graalvm", "graal", "substratevm")
+                Path.of("graal", "substratevm")
                 , "../../mx/mx"
                 , "--java-home"
                 , "../../../graalvm_java_home"
@@ -1926,7 +1901,7 @@ final class QuarkusCheck
                 , Link::new
             );
             assertThat(linked.link(), is(Homes.graalJava()));
-            assertThat(linked.target(), is(Path.of("graalvm", "labs-openjdk-11", "java_home")));
+            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
         }
 
         @Test
@@ -1943,8 +1918,7 @@ final class QuarkusCheck
             assertThat(linked.link(), is(Homes.graalJava()));
             assertThat(linked.target(),
                 is(Path.of(
-                    "graalvm"
-                    ,"jdk11u-dev"
+                    "jdk11u-dev"
                     , "build"
                     , "graal-server-release"
                     , "images"
@@ -1964,8 +1938,7 @@ final class QuarkusCheck
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
             final var cloned = GraalBuild.Java.clone(options, effects);
             final var expected = Steps.Exec.of(
-                Path.of("graalvm")
-                , "git"
+                "git"
                 , "clone"
                 , "-b"
                 , "master"
@@ -1988,8 +1961,7 @@ final class QuarkusCheck
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
             final var cloned = GraalBuild.Java.clone(options, effects);
             final var expected = Steps.Exec.of(
-                Path.of("graalvm")
-                , "hg"
+                "hg"
                 , "clone"
                 , "http://hg.openjdk.java.net/jdk8/jdk8"
             );
@@ -2017,7 +1989,7 @@ final class QuarkusCheck
                 "-xzvpf"
                 , String.format("downloads/%s", tarName)
                 , "-C"
-                , "graalvm/boot-jdk"
+                , "boot-jdk"
                 , "--strip-components"
                 , "1"
             );
