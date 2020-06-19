@@ -623,12 +623,11 @@ class GraalBuild implements Callable<List<?>>
     {
         static Marker build(Options options, Steps.Exec.Effects effects)
         {
-            final var graalVmRoot = Path.of("..", "..");
-            final var root = graalVmRoot.resolve("..");
+            final var root = Path.of("..", "..");
             return Steps.Exec.run(
                 Steps.Exec.of(
                     Graal.svm(options)
-                    , graalVmRoot.resolve(options.mxPath()).toString()
+                    , root.resolve(options.mxPath()).toString()
                     , "--java-home"
                     , root.resolve(Homes.graalJava()).toString()
                     , "build"
@@ -1905,7 +1904,7 @@ final class QuarkusCheck
                 Path.of("graal", "substratevm")
                 , "../../mx/mx"
                 , "--java-home"
-                , "../../../graalvm_java_home"
+                , "../../graalvm_java_home"
                 , "build"
             );
             os.assertExecutedOneTask(expected, marker);
@@ -1919,7 +1918,7 @@ final class QuarkusCheck
                 Path.of("graal", "substratevm")
                 , "../../mx/mx"
                 , "--java-home"
-                , "../../../graalvm_java_home"
+                , "../../graalvm_java_home"
                 , "build"
             );
             final var fs = InMemoryFileSystem.ofExists(step);
