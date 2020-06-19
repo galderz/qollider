@@ -92,17 +92,18 @@ public class qollider implements Runnable
         // Run checks
         QuarkusCheck.check();
 
-        final var fs = FileSystem.ofSystem();
-        final var os = new OperatingSystem(fs);
-        final var web = new Web(fs);
+        final var today = FileSystem.ofToday();
+        final var os = new OperatingSystem(today);
+        final var web = new Web(today);
+        final var home = FileSystem.ofHome();
 
         // TODO consider collapsing graal-build and maven-build into build
         // depending on the tree passed in, the code could multiplex.
         // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintenance of code)
-        final var graalBuild = GraalBuild.ofSystem(fs, os, web);
-        final var graalGet = GraalGet.ofSystem(fs, os, web);
-        final var mavenBuild = MavenBuild.ofSystem(fs, os);
-        final var quarkusTest = MavenTest.ofSystem(fs, os);
+        final var graalBuild = GraalBuild.ofSystem(today, os, web, home);
+        final var graalGet = GraalGet.ofSystem(today, os, web);
+        final var mavenBuild = MavenBuild.ofSystem(today, os);
+        final var quarkusTest = MavenTest.ofSystem(today, os);
 
         final var cli = Cli.of(
             graalBuild
@@ -334,9 +335,9 @@ class GraalBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static GraalBuild ofSystem(FileSystem fs, OperatingSystem os, Web web)
+    static GraalBuild ofSystem(FileSystem today, OperatingSystem os, Web web, FileSystem home)
     {
-        return new GraalBuild(new GraalBuild.RunBuild(fs, os, web));
+        return new GraalBuild(new GraalBuild.RunBuild(today, os, web, home));
     }
 
     static GraalBuild of(Function<Options, List<?>> runner)
@@ -357,37 +358,36 @@ class GraalBuild implements Callable<List<?>>
 
     final static class RunBuild implements Function<Options, List<?>>
     {
-        final FileSystem fs;
+        final FileSystem today;
         final OperatingSystem os;
         final Web web;
+        final FileSystem home;
 
-        RunBuild(FileSystem fs, OperatingSystem os, Web web)
+        RunBuild(FileSystem today, OperatingSystem os, Web web, FileSystem home)
         {
-            this.fs = fs;
+            this.today = today;
             this.os = os;
             this.web = web;
+            this.home = home;
         }
 
         @Override
         public List<?> apply(Options options)
         {
-            fs.mkdirs(options.bootJdkPath());
-
-            final var exec = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, web::download, fs::touch, os::type);
+            home.mkdirs(options.bootJdkPath());
 
             // TODO unroll git clones
             final var repos = Options.repositories(options);
             return List.of(
-                Java.clone(options, exec)
-                , Git.clone(repos, exec).toArray()
+                Java.clone(options, Steps.Exec.Effects.of(today, os))
+                , Git.clone(repos, Steps.Exec.Effects.of(today, os)).toArray()
 
-                , Java.install(options, exec, download)
-                , Java.build(options, exec, os::type)
-                , Java.link(options, fs::symlink)
+                , Java.install(options, Steps.Exec.Effects.of(home, os), Steps.Download.Effects.of(home, web, os))
+                , Java.build(options, Steps.Exec.Effects.of(today, os), os::type)
+                , Java.link(options, today::symlink)
 
-                , Graal.build(options, exec)
-                , Graal.link(options, fs::symlink)
+                , Graal.build(options, Steps.Exec.Effects.of(today, os))
+                , Graal.link(options, today::symlink)
             );
         }
     }
@@ -1061,6 +1061,7 @@ record EnvVar(
 
 interface Step {}
 
+// TODO With the addition of marker interface, no longer need for top level Steps
 final class Steps
 {
     // Install = Download + Extract
@@ -1130,11 +1131,18 @@ final class Steps
             return marker.touch(effects.touch);
         }
 
+        // TODO Rename to Eff
         record Effects(
             Predicate<Marker> exists
             , Consumer<Exec> exec
             , Function<Marker, Boolean> touch
-        ) {}
+        )
+        {
+            static Effects of(FileSystem fs, OperatingSystem os)
+            {
+                return new Effects(fs::exists, os::exec, fs::touch);
+            }
+        }
     }
 
     record Download(URL url, Path path) implements Step
@@ -1149,12 +1157,19 @@ final class Steps
             return marker.touch(effects.touch);
         }
 
+        // TODO Rename to Eff
         record Effects(
             Predicate<Marker> exists
             , Consumer<Download> download
             , Function<Marker, Boolean> touch
             , Supplier<OperatingSystem.Type> osType
-        ) {}
+        )
+        {
+            static Effects of(FileSystem fs, Web web, OperatingSystem os)
+            {
+                return new Effects(fs::exists, web::download, fs::touch, os::type);
+            }
+        }
     }
 }
 
@@ -1260,7 +1275,7 @@ class FileSystem
 {
     final Path root;
 
-    static FileSystem ofSystem()
+    static FileSystem ofToday()
     {
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("ddMM");
@@ -1271,6 +1286,17 @@ class FileSystem
             , "cache"
         );
         final var path = baseDir.resolve(today);
+        return FileSystem.of(path);
+    }
+
+    static FileSystem ofHome()
+    {
+        var home = Path.of(System.getProperty("user.home"), ".qollider");
+        return FileSystem.of(home);
+    }
+
+    private static FileSystem of(Path path)
+    {
         return new FileSystem(idempotentMkDirs(path));
     }
 
