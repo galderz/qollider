@@ -93,17 +93,15 @@ public class qollider implements Runnable
         QuarkusCheck.check();
 
         final var today = FileSystem.ofToday();
-        final var os = new OperatingSystem(today);
-        final var web = new Web(today);
         final var home = FileSystem.ofHome();
 
         // TODO consider collapsing graal-build and maven-build into build
         // depending on the tree passed in, the code could multiplex.
         // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintenance of code)
-        final var graalBuild = GraalBuild.ofSystem(today, os, web, home);
-        final var graalGet = GraalGet.ofSystem(today, os, web);
-        final var mavenBuild = MavenBuild.ofSystem(today, os);
-        final var quarkusTest = MavenTest.ofSystem(today, os);
+        final var graalBuild = GraalBuild.ofSystem(today, home);
+        final var graalGet = GraalGet.ofSystem(today);
+        final var mavenBuild = MavenBuild.ofSystem(today);
+        final var quarkusTest = MavenTest.ofSystem(today);
 
         final var cli = Cli.of(
             graalBuild
@@ -204,9 +202,9 @@ class GraalGet implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static GraalGet ofSystem(FileSystem fs, OperatingSystem os, Web web)
+    static GraalGet ofSystem(FileSystem fs)
     {
-        return new GraalGet(new GraalGet.RunGet(fs, os, web));
+        return new GraalGet(new GraalGet.RunGet(fs));
     }
 
     static GraalGet of(Function<Options, List<?>> runner)
@@ -224,20 +222,19 @@ class GraalGet implements Callable<List<?>>
     final static class RunGet implements Function<Options, List<?>>
     {
         final FileSystem fs;
-        final OperatingSystem os;
-        final Web web;
 
-        RunGet(FileSystem fs, OperatingSystem os, Web web)
+        RunGet(FileSystem fs)
         {
             this.fs = fs;
-            this.os = os;
-            this.web = web;
         }
 
         @Override
         public List<?> apply(Options options)
         {
             fs.mkdirs(options.graal);
+
+            final var os = OperatingSystem.of(fs);
+            final var web = Web.of(fs);
 
             final var exec = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
             final var download = new Steps.Download.Effects(fs::exists, web::download, fs::touch, os::type);
@@ -335,9 +332,9 @@ class GraalBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static GraalBuild ofSystem(FileSystem today, OperatingSystem os, Web web, FileSystem home)
+    static GraalBuild ofSystem(FileSystem today, FileSystem home)
     {
-        return new GraalBuild(new GraalBuild.RunBuild(today, os, web, home));
+        return new GraalBuild(new GraalBuild.RunBuild(today, home));
     }
 
     static GraalBuild of(Function<Options, List<?>> runner)
@@ -359,15 +356,11 @@ class GraalBuild implements Callable<List<?>>
     final static class RunBuild implements Function<Options, List<?>>
     {
         final FileSystem today;
-        final OperatingSystem os;
-        final Web web;
         final FileSystem home;
 
-        RunBuild(FileSystem today, OperatingSystem os, Web web, FileSystem home)
+        RunBuild(FileSystem today, FileSystem home)
         {
             this.today = today;
-            this.os = os;
-            this.web = web;
             this.home = home;
         }
 
@@ -376,17 +369,21 @@ class GraalBuild implements Callable<List<?>>
         {
             home.mkdirs(options.bootJdkPath());
 
+            final var osToday = OperatingSystem.of(today);
+            final var osHome = OperatingSystem.of(home);
+
             // TODO unroll git clones
             final var repos = Options.repositories(options);
             return List.of(
-                Java.clone(options, Steps.Exec.Effects.of(today, os))
-                , Git.clone(repos, Steps.Exec.Effects.of(today, os)).toArray()
-
-                , Java.install(options, Steps.Exec.Effects.of(home, os), Steps.Download.Effects.of(home, web, os))
-                , Java.build(options, Steps.Exec.Effects.of(today, os), os::type)
+                Java.clone(options, Steps.Exec.Effects.of(osToday))
+                , Git.clone(repos, Steps.Exec.Effects.of(osToday)).toArray()
+                , Java.install(options
+                    , Steps.Exec.Effects.of(osHome)
+                    , Steps.Download.Effects.of(Web.of(home), osHome)
+                )
+                , Java.build(options, Steps.Exec.Effects.of(osToday), osToday::type)
                 , Java.link(options, today::symlink)
-
-                , Graal.build(options, Steps.Exec.Effects.of(today, os))
+                , Graal.build(options, Steps.Exec.Effects.of(osToday))
                 , Graal.link(options, today::symlink)
             );
         }
@@ -466,8 +463,8 @@ class GraalBuild implements Callable<List<?>>
             , Supplier<OperatingSystem.Type> osType
         )
         {
-            // TODO consider creating a symlink for boot_java_home under graalvm/
-            final var bootJdkHome = Path.of("..", "..").resolve(options.bootJdkHome(osType));
+            final var home = Path.of("..", "..", "..");
+            final var bootJdkHome = home.resolve(options.bootJdkHome(osType));
             final var tasks = switch (options.javaType())
                 {
                     case OPENJDK -> Java.OpenJDK.buildSteps(options, bootJdkHome);
@@ -708,9 +705,9 @@ class MavenBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static MavenBuild ofSystem(FileSystem fs, OperatingSystem os)
+    static MavenBuild ofSystem(FileSystem fs)
     {
-        return new MavenBuild(new MavenBuild.RunBuild(fs, os));
+        return new MavenBuild(new MavenBuild.RunBuild(fs));
     }
 
     static MavenBuild of(Function<Options, List<?>> runner)
@@ -725,20 +722,20 @@ class MavenBuild implements Callable<List<?>>
         return runner.apply(options);
     }
 
+    // TODO convert to record
     final static class RunBuild implements Function<Options, List<?>>
     {
         final FileSystem fs;
-        final OperatingSystem os;
 
-        RunBuild(FileSystem fs, OperatingSystem os)
+        RunBuild(FileSystem fs)
         {
             this.fs = fs;
-            this.os = os;
         }
 
         @Override
         public List<?> apply(Options options)
         {
+            final var os = OperatingSystem.of(fs);
             final var effects = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
             return List.of(
                 Git.clone(options.tree, effects)
@@ -841,9 +838,9 @@ class MavenTest implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static MavenTest ofSystem(FileSystem fs, OperatingSystem os)
+    static MavenTest ofSystem(FileSystem fs)
     {
-        return new MavenTest(new RunTest(fs, os));
+        return new MavenTest(new RunTest(fs));
     }
 
     static MavenTest of(Function<Options, List<?>> runner)
@@ -858,20 +855,20 @@ class MavenTest implements Callable<List<?>>
         return runner.apply(options);
     }
 
+    // TODO convert to record
     final static class RunTest implements Function<Options, List<?>>
     {
         final FileSystem fs;
-        final OperatingSystem os;
 
-        RunTest(FileSystem fs, OperatingSystem os)
+        RunTest(FileSystem fs)
         {
             this.fs = fs;
-            this.os = os;
         }
 
         @Override
         public List<?> apply(Options options)
         {
+            final var os = OperatingSystem.of(fs);
             Maven.test(options, os::exec);
             return List.of();
         }
@@ -1061,7 +1058,7 @@ record EnvVar(
 
 interface Step {}
 
-// TODO With the addition of marker interface, no longer need for top level Steps
+// TODO remove steps and just use Step (eventually sealed types in Java 15)
 final class Steps
 {
     // Install = Download + Extract
@@ -1138,9 +1135,9 @@ final class Steps
             , Function<Marker, Boolean> touch
         )
         {
-            static Effects of(FileSystem fs, OperatingSystem os)
+            static Effects of(OperatingSystem os)
             {
-                return new Effects(fs::exists, os::exec, fs::touch);
+                return new Effects(os.fs::exists, os::exec, os.fs::touch);
             }
         }
     }
@@ -1165,9 +1162,9 @@ final class Steps
             , Supplier<OperatingSystem.Type> osType
         )
         {
-            static Effects of(FileSystem fs, Web web, OperatingSystem os)
+            static Effects of(Web web, OperatingSystem os)
             {
-                return new Effects(fs::exists, web::download, fs::touch, os::type);
+                return new Effects(os.fs::exists, web::download, os.fs::touch, os::type);
             }
         }
     }
@@ -1389,6 +1386,7 @@ class FileSystem
     }
 }
 
+// TODO Rename to OS
 // Dependency
 class OperatingSystem
 {
@@ -1396,9 +1394,14 @@ class OperatingSystem
 
     final FileSystem fs;
 
-    OperatingSystem(FileSystem fs)
+    private OperatingSystem(FileSystem fs)
     {
         this.fs = fs;
+    }
+
+    static OperatingSystem of(FileSystem fs)
+    {
+        return new OperatingSystem(fs);
     }
 
     void exec(Steps.Exec exec)
@@ -1503,9 +1506,14 @@ final class Web
 
     final FileSystem fs;
 
-    Web(FileSystem fs)
+    private Web(FileSystem fs)
     {
         this.fs = fs;
+    }
+
+    static Web of(FileSystem fs)
+    {
+        return new Web(fs);
     }
 
     void download(Steps.Download download)
@@ -1634,6 +1642,7 @@ final class QuarkusCheck
 {
     static void check()
     {
+        // TODO remove summary listener, a bit too noisy
         SummaryGeneratingListener listener = new SummaryGeneratingListener();
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
@@ -1826,7 +1835,7 @@ final class QuarkusCheck
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=../../boot-jdk-11/Contents/Home"
+                , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
             );
             final var make = Steps.Exec.of(
                 Path.of("jdk11u-dev")
@@ -1859,7 +1868,7 @@ final class QuarkusCheck
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , "../../boot-jdk-11/Contents/Home"
+                , "../../../boot-jdk-11/Contents/Home"
             );
             final var fs = InMemoryFileSystem.ofExists(configure);
             final var options = cli();
