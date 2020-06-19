@@ -371,7 +371,7 @@ class GraalBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            fs.mkdirs(Path.of("boot-jdk"));
+            fs.mkdirs(options.bootJdkPath());
 
             final var exec = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
             final var download = new Steps.Download.Effects(fs::exists, web::download, fs::touch, os::type);
@@ -408,10 +408,14 @@ class GraalBuild implements Callable<List<?>>
             return Path.of(mx.name(), "mx");
         }
 
-        // TODO consider downloading/extracting boot-jdk to root level, it doesn't change that often
+        Path bootJdkPath()
+        {
+            return Path.of("boot-jdk-11");
+        }
+
         Path bootJdkHome(Supplier<OperatingSystem.Type> osType)
         {
-            final var root = Path.of("boot-jdk");
+            final var root = bootJdkPath();
             return osType.get().isMac()
                 ? root.resolve(Path.of("Contents", "Home"))
                 : root;
@@ -523,7 +527,7 @@ class GraalBuild implements Callable<List<?>>
             );
 
             return Steps.Install.install(
-                new Steps.Install(url, Path.of("boot-jdk"))
+                new Steps.Install(url, options.bootJdkPath())
                 , download
                 , exec
             );
@@ -1796,7 +1800,7 @@ final class QuarkusCheck
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=../../boot-jdk/Contents/Home"
+                , "--with-boot-jdk=../../boot-jdk-11/Contents/Home"
             );
             final var make = Steps.Exec.of(
                 Path.of("jdk11u-dev")
@@ -1829,7 +1833,7 @@ final class QuarkusCheck
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , "../../boot-jdk/Contents/Home"
+                , "../../boot-jdk-11/Contents/Home"
             );
             final var fs = InMemoryFileSystem.ofExists(configure);
             final var options = cli();
@@ -1989,7 +1993,7 @@ final class QuarkusCheck
                 "-xzvpf"
                 , String.format("downloads/%s", tarName)
                 , "-C"
-                , "boot-jdk"
+                , "boot-jdk-11"
                 , "--strip-components"
                 , "1"
             );
