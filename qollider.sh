@@ -35,10 +35,10 @@ installJDK() {
         local url="${JAVA_URL_BASE}/jdk-${JAVA_VERSION}%2B${JAVA_VERSION_BUILD}/OpenJDK${JAVA_VERSION_MAJOR}U-jdk_x64_${PLATFORM}_hotspot_${JAVA_VERSION}_${JAVA_VERSION_BUILD}.tar.gz"
         local archive="${Q_HOME}/jdk.tar.gz"
 
-        mkdir -p ${JAVA_HOME}
+        mkdir -p ${Q_HOME}/jdk
 
         curl --location ${url} > ${archive}
-        tar -xzvpf ${archive} -C ${JAVA_HOME} --strip-components 1
+        tar -xzvpf ${archive} -C "${Q_HOME}/jdk" --strip-components 1
 
         rm -drf ${archive}
     fi
