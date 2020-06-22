@@ -113,15 +113,15 @@ public class qollider implements Runnable
         if (0 == result.exitCode())
         {
             LOG.info("Execution summary:");
-            LOG.info("Inputs:");
-            LOG.info(
-                List.of(args).stream()
+            LOG.info("Inputs:{}{}"
+                , System.lineSeparator()
+                , List.of(args).stream()
                     .map(Object::toString)
                     .collect(Collectors.joining(System.lineSeparator()))
             );
-            LOG.info("Outputs:");
-            LOG.info(
-                result.outputs().stream()
+            LOG.info("Outputs:{}{}"
+                , System.lineSeparator()
+                , result.outputs().stream()
                     .map(Object::toString)
                     .collect(Collectors.joining(System.lineSeparator()))
             );
