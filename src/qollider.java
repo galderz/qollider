@@ -763,7 +763,7 @@ class MavenBuild implements Callable<List<?>>
 
     private static Stream<String> arguments(Options options, String directory)
     {
-        final var home = Path.of("..", "..");
+        final var home = Path.of("..", "..", "..");
         final var mvn = Path.of("maven", "bin", "mvn");
         // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
         final var arguments = Stream.concat(
@@ -892,7 +892,7 @@ class MavenTest implements Callable<List<?>>
 
         private static Stream<String> arguments(Options options, Path directory)
         {
-            final var home = Path.of("..", "..");
+            final var home = Path.of("..", "..", "..");
             final var mvn = Path.of("maven", "bin", "mvn");
 
             final var args = Stream.of(
@@ -2192,7 +2192,7 @@ final class QuarkusCheck
             final var marker = MavenBuild.build(options, effects);
             final var expected = Steps.Exec.of(
                 Path.of("quarkus")
-                , "../../maven/bin/mvn"
+                , "../../../maven/bin/mvn"
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -2206,7 +2206,7 @@ final class QuarkusCheck
         void skipQuarkus()
         {
             final var args = new String[]{
-                "../../maven/bin/mvn"
+                "../../../maven/bin/mvn"
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -2241,7 +2241,7 @@ final class QuarkusCheck
             final var marker = MavenBuild.build(options, effects);
             final var expected = Steps.Exec.of(
                 Path.of("camel-quarkus")
-                , "../../maven/bin/mvn"
+                , "../../../maven/bin/mvn"
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -2267,7 +2267,7 @@ final class QuarkusCheck
             final var marker = MavenBuild.build(options, effects);
             final var expected = Steps.Exec.of(
                 Path.of("camel")
-                , "../../maven/bin/mvn"
+                , "../../../maven/bin/mvn"
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -2319,7 +2319,7 @@ final class QuarkusCheck
             os.assertTask(t ->
                 assertThat(
                     String.join(" ", t.args())
-                    , is(equalTo("../../maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
+                    , is(equalTo("../../../maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
                 )
             );
         }
@@ -2332,7 +2332,7 @@ final class QuarkusCheck
             MavenTest.Maven.test(options, os::record);
 
             os.assertNumberOfTasks(1);
-            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("../../maven/bin/mvn"))));
+            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("../../../maven/bin/mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
         }
 
@@ -2346,7 +2346,7 @@ final class QuarkusCheck
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("../../maven/bin/mvn")));
+                assertThat(task.args().stream().findFirst(), is(Optional.of("../../../maven/bin/mvn")));
                 assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
             });
         }
@@ -2363,7 +2363,7 @@ final class QuarkusCheck
             {
                 assertThat(task.directory(), is(Path.of("quarkus-platform")));
                 final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("../../maven/bin/mvn")));
+                assertThat(arguments.stream().findFirst(), is(Optional.of("../../../maven/bin/mvn")));
                 assertThat(
                     arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
                     , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
