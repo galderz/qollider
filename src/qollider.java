@@ -100,14 +100,14 @@ public class qollider implements Runnable
         // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintenance of code)
         final var graalBuild = GraalBuild.ofSystem(today, home);
         final var graalGet = GraalGet.ofSystem(today);
-        final var mavenBuild = MavenBuild.ofSystem(today);
-        final var quarkusTest = MavenTest.ofSystem(today);
+        final var mavenBuild = MavenBuild.ofSystem(today, home);
+        final var mavenTest = MavenTest.ofSystem(today);
 
         final var cli = Cli.of(
             graalBuild
             , graalGet
             , mavenBuild
-            , quarkusTest
+            , mavenTest
         );
         final var result = cli.execute(args);
         if (0 == result.exitCode())
@@ -510,17 +510,15 @@ class GraalBuild implements Callable<List<?>>
             final var arch = "x64";
 
             final var url = URLs.of(
-                String.format(
-                    "%s/jdk-%s%%2B%s/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
-                    , javaBaseUrl
-                    , javaVersion
-                    , javaVersionBuild
-                    , javaVersionMajor
-                    , arch
-                    , javaOsType
-                    , javaVersion
-                    , javaVersionBuild
-                )
+                "%s/jdk-%s%%2B%s/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
+                , javaBaseUrl
+                , javaVersion
+                , javaVersionBuild
+                , javaVersionMajor
+                , arch
+                , javaOsType
+                , javaVersion
+                , javaVersionBuild
             );
 
             return Steps.Install.install(
@@ -704,9 +702,9 @@ class MavenBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static MavenBuild ofSystem(FileSystem fs)
+    static MavenBuild ofSystem(FileSystem today, FileSystem home)
     {
-        return new MavenBuild(new MavenBuild.RunBuild(fs));
+        return new MavenBuild(new BuildRunner(today, home));
     }
 
     static MavenBuild of(Function<Options, List<?>> runner)
@@ -721,24 +719,21 @@ class MavenBuild implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    // TODO convert to record
-    final static class RunBuild implements Function<Options, List<?>>
+    record BuildRunner(FileSystem today, FileSystem home) implements Function<Options, List<?>>
     {
-        final FileSystem fs;
-
-        RunBuild(FileSystem fs)
-        {
-            this.fs = fs;
-        }
-
         @Override
         public List<?> apply(Options options)
         {
-            final var os = OperatingSystem.of(fs);
-            final var effects = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
+            final var osToday = OperatingSystem.of(today);
+            final var osHome = OperatingSystem.of(home);
+
             return List.of(
-                Git.clone(options.tree, effects)
-                , Maven.build(options, effects)
+                Git.clone(options.tree, Steps.Exec.Effects.of(osToday))
+                , Maven.install(
+                    Steps.Exec.Effects.of(osHome)
+                    , Steps.Download.Effects.of(Web.of(home), osHome)
+                )
+                , MavenBuild.build(options, Steps.Exec.Effects.of(osToday))
             );
         }
     }
@@ -751,41 +746,40 @@ class MavenBuild implements Callable<List<?>>
         }
     }
 
-    static class Maven
+    static Marker build(Options options, Steps.Exec.Effects effects)
     {
-        static Marker build(Options options, Steps.Exec.Effects effects)
-        {
-            final var project = options.project();
-            final var arguments =
-                arguments(options, project.toString())
-                    .toArray(String[]::new);
+        final var project = options.project();
+        final var arguments =
+            arguments(options, project.toString())
+                .toArray(String[]::new);
 
-            return Steps.Exec.run(
-                Steps.Exec.of(project, arguments)
-                , effects
-            );
-        }
+        return Steps.Exec.run(
+            Steps.Exec.of(project, arguments)
+            , effects
+        );
+    }
 
-        private static Stream<String> arguments(Options options, String directory)
-        {
-            // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
-            final var arguments = Stream.concat(
-                Stream.of(
-                    "mvn" // ?
-                    , "install"
-                    , "-DskipTests"
-                    , "-DskipITs"
-                    , "-Denforcer.skip"
-                    , "-Dformat.skip"
-                )
-                , options.additionalBuildArgs.stream()
-            );
+    private static Stream<String> arguments(Options options, String directory)
+    {
+        final var home = Path.of("..", "..");
+        final var mvn = Path.of("maven", "bin", "mvn");
+        // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
+        final var arguments = Stream.concat(
+            Stream.of(
+                home.resolve(mvn).toString()
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+            )
+            , options.additionalBuildArgs.stream()
+        );
 
-            final var extra = EXTRA_BUILD_ARGS.get(directory);
-            return Objects.isNull(extra)
-                ? arguments
-                : Stream.concat(arguments, extra.stream());
-        }
+        final var extra = EXTRA_BUILD_ARGS.get(directory);
+        return Objects.isNull(extra)
+            ? arguments
+            : Stream.concat(arguments, extra.stream());
     }
 }
 
@@ -839,7 +833,7 @@ class MavenTest implements Callable<List<?>>
 
     static MavenTest ofSystem(FileSystem fs)
     {
-        return new MavenTest(new RunTest(fs));
+        return new MavenTest(new TestRunner(fs));
     }
 
     static MavenTest of(Function<Options, List<?>> runner)
@@ -854,20 +848,12 @@ class MavenTest implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    // TODO convert to record
-    final static class RunTest implements Function<Options, List<?>>
+    record TestRunner(FileSystem today) implements Function<Options, List<?>>
     {
-        final FileSystem fs;
-
-        RunTest(FileSystem fs)
-        {
-            this.fs = fs;
-        }
-
         @Override
         public List<?> apply(Options options)
         {
-            final var os = OperatingSystem.of(fs);
+            final var os = OperatingSystem.of(today);
             Maven.test(options, os::exec);
             return List.of();
         }
@@ -904,8 +890,11 @@ class MavenTest implements Callable<List<?>>
 
         private static Stream<String> arguments(Options options, Path directory)
         {
+            final var home = Path.of("..", "..");
+            final var mvn = Path.of("maven", "bin", "mvn");
+
             final var args = Stream.of(
-                "mvn"
+                home.resolve(mvn).toString()
                 , "install"
                 , "-Dnative"
                 , "-Dformat.skip"
@@ -939,6 +928,24 @@ class MavenTest implements Callable<List<?>>
                 ? Path.of("quarkus", "integration-tests")
                 : Path.of(suite);
         }
+    }
+}
+
+final class Maven
+{
+    static List<Marker> install(Steps.Exec.Effects exec, Steps.Download.Effects download)
+    {
+        final var version = "3.6.3";
+        final var url = URLs.of(
+            "https://downloads.apache.org/maven/maven-3/%1$s/binaries/apache-maven-%1$s-bin.tar.gz"
+            , version
+        );
+
+        return Steps.Install.install(
+            new Steps.Install(url, Path.of("maven"))
+            , download
+            , exec
+        );
     }
 }
 
@@ -1127,7 +1134,6 @@ final class Steps
             return marker.touch(effects.touch);
         }
 
-        // TODO Rename to Eff
         record Effects(
             Predicate<Marker> exists
             , Consumer<Exec> exec
@@ -1153,7 +1159,6 @@ final class Steps
             return marker.touch(effects.touch);
         }
 
-        // TODO Rename to Eff
         record Effects(
             Predicate<Marker> exists
             , Consumer<Download> download
@@ -1385,7 +1390,6 @@ class FileSystem
     }
 }
 
-// TODO Rename to OS
 // Dependency
 class OperatingSystem
 {
@@ -2183,22 +2187,24 @@ final class QuarkusCheck
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.Maven.build(options, effects);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.directory(), is(Path.of("quarkus")));
-                assertThat(task.args().stream().findFirst(), is(Optional.of("mvn")));
-            });
+            final var marker = MavenBuild.build(options, effects);
+            final var expected = Steps.Exec.of(
+                Path.of("quarkus")
+                , "../../maven/bin/mvn"
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+            );
+            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
         void skipQuarkus()
         {
             final var args = new String[]{
-                "mvn"
+                "../../maven/bin/mvn"
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -2213,7 +2219,7 @@ final class QuarkusCheck
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.Maven.build(options, effects);
+            final var marker = MavenBuild.build(options, effects);
             os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
@@ -2228,20 +2234,20 @@ final class QuarkusCheck
                 "-t"
                 , "https://github.com/apache/camel-quarkus/tree/master"
             );
+
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.Maven.build(options, effects);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(true));
-            os.assertTask(task ->
-            {
-                assertThat(task.directory(), is(Path.of("camel-quarkus")));
-                final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
-                assertThat(
-                    arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
-                    , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
-                );
-            });
+            final var marker = MavenBuild.build(options, effects);
+            final var expected = Steps.Exec.of(
+                Path.of("camel-quarkus")
+                , "../../maven/bin/mvn"
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+                , "-Dquarkus.version=999-SNAPSHOT"
+            );
+            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
@@ -2256,23 +2262,19 @@ final class QuarkusCheck
                 , "-Pfastinstall,-Pdoesnotexist"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.Maven.build(options, effects);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(true));
-            os.assertTask(task ->
-            {
-                assertThat(task.directory(), is(Path.of("camel")));
-                final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
-                assertThat(
-                    arguments.stream().filter(e -> e.equals("-Pfastinstall")).findFirst()
-                    , is(Optional.of("-Pfastinstall"))
-                );
-                assertThat(
-                    arguments.stream().filter(e -> e.equals("-Pdoesnotexist")).findFirst()
-                    , is(Optional.of("-Pdoesnotexist"))
-                );
-            });
+            final var marker = MavenBuild.build(options, effects);
+            final var expected = Steps.Exec.of(
+                Path.of("camel")
+                , "../../maven/bin/mvn"
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+                , "-Pfastinstall"
+                , "-Pdoesnotexist"
+            );
+            os.assertExecutedOneTask(expected, marker);
         }
 
         // TODO avoid dup
@@ -2315,7 +2317,7 @@ final class QuarkusCheck
             os.assertTask(t ->
                 assertThat(
                     String.join(" ", t.args())
-                    , is(equalTo("mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
+                    , is(equalTo("../../maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
                 )
             );
         }
@@ -2328,7 +2330,7 @@ final class QuarkusCheck
             MavenTest.Maven.test(options, os::record);
 
             os.assertNumberOfTasks(1);
-            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("mvn"))));
+            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("../../maven/bin/mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
         }
 
@@ -2342,7 +2344,7 @@ final class QuarkusCheck
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(task.args().stream().findFirst(), is(Optional.of("../../maven/bin/mvn")));
                 assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
             });
         }
@@ -2359,7 +2361,7 @@ final class QuarkusCheck
             {
                 assertThat(task.directory(), is(Path.of("quarkus-platform")));
                 final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("mvn")));
+                assertThat(arguments.stream().findFirst(), is(Optional.of("../../maven/bin/mvn")));
                 assertThat(
                     arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
                     , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
