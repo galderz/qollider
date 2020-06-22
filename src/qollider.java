@@ -724,6 +724,8 @@ class MavenBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
+            home.mkdirs(Path.of("maven"));
+
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
 
