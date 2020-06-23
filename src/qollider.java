@@ -1823,6 +1823,7 @@ final class QuarkusCheck
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
+                , "--with-extra-cflags='-fcommon'"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
             );
@@ -1848,6 +1849,7 @@ final class QuarkusCheck
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
+                , "--with-extra-cflags='-fcommon'"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
             );
