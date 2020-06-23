@@ -374,6 +374,7 @@ class GraalBuild implements Callable<List<?>>
 
             // TODO unroll git clones
             final var repos = Options.repositories(options);
+            // TODO flatten the list, e.g. https://www.baeldung.com/java-flatten-nested-collections
             return List.of(
                 Java.clone(options, Steps.Exec.Effects.of(osToday))
                 , Git.clone(repos, Steps.Exec.Effects.of(osToday)).toArray()
@@ -560,7 +561,8 @@ class GraalBuild implements Callable<List<?>>
                     , "--disable-warnings-as-errors"
                     , "--with-jvm-features=graal"
                     , "--with-jvm-variants=server"
-                    , "--with-extra-cflags='-fcommon'"
+                    // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
+                    , "--with-extra-cflags=-fcommon"
                     , "--enable-aot=no"
                     , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
                 );
@@ -1823,7 +1825,7 @@ final class QuarkusCheck
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
-                , "--with-extra-cflags='-fcommon'"
+                , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
             );
@@ -1849,7 +1851,7 @@ final class QuarkusCheck
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
-                , "--with-extra-cflags='-fcommon'"
+                , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
             );
