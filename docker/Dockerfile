@@ -17,6 +17,7 @@ RUN dnf -y install \
         libXt-devel \
         libXtst-devel \
         make \
+        python \
         unzip \
         which \
         zip
