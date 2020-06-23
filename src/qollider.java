@@ -1814,17 +1814,25 @@ final class QuarkusCheck
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
-            os.assertTask(task ->
-            {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("sh")));
-                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
-            });
+            final var configure = Steps.Exec.of(
+                Path.of("jdk11u-dev")
+                , "bash"
+                , "configure"
+                , "--with-conf-name=graal-server-release"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                , "--enable-aot=no"
+                , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
+            );
+            os.assertExecutedTask(configure, markers.get(0));
             os.forward();
-            os.assertTask(task ->
-            {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("make")));
-                assertThat(task.directory(), is(Path.of("jdk11u-dev")));
-            });
+            final var make = Steps.Exec.of(
+                Path.of("jdk11u-dev")
+                , "make"
+                , "graal-builder-image"
+            );
+            os.assertExecutedTask(make, markers.get(1));
         }
 
         @Test
@@ -1833,7 +1841,7 @@ final class QuarkusCheck
             final var os = RecordingOperatingSystem.macOS();
             final var configure = Steps.Exec.of(
                 Path.of("jdk11u-dev")
-                , "sh"
+                , "bash"
                 , "configure"
                 , "--with-conf-name=graal-server-release"
                 , "--disable-warnings-as-errors"
