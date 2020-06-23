@@ -9,6 +9,8 @@ and then would build and test Quarkus.
 These steps are optional and can be further expanded to say,
 build a particular dependency of Quarkus,
 or execute another testsuite.
+By limiting its dependencies and keeping them isolated, 
+Qollider makes it very easy to share reproducers with others.
 
 ## Dependencies
 
@@ -16,7 +18,7 @@ Any dependencies required are installed by the script itself.
 In particular, it installs:
 
 * [AdoptOpenJDK](https://adoptopenjdk.net) 14+ - JDK version required to run the main Java script.
-* JBang - drives the execution of the main Java script.
+* [JBang](https://jbang.dev) - drives the execution of the main Java script.
 * Maven - to build and test Maven projects.
 
 ### Why not Docker? 
@@ -162,3 +164,25 @@ If in doubt, you can inspect the help via:
 ```bash
 $ qollider.sh maven-test --help
 ```
+
+## How it works
+
+When Qollider starts, it creates a `~/.qollider` folder,
+where it will install its dependencies.
+
+Then, it creates a folder for the day on which the Qollider is executed,
+e.g. `~/.qollider/cache/DDMM`.
+This folder contains script specific tools and source directories.
+These elements will be built as per the instructions of each Qollider invocation.
+This means that if you execute the same script on two different days,
+Qollider will download and build them again.
+This can be very useful to start from a clean slate.
+
+Qollider uses marker files to signal that a given step within a script has completed.
+Assuming the script gets executed again on the same day,
+these markers allow steps executed previously to be skipped.
+Each marker file contains information of the executed step,
+so you can easily inspect them and delete them to re-execute a given step.
+Re-executing a given step might also require deleting a particular folder,
+if the step involved downloading certain artifact,
+or cloning a repository.
