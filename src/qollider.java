@@ -560,6 +560,7 @@ class GraalBuild implements Callable<List<?>>
                     , "--disable-warnings-as-errors"
                     , "--with-jvm-features=graal"
                     , "--with-jvm-variants=server"
+                    , "--with-extra-cflags='-fcommon'"
                     , "--enable-aot=no"
                     , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
                 );
