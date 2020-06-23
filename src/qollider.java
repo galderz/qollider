@@ -533,8 +533,8 @@ class GraalBuild implements Callable<List<?>>
             static Stream<Steps.Exec> buildSteps(Options options, Path bootJdkHome)
             {
                 return Stream.of(
-                    configureSh(options, bootJdkHome)
-                    , makeGraalJDK(options)
+                    configure(options, bootJdkHome)
+                    , make(options)
                 );
             }
 
@@ -550,11 +550,11 @@ class GraalBuild implements Callable<List<?>>
                 );
             }
 
-            private static Steps.Exec configureSh(Options options, Path bootJdkHome)
+            private static Steps.Exec configure(Options options, Path bootJdkHome)
             {
                 return Steps.Exec.of(
                     Path.of(options.jdk.name())
-                    , "sh"
+                    , "bash"
                     , "configure"
                     , "--with-conf-name=graal-server-release"
                     , "--disable-warnings-as-errors"
@@ -565,7 +565,7 @@ class GraalBuild implements Callable<List<?>>
                 );
             }
 
-            private static Steps.Exec makeGraalJDK(Options options)
+            private static Steps.Exec make(Options options)
             {
                 return Steps.Exec.of(
                     Path.of(options.jdk.name())
