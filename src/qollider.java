@@ -811,15 +811,18 @@ class MavenBuild implements Callable<List<?>>
             arguments(options, project.toString())
                 .toArray(String[]::new);
 
+        // Use a java home that already points to the jdk + graal.
+        // Enables maven build to be used to build for sample Quarkus apps with native bits.
+        // This is not strictly necessary for say building Quarkus.
+        final var envVars = List.of(EnvVars.javaHome(Homes.graal()));
         return Steps.Exec.run(
-            Steps.Exec.of(project, arguments)
+            Steps.Exec.of(project, envVars, arguments)
             , effects
         );
     }
 
     private static Stream<String> arguments(Options options, String directory)
     {
-        // TODO pass in compiler via command line parameter? Add access to native-image for end easily building Quarkus sample apps
         final var home = Path.of("..", "..", "..");
         final var mvn = Path.of("maven", "bin", "mvn");
         // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
@@ -941,12 +944,8 @@ class MavenTest implements Callable<List<?>>
         {
             final var directory = Maven.suitePath(options.suite);
             final var arguments = arguments(options, directory).toArray(String[]::new);
-            // TODO pass in compiler via command line parameter? What about access to native-image?
-            return Steps.Exec.of(
-                directory
-                , List.of(EnvVars.javaHome(Homes.graal()))
-                , arguments
-            );
+            final var envVars = List.of(EnvVars.javaHome(Homes.graal()));
+            return Steps.Exec.of(directory, envVars, arguments);
         }
 
         private static Stream<String> arguments(Options options, Path directory)
@@ -2257,32 +2256,16 @@ final class QuarkusCheck
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects);
-            final var expected = Steps.Exec.of(
-                Path.of("quarkus")
-                , "../../../maven/bin/mvn"
-                , "install"
-                , "-DskipTests"
-                , "-DskipITs"
-                , "-Denforcer.skip"
-                , "-Dformat.skip"
-            );
+            final var expected = Expects.mavenBuild(Path.of("quarkus"));
             os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
         void skipQuarkus()
         {
-            final var args = new String[]{
-                "../../../maven/bin/mvn"
-                , "install"
-                , "-DskipTests"
-                , "-DskipITs"
-                , "-Denforcer.skip"
-                , "-Dformat.skip"
-            };
             final var os = RecordingOperatingSystem.macOS();
-            final var path = Path.of("quarkus");
-            final var fs = InMemoryFileSystem.ofExists(Steps.Exec.of(path, args));
+            final var step = Expects.mavenBuild(Path.of("quarkus"));
+            final var fs = InMemoryFileSystem.ofExists(step);
             final var options = cli(
                 "-t"
                 , "https://github.com/quarkusio/quarkus/tree/master"
@@ -2306,14 +2289,8 @@ final class QuarkusCheck
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects);
-            final var expected = Steps.Exec.of(
+            final var expected = Expects.mavenBuild(
                 Path.of("camel-quarkus")
-                , "../../../maven/bin/mvn"
-                , "install"
-                , "-DskipTests"
-                , "-DskipITs"
-                , "-Denforcer.skip"
-                , "-Dformat.skip"
                 , "-Dquarkus.version=999-SNAPSHOT"
             );
             os.assertExecutedOneTask(expected, marker);
@@ -2332,14 +2309,8 @@ final class QuarkusCheck
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects);
-            final var expected = Steps.Exec.of(
+            final var expected = Expects.mavenBuild(
                 Path.of("camel")
-                , "../../../maven/bin/mvn"
-                , "install"
-                , "-DskipTests"
-                , "-DskipITs"
-                , "-Denforcer.skip"
-                , "-Dformat.skip"
                 , "-Pfastinstall"
                 , "-Pdoesnotexist"
             );
@@ -2671,6 +2642,27 @@ final class QuarkusCheck
         public static Path graalHome()
         {
             return Path.of("graalvm_home");
+        }
+
+        static Steps.Exec mavenBuild(Path path, String... extra)
+        {
+            final var args = Stream.concat(
+                Stream.of(
+                    "../../../maven/bin/mvn"
+                    , "install"
+                    , "-DskipTests"
+                    , "-DskipITs"
+                    , "-Denforcer.skip"
+                    , "-Dformat.skip"
+                )
+                , Stream.of(extra)
+            );
+
+            return Steps.Exec.of(
+                path
+                , List.of(new EnvVar("JAVA_HOME", Path.of("graalvm_home")))
+                , args.toArray(String[]::new)
+            );
         }
     }
 
