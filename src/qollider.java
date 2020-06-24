@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.DefaultConfiguration;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -70,6 +71,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -236,8 +238,8 @@ class GraalGet implements Callable<List<?>>
             final var os = OperatingSystem.of(fs);
             final var web = Web.of(fs);
 
-            final var exec = new Steps.Exec.Effects(fs::exists, os::exec, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, web::download, fs::touch, os::type);
+            final var exec = Steps.Exec.Effects.of(os);
+            final var download = Steps.Download.Effects.of(web, os);
 
             return List.of(
                 Graal.get(options, exec, download)
@@ -303,7 +305,7 @@ class GraalBuild implements Callable<List<?>>
             , "--jdk-tree"
         }
     )
-    URI jdkTree;
+    Repository jdkTree;
 
     @Option(
         defaultValue = "https://github.com/graalvm/mx/tree/master"
@@ -314,7 +316,7 @@ class GraalBuild implements Callable<List<?>>
             , "--mx-tree"
         }
     )
-    URI mxTree;
+    Repository mxTree;
 
     @Option(
         defaultValue = "https://github.com/oracle/graal/tree/master"
@@ -325,7 +327,18 @@ class GraalBuild implements Callable<List<?>>
             , "--graal-tree"
         }
     )
-    URI graalTree;
+    Repository graalTree;
+
+    @Option(
+        defaultValue = "https://github.com/graalvm/mandrel-packaging/tree/master"
+        , description = "Mandrel packaging source tree URL"
+        , names =
+        {
+            "-pt"
+            , "--packaging-tree"
+        }
+    )
+    Repository packagingTree;
 
     private GraalBuild(Function<Options, List<?>> runner)
     {
@@ -345,11 +358,7 @@ class GraalBuild implements Callable<List<?>>
     @Override
     public List<?> call()
     {
-        final var options = Options.of(
-            jdkTree
-            , mxTree
-            , graalTree
-        );
+        final var options = new Options(jdkTree, mxTree, graalTree, packagingTree);
         return runner.apply(options);
     }
 
@@ -372,12 +381,11 @@ class GraalBuild implements Callable<List<?>>
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
 
-            // TODO unroll git clones
-            final var repos = Options.repositories(options);
             // TODO flatten the list, e.g. https://www.baeldung.com/java-flatten-nested-collections
             return List.of(
                 Java.clone(options, Steps.Exec.Effects.of(osToday))
-                , Git.clone(repos, Steps.Exec.Effects.of(osToday)).toArray()
+                , Git.clone(options.mx, Steps.Exec.Effects.of(osToday))
+                , Git.clone(options.graal, Steps.Exec.Effects.of(osToday))
                 , Java.install(options
                     , Steps.Exec.Effects.of(osHome)
                     , Steps.Download.Effects.of(Web.of(home), osHome)
@@ -394,6 +402,7 @@ class GraalBuild implements Callable<List<?>>
         Repository jdk
         , Repository mx
         , Repository graal
+        , Repository packaging
     )
     {
         Java.Type javaType()
@@ -401,9 +410,19 @@ class GraalBuild implements Callable<List<?>>
             return Java.type(jdk);
         }
 
+        Graal.Type graalType()
+        {
+            return Graal.type(graal);
+        }
+
         Path mxPath()
         {
-            return Path.of(mx.name(), "mx");
+            return mxHome().resolve("mx");
+        }
+
+        Path mxHome()
+        {
+            return Path.of(mx.name());
         }
 
         Path bootJdkPath()
@@ -417,28 +436,6 @@ class GraalBuild implements Callable<List<?>>
             return osType.get().isMac()
                 ? root.resolve(Path.of("Contents", "Home"))
                 : root;
-        }
-
-        // TODO take advantage of URI to Repository converter (remove factory)
-        static Options of(
-            URI jdk
-            , URI mx
-            , URI graal
-        )
-        {
-            return new Options(
-                Repository.of(jdk)
-                , Repository.of(mx)
-                , Repository.of(graal)
-            );
-        }
-
-        static List<Repository> repositories(Options options)
-        {
-            final var urls = new ArrayList<Repository>();
-            urls.add(options.mx);
-            urls.add(options.graal);
-            return urls;
         }
     }
 
@@ -487,7 +484,7 @@ class GraalBuild implements Callable<List<?>>
                         case LABSJDK -> Java.LabsJDK.javaHome(jdkPath);
                     };
 
-            final var link = Homes.graalJava();
+            final var link = Homes.java();
             return symLink.apply(link, target);
         }
 
@@ -500,8 +497,8 @@ class GraalBuild implements Callable<List<?>>
         {
             final var javaVersionMajor = "11";
             final var javaVersionBuild = "10";
-            final var javaVersion = String.format("%s.0.7", javaVersionMajor);
-            final var javaBaseUrl = String.format(
+            final var javaVersion = format("%s.0.7", javaVersionMajor);
+            final var javaBaseUrl = format(
                 "https://github.com/AdoptOpenJDK/openjdk%s-binaries/releases/download"
                 , javaVersionMajor
             );
@@ -564,7 +561,7 @@ class GraalBuild implements Callable<List<?>>
                     // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                     , "--with-extra-cflags=-fcommon"
                     , "--enable-aot=no"
-                    , String.format("--with-boot-jdk=%s", bootJdkHome.toString())
+                    , format("--with-boot-jdk=%s", bootJdkHome.toString())
                 );
             }
 
@@ -608,9 +605,7 @@ class GraalBuild implements Callable<List<?>>
                 {
                     case "openjdk" -> Type.OPENJDK;
                     case "graalvm" -> Type.LABSJDK;
-                    default -> throw new IllegalStateException(
-                        "Unexpected value: " + repo.name()
-                    );
+                    default -> throw Illegal.value(repo.name());
                 };
         }
 
@@ -622,35 +617,93 @@ class GraalBuild implements Callable<List<?>>
 
     static final class Graal
     {
-        static Marker build(Options options, Steps.Exec.Effects effects)
+        static List<Marker> build(Options options, Steps.Exec.Effects exec)
         {
-            final var root = Path.of("..", "..");
-            return Steps.Exec.run(
-                Steps.Exec.of(
-                    Graal.svm(options)
-                    , root.resolve(options.mxPath()).toString()
-                    , "--java-home"
-                    , root.resolve(Homes.graalJava()).toString()
-                    , "build"
-                )
-                , effects
-            );
+            final var type = options.graalType();
+            return switch (type)
+            {
+                case MANDREL -> Mandrel.build(options, exec);
+                case ORACLE -> List.of(Oracle.build(options, exec));
+            };
         }
 
         static Link link(Options options, BiFunction<Path, Path, Link> symLink)
         {
-            final var target = Path.of(
-                options.graal.name()
-                ,"sdk"
-                , "latest_graalvm_home"
-            );
-
-            return symLink.apply(Homes.graal(), target);
+            final var type = options.graalType();
+            return switch (type)
+            {
+                case MANDREL -> new Link(Homes.graal(), Homes.graal());
+                case ORACLE -> Oracle.link(options, symLink);
+            };
         }
 
-        static Path svm(Options options)
+        static final class Mandrel
         {
-            return Path.of(options.graal.name(), "substratevm");
+            static List<Marker> build(Options options, Steps.Exec.Effects exec)
+            {
+                final var cloneMarker = Git.clone(options.packaging, exec);
+                final var buildMarker = Steps.Exec.run(
+                    Steps.Exec.of(
+                        Path.of("mandrel-packaging")
+                        , List.of(
+                            EnvVars.javaHome(Homes.java())
+                            , EnvVar.of("MX_HOME", options.mxHome())
+                            , EnvVar.of("MANDREL_REPO", options.graal.name())
+                            , EnvVar.of("MANDREL_HOME", Homes.graal())
+                        )
+                        , "./buildJDK.sh"
+                    )
+                    , exec
+                );
+
+                return List.of(cloneMarker, buildMarker);
+            }
+        }
+
+        static final class Oracle
+        {
+            static Marker build(Options options, Steps.Exec.Effects effects)
+            {
+                final var root = Path.of("..", "..");
+                final var svm = Path.of(options.graal.name(), "substratevm");
+                return Steps.Exec.run(
+                    Steps.Exec.of(
+                        svm
+                        , root.resolve(options.mxPath()).toString()
+                        , "--java-home"
+                        , root.resolve(Homes.java()).toString()
+                        , "build"
+                    )
+                    , effects
+                );
+            }
+
+            static Link link(Options options, BiFunction<Path, Path, Link> symLink)
+            {
+                final var target = Path.of(
+                    options.graal.name()
+                    ,"sdk"
+                    , "latest_graalvm_home"
+                );
+
+                return symLink.apply(Homes.graal(), target);
+            }
+        }
+
+        static Graal.Type type(Repository repo)
+        {
+            return switch (repo.name())
+            {
+                case "mandrel" -> Type.MANDREL;
+                case "graal" -> Type.ORACLE;
+                default -> throw Illegal.value(repo.name());
+            };
+        }
+
+        enum Type
+        {
+            MANDREL
+            , ORACLE
         }
     }
 }
@@ -766,6 +819,7 @@ class MavenBuild implements Callable<List<?>>
 
     private static Stream<String> arguments(Options options, String directory)
     {
+        // TODO pass in compiler via command line parameter? Add access to native-image for end easily building Quarkus sample apps
         final var home = Path.of("..", "..", "..");
         final var mvn = Path.of("maven", "bin", "mvn");
         // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
@@ -860,6 +914,7 @@ class MavenTest implements Callable<List<?>>
         {
             final var os = OperatingSystem.of(today);
             Maven.test(options, os::exec);
+            // TODO make it return markers so that it can be tested just like other commands
             return List.of();
         }
     }
@@ -886,9 +941,10 @@ class MavenTest implements Callable<List<?>>
         {
             final var directory = Maven.suitePath(options.suite);
             final var arguments = arguments(options, directory).toArray(String[]::new);
+            // TODO pass in compiler via command line parameter? What about access to native-image?
             return Steps.Exec.of(
                 directory
-                , List.of(Homes.EnvVars.graal())
+                , List.of(EnvVars.javaHome(Homes.graal()))
                 , arguments
             );
         }
@@ -985,14 +1041,7 @@ record Repository(
             final var name = path.getFileName().toString();
             return new Repository(organization, name, Type.MERCURIAL, null, uri);
         }
-        throw new IllegalStateException("Unknown repository type");
-    }
-
-    static List<Repository> of(List<String> uris)
-    {
-        return uris.stream()
-            .map(Repository::of)
-            .collect(Collectors.toList());
+        throw Illegal.value(host);
     }
 
     private static URI gitCloneUri(String organization, String name)
@@ -1062,10 +1111,18 @@ class Mercurial
     }
 }
 
-record EnvVar(
-    String name
-    , Function<Path, Path> value
-) {}
+record EnvVar(String name, Path path)
+{
+    static EnvVar of(String name, String path)
+    {
+        return of(name, Path.of(path));
+    }
+
+    static EnvVar of(String name, Path path)
+    {
+        return new EnvVar(name, path);
+    }
+}
 
 interface Step {}
 
@@ -1179,6 +1236,7 @@ final class Steps
     }
 }
 
+// TODO if the marker is gone (e.g. it doesn't exist) remove any existing folder and clone again (saves a step on user)
 class Git
 {
     static Marker clone(Repository repo, Steps.Exec.Effects effects)
@@ -1189,13 +1247,6 @@ class Git
         );
     }
 
-    static List<Marker> clone(List<Repository> repos, Steps.Exec.Effects effects)
-    {
-        return repos.stream()
-            .map(repo -> clone(repo, effects))
-            .collect(Collectors.toList());
-    }
-
     static String[] toClone(Repository repo)
     {
         return new String[]{
@@ -1204,33 +1255,31 @@ class Git
             , "-b"
             , repo.branch()
             , "--depth"
+            // TODO use depth 1 and make an exception for special repos
             , "10"
             , repo.cloneUri().toString()
         };
     }
 }
 
-class Homes
+final class Homes
 {
-    static Path graalJava()
+    static Path java()
     {
-        return Path.of("graalvm_java_home");
+        return Path.of("java_home");
     }
 
     static Path graal()
     {
         return Path.of("graalvm_home");
     }
+}
 
-    static class EnvVars
+final class EnvVars
+{
+    static EnvVar javaHome(Path path)
     {
-        static EnvVar graal()
-        {
-            return new EnvVar(
-                "JAVA_HOME"
-                , root -> root.resolve(Homes.graal())
-            );
-        }
+        return new EnvVar("JAVA_HOME", path);
     }
 }
 
@@ -1268,7 +1317,7 @@ record Marker(boolean exists, boolean touched, Path path, String info)
     {
         final var info = step.toString();
         final var hash = Hashing.sha1(info);
-        final var path = Path.of(String.format("%s.marker", hash));
+        final var path = Path.of(format("%s.marker", hash));
         return new Marker(false, false, path, info);
     }
 }
@@ -1311,7 +1360,7 @@ class FileSystem
         final var directoryFile = directory.toFile();
         if (!directoryFile.exists() && !directoryFile.mkdirs())
         {
-            throw new RuntimeException(String.format(
+            throw new RuntimeException(format(
                 "Unable to create directory: %s"
                 , directory)
             );
@@ -1361,6 +1410,11 @@ class FileSystem
         }
     }
 
+    Path resolve(Path other)
+    {
+        return root.resolve(other);
+    }
+
     // TODO use again when reimplementing clean
     void deleteRecursive(Path relative)
     {
@@ -1377,7 +1431,7 @@ class FileSystem
 
             if (!notDeleted.isEmpty())
             {
-                throw new RuntimeException(String.format(
+                throw new RuntimeException(format(
                     "Unable to delete %s files"
                     , notDeleted
                 ));
@@ -1398,6 +1452,7 @@ class FileSystem
 // Dependency
 class OperatingSystem
 {
+    // TODO create/use a single category, qollider
     static final Logger LOG = LogManager.getLogger(FileSystem.class);
 
     final FileSystem fs;
@@ -1420,7 +1475,12 @@ class OperatingSystem
 
         final var directory = fs.root.resolve(exec.directory());
         // TODO print task without commas
-        LOG.debug("Execute {} in {}", taskList, directory);
+        LOG.debug(
+            "Execute {} in {} with environment variables {}"
+            , taskList
+            , directory
+            , exec.envVars()
+        );
         try
         {
             var processBuilder = new ProcessBuilder(taskList)
@@ -1428,8 +1488,11 @@ class OperatingSystem
                 .inheritIO();
 
             exec.envVars().forEach(
-                envVar -> processBuilder.environment()
-                    .put(envVar.name(), envVar.value().apply(fs.root).toString())
+                envVar ->
+                    processBuilder.environment().put(
+                        envVar.name()
+                        , fs.resolve(envVar.path()).toString()
+                    )
             );
 
             Process process = processBuilder.start();
@@ -1491,7 +1554,7 @@ final class Hashing
     static String sha1(String s)
     {
         SHA1.update(s.getBytes(StandardCharsets.UTF_8));
-        return String.format("%x", new BigInteger(1, SHA1.digest()));
+        return format("%x", new BigInteger(1, SHA1.digest()));
     }
 
     private static MessageDigest getSha1()
@@ -1599,7 +1662,7 @@ final class Web
                 ci.next();
             }
             value *= Long.signum(bytes);
-            return String.format("%.1f %ciB", value / 1024.0, ci.current());
+            return format("%.1f %ciB", value / 1024.0, ci.current());
         }
 
         @Override
@@ -1632,7 +1695,7 @@ final class URLs
 
     static URL of(String format, Object... args)
     {
-        return URLs.of(String.format(format, args));
+        return URLs.of(format(format, args));
     }
 }
 
@@ -1643,6 +1706,14 @@ final class Lists
         final var result = new ArrayList<>(list);
         result.add(element);
         return Collections.unmodifiableList(result);
+    }
+}
+
+final class Illegal
+{
+    static IllegalStateException value(String value)
+    {
+        return new IllegalStateException(format("Unexpected value: %s", value));
     }
 }
 
@@ -1670,7 +1741,7 @@ final class QuarkusCheck
         final var failureCount = listener.getSummary().getTestsFailedCount();
         if (failureCount > 0)
         {
-            throw new AssertionError(String.format(
+            throw new AssertionError(format(
                 "Number of failed tests: %d"
                 , failureCount
             ));
@@ -1701,18 +1772,7 @@ final class QuarkusCheck
         }
 
         @Test
-        void gitCloneEmpty()
-        {
-            final var os = RecordingOperatingSystem.macOS();
-            final List<Repository> repos = emptyList();
-            final var effects = new Steps.Exec.Effects(m -> false, os::record, m -> false);
-            final var cloned = Git.clone(repos, effects);
-            os.assertNumberOfTasks(0);
-            assertThat(cloned.size(), is(0));
-        }
-
-        @Test
-        void gitCloneSelective()
+        void gitCloneSkip()
         {
             final var args = new String[]{
                 "git"
@@ -1725,24 +1785,12 @@ final class QuarkusCheck
             };
             final var fs = InMemoryFileSystem.ofExists(Steps.Exec.of(args));
             final var os = RecordingOperatingSystem.macOS();
-            final List<Repository> repos = Repository.of(
-                List.of(
-                    "https://github.com/openjdk/jdk11u-dev/tree/master"
-                    , "https://github.com/apache/camel-quarkus/tree/quarkus-master"
-                )
+            final Repository repo = Repository.of(
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, effects);
-            final var expected = Steps.Exec.of(
-                "git"
-                , "clone"
-                , "-b"
-                , "quarkus-master"
-                , "--depth"
-                , "10"
-                , "https://github.com/apache/camel-quarkus"
-            );
-            os.assertExecutedOneTask(expected, cloned.get(1));
+            final var marker = Git.clone(repo, effects);
+            os.assertNoTask(marker);
         }
 
         @Test
@@ -1750,13 +1798,11 @@ final class QuarkusCheck
         {
             final var fs = InMemoryFileSystem.empty();
             final var os = RecordingOperatingSystem.macOS();
-            final List<Repository> repos = Repository.of(
-                List.of(
-                    "https://github.com/openjdk/jdk11u-dev/tree/master"
-                )
+            final Repository repo = Repository.of(
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = Git.clone(repos, effects);
+            final var marker = Git.clone(repo, effects);
             final var expected = Steps.Exec.of(
                 "git"
                 , "clone"
@@ -1766,7 +1812,7 @@ final class QuarkusCheck
                 , "10"
                 , "https://github.com/openjdk/jdk11u-dev"
             );
-            os.assertExecutedOneTask(expected, cloned.get(0));
+            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
@@ -1911,53 +1957,64 @@ final class QuarkusCheck
         }
 
         @Test
-        void graalBuild()
+        void graalOracleBuild()
         {
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects);
-
-            final var expected = Steps.Exec.of(
-                Path.of("graal", "substratevm")
-                , "../../mx/mx"
-                , "--java-home"
-                , "../../graalvm_java_home"
-                , "build"
-            );
+            final var marker = GraalBuild.Graal.build(options, effects).get(0);
+            final var expected = Expects.graalOracleBuild();
             os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
-        void skipGraalBuild()
+        void graalMandrelBuild()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var step = Steps.Exec.of(
-                Path.of("graal", "substratevm")
-                , "../../mx/mx"
-                , "--java-home"
-                , "../../graalvm_java_home"
-                , "build"
-            );
+            final var fs = InMemoryFileSystem.empty();
+            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
+            final var markers = GraalBuild.Graal.build(cli(Args.mandrelTree()), effects);
+            os.assertNumberOfTasks(2);
+            os.assertExecutedTask(Expects.gitClone("graalvm/mandrel-packaging"), markers.get(0));
+            os.forward();
+            os.assertExecutedTask(Expects.graalMandrelBuild(), markers.get(1));
+        }
+
+        @Test
+        void skipBuild()
+        {
+            final var os = RecordingOperatingSystem.macOS();
+            final var step = Expects.graalOracleBuild();
             final var fs = InMemoryFileSystem.ofExists(step);
             final var options = cli();
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects);
-            os.assertNumberOfTasks(0);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(false));
+            final var marker = GraalBuild.Graal.build(options, effects).get(0);
+            os.assertNoTask(marker);
+        }
+
+        @Test
+        void graalOracleLink()
+        {
+            final var linked = GraalBuild.Graal.link(cli(), Link::new);
+            assertThat(linked.link(), is(Homes.graal()));
+            assertThat(linked.target(), is(Path.of("graal", "sdk", "latest_graalvm_home")));
+        }
+
+        @Test
+        void graalMandrelLink()
+        {
+            final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new);
+            assertThat(linked.link(), is(Expects.graalHome()));
+            assertThat(linked.target(), is(Expects.graalHome()));
         }
 
         @Test
         void labsJDKLink()
         {
             final var options = cli();
-            final var linked = GraalBuild.Java.link(
-                options
-                , Link::new
-            );
-            assertThat(linked.link(), is(Homes.graalJava()));
+            final var linked = GraalBuild.Java.link(options, Link::new);
+            assertThat(linked.link(), is(Homes.java()));
             assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
         }
 
@@ -1968,11 +2025,8 @@ final class QuarkusCheck
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
             );
-            final var linked = GraalBuild.Java.link(
-                options
-                , Link::new
-            );
-            assertThat(linked.link(), is(Homes.graalJava()));
+            final var linked = GraalBuild.Java.link(options, Link::new);
+            assertThat(linked.link(), is(Homes.java()));
             assertThat(linked.target(),
                 is(Path.of(
                     "jdk11u-dev"
@@ -2044,7 +2098,7 @@ final class QuarkusCheck
             final var expected = Steps.Exec.of(
                 "tar",
                 "-xzvpf"
-                , String.format("downloads/%s", tarName)
+                , format("downloads/%s", tarName)
                 , "-C"
                 , "boot-jdk-11"
                 , "--strip-components"
@@ -2514,8 +2568,15 @@ final class QuarkusCheck
             assertThat(result.touched(), is(true));
             assertThat(
                 result.path()
-                , is(Path.of(String.format("%s.marker", Hashing.sha1(expected.toString()))))
+                , is(Path.of(format("%s.marker", Hashing.sha1(expected.toString()))))
             );
+        }
+
+        void assertNoTask(Marker result)
+        {
+            assertNumberOfTasks(0);
+            assertThat(result.exists(), is(true));
+            assertThat(result.touched(), is(false));
         }
 
         void assertNumberOfTasks(int size)
@@ -2565,6 +2626,63 @@ final class QuarkusCheck
         }
 
         static void noop(Steps.Download task) {}
+    }
+
+    static final class Expects
+    {
+        static Steps.Exec gitClone(String repo)
+        {
+            return Steps.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , "master"
+                , "--depth"
+                , "10"
+                , String.format("https://github.com/%s", repo)
+            );
+        }
+
+        static Steps.Exec graalMandrelBuild()
+        {
+            return Steps.Exec.of(
+                Path.of("mandrel-packaging")
+                , List.of(
+                    EnvVar.of("JAVA_HOME", "java_home")
+                    , EnvVar.of("MX_HOME", "mx")
+                    , EnvVar.of("MANDREL_REPO", "mandrel")
+                    , EnvVar.of("MANDREL_HOME", "graalvm_home")
+                )
+                , "./buildJDK.sh"
+            );
+        }
+
+        static Steps.Exec graalOracleBuild()
+        {
+            return Steps.Exec.of(
+                Path.of("graal", "substratevm")
+                , "../../mx/mx"
+                , "--java-home"
+                , "../../java_home"
+                , "build"
+            );
+        }
+
+        public static Path graalHome()
+        {
+            return Path.of("graalvm_home");
+        }
+    }
+
+    static final class Args
+    {
+        static String[] mandrelTree()
+        {
+            return new String[]{
+                "--graal-tree"
+                , "https://github.com/graalvm/mandrel/tree/master"
+            };
+        }
     }
 
     public static void main(String[] args)
