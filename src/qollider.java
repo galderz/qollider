@@ -601,17 +601,13 @@ class GraalBuild implements Callable<List<?>>
 
         static Java.Type type(Repository repo)
         {
-            return switch (repo.organization())
-                {
-                    case "openjdk" -> Type.OPENJDK;
-                    case "graalvm" -> Type.LABSJDK;
-                    default -> throw Illegal.value(repo.name());
-                };
+            return repo.name().startsWith("labs") ? Type.LABSJDK : Type.OPENJDK;
         }
 
         enum Type
         {
-            OPENJDK, LABSJDK
+            OPENJDK
+            , LABSJDK
         }
     }
 
@@ -1150,6 +1146,7 @@ final class Steps
             final var extractMarker = Exec.run(
                 Exec.of(
                     "tar"
+                    // TODO make it quiet
                     , "-xzvpf"
                     , tarPath.toString()
                     , "-C"
