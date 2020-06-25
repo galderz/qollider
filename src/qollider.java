@@ -12,7 +12,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.DefaultConfiguration;
-import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -206,7 +205,7 @@ class GraalGet implements Callable<List<?>>
 
     static GraalGet ofSystem(FileSystem fs)
     {
-        return new GraalGet(new GraalGet.RunGet(fs));
+        return new GraalGet(new GraalGet.GetRunner(fs));
     }
 
     static GraalGet of(Function<Options, List<?>> runner)
@@ -221,15 +220,8 @@ class GraalGet implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    final static class RunGet implements Function<Options, List<?>>
+    record GetRunner(FileSystem fs) implements Function<Options, List<?>>
     {
-        final FileSystem fs;
-
-        RunGet(FileSystem fs)
-        {
-            this.fs = fs;
-        }
-
         @Override
         public List<?> apply(Options options)
         {
@@ -241,7 +233,7 @@ class GraalGet implements Callable<List<?>>
             final var exec = Steps.Exec.Effects.of(os);
             final var download = Steps.Download.Effects.of(web, os);
 
-            return List.of(
+            return Lists.flatten(
                 Graal.get(options, exec, download)
                 , Graal.link(options, fs::symlink)
             );
@@ -347,7 +339,7 @@ class GraalBuild implements Callable<List<?>>
 
     static GraalBuild ofSystem(FileSystem today, FileSystem home)
     {
-        return new GraalBuild(new GraalBuild.RunBuild(today, home));
+        return new GraalBuild(new BuildRunner(today, home));
     }
 
     static GraalBuild of(Function<Options, List<?>> runner)
@@ -362,17 +354,8 @@ class GraalBuild implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    final static class RunBuild implements Function<Options, List<?>>
+    record BuildRunner(FileSystem today, FileSystem home) implements Function<Options, List<?>>
     {
-        final FileSystem today;
-        final FileSystem home;
-
-        RunBuild(FileSystem today, FileSystem home)
-        {
-            this.today = today;
-            this.home = home;
-        }
-
         @Override
         public List<?> apply(Options options)
         {
@@ -381,8 +364,7 @@ class GraalBuild implements Callable<List<?>>
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
 
-            // TODO flatten the list, e.g. https://www.baeldung.com/java-flatten-nested-collections
-            return List.of(
+            return Lists.flatten(
                 Java.clone(options, Steps.Exec.Effects.of(osToday))
                 , Git.clone(options.mx, Steps.Exec.Effects.of(osToday))
                 , Git.clone(options.graal, Steps.Exec.Effects.of(osToday))
@@ -781,7 +763,7 @@ class MavenBuild implements Callable<List<?>>
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
 
-            return List.of(
+            return Lists.flatten(
                 Git.clone(options.tree, Steps.Exec.Effects.of(osToday))
                 , Maven.install(
                     Steps.Exec.Effects.of(osHome)
@@ -1702,6 +1684,32 @@ final class Lists
         final var result = new ArrayList<>(list);
         result.add(element);
         return Collections.unmodifiableList(result);
+    }
+
+    static <E> List<E> flatten(Object... elements)
+    {
+        final var result = new ArrayList<E>();
+        for (Object element : elements)
+        {
+            if (element instanceof List<?> l)
+            {
+                result.addAll(Unchecked.cast(l));
+            }
+            else
+            {
+                result.add(Unchecked.cast(element));
+            }
+        }
+        return result;
+    }
+}
+
+final class Unchecked
+{
+    @SuppressWarnings("unchecked")
+    static <T> T cast(Object obj)
+    {
+        return (T) obj;
     }
 }
 
