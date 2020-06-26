@@ -1430,8 +1430,7 @@ class FileSystem
 // Dependency
 class OperatingSystem
 {
-    // TODO create/use a single category, qollider
-    static final Logger LOG = LogManager.getLogger(FileSystem.class);
+    static final Logger LOG = LogManager.getLogger(qollider.class);
 
     final FileSystem fs;
 
@@ -1551,7 +1550,7 @@ final class Hashing
 // Dependency
 final class Web
 {
-    static final Logger LOG = LogManager.getLogger(Web.class);
+    static final Logger LOG = LogManager.getLogger(qollider.class);
 
     final FileSystem fs;
 
@@ -1740,6 +1739,7 @@ final class QuarkusCheck
         Launcher launcher = LauncherFactory.create();
         launcher.registerTestExecutionListeners(listener);
         launcher.execute(request);
+        // TODO only log first line
         listener.getSummary().printTo(new PrintWriter(System.out));
         listener.getSummary().printFailuresTo(new PrintWriter(System.err));
         final var failureCount = listener.getSummary().getTestsFailedCount();
