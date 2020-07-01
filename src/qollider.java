@@ -1233,9 +1233,17 @@ class Git
             , "-b"
             , repo.branch()
             , "--depth"
-            // TODO use depth 1 and make an exception for special repos
-            , "10"
+            , String.valueOf(depth(repo))
             , repo.cloneUri().toString()
+        };
+    }
+
+    static int depth(Repository repo)
+    {
+        return switch (repo.name())
+        {
+            case "labs-openjdk-11" -> 20;
+            default -> 1;
         };
     }
 }
@@ -1784,7 +1792,7 @@ final class QuarkusCheck
                 , "-b"
                 , "master"
                 , "--depth"
-                , "10"
+                , "1"
                 , "https://github.com/openjdk/jdk11u-dev"
             };
             final var fs = InMemoryFileSystem.ofExists(Steps.Exec.of(args));
@@ -1813,8 +1821,30 @@ final class QuarkusCheck
                 , "-b"
                 , "master"
                 , "--depth"
-                , "10"
+                , "1"
                 , "https://github.com/openjdk/jdk11u-dev"
+            );
+            os.assertExecutedOneTask(expected, marker);
+        }
+
+        @Test
+        void gitCloneLabsJDK()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = RecordingOperatingSystem.macOS();
+            final Repository repo = Repository.of(
+                "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
+            );
+            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var marker = Git.clone(repo, effects);
+            final var expected = Steps.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , "jvmci-20.2-b02"
+                , "--depth"
+                , "20"
+                , "https://github.com/graalvm/labs-openjdk-11"
             );
             os.assertExecutedOneTask(expected, marker);
         }
@@ -2058,7 +2088,7 @@ final class QuarkusCheck
                 , "-b"
                 , "master"
                 , "--depth"
-                , "10"
+                , "1"
                 , "https://github.com/openjdk/jdk11u-dev"
             );
             os.assertExecutedOneTask(expected,  cloned);
@@ -2614,7 +2644,7 @@ final class QuarkusCheck
                 , "-b"
                 , "master"
                 , "--depth"
-                , "10"
+                , "1"
                 , String.format("https://github.com/%s", repo)
             );
         }
