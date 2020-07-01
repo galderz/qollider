@@ -289,7 +289,7 @@ class GraalBuild implements Callable<List<?>>
     private final Function<Options, List<?>> runner;
 
     @Option(
-        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.1-b02"
+        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
         , description = "JDK source tree URL"
         , names =
         {
