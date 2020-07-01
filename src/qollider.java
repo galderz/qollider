@@ -375,7 +375,7 @@ class GraalBuild implements Callable<List<?>>
                 , Java.build(options, Steps.Exec.Effects.of(osToday), osToday::type)
                 , Java.link(options, today::symlink)
                 , Graal.build(options, Steps.Exec.Effects.of(osToday))
-                , Graal.link(options, today::symlink)
+                , Graal.link(options, today::symlink, osToday.fs::exists)
             );
         }
     }
@@ -392,9 +392,9 @@ class GraalBuild implements Callable<List<?>>
             return Java.type(jdk);
         }
 
-        Graal.Type graalType()
+        Graal.Type graalType(Predicate<Path> exists)
         {
-            return Graal.type(graal);
+            return Graal.type(graal, exists);
         }
 
         Path mxPath()
@@ -597,7 +597,7 @@ class GraalBuild implements Callable<List<?>>
     {
         static List<Marker> build(Options options, Steps.Exec.Effects exec)
         {
-            final var type = options.graalType();
+            final var type = options.graalType(exec.exists());
             return switch (type)
             {
                 case MANDREL -> Mandrel.build(options, exec);
@@ -605,9 +605,9 @@ class GraalBuild implements Callable<List<?>>
             };
         }
 
-        static Link link(Options options, BiFunction<Path, Path, Link> symLink)
+        static Link link(Options options, BiFunction<Path, Path, Link> symLink, Predicate<Path> exists)
         {
-            final var type = options.graalType();
+            final var type = options.graalType(exists);
             return switch (type)
             {
                 case MANDREL -> new Link(Homes.graal(), Homes.graal());
@@ -668,11 +668,14 @@ class GraalBuild implements Callable<List<?>>
             }
         }
 
-        static Graal.Type type(Repository repo)
+        static Graal.Type type(Repository repo, Predicate<Path> exists)
         {
             return switch (repo.name())
             {
-                case "mandrel" -> Type.MANDREL;
+                case "mandrel" ->
+                    exists.test(Path.of("mandrel", "README-Mandrel.md"))
+                        ? Type.MANDREL
+                        : Type.ORACLE;
                 case "graal" -> Type.ORACLE;
                 default -> throw Illegal.value(repo.name());
             };
@@ -1175,7 +1178,7 @@ final class Steps
         }
 
         record Effects(
-            Predicate<Marker> exists
+            Predicate<Path> exists
             , Consumer<Exec> exec
             , Function<Marker, Boolean> touch
         )
@@ -1200,7 +1203,7 @@ final class Steps
         }
 
         record Effects(
-            Predicate<Marker> exists
+            Predicate<Path> exists
             , Consumer<Download> download
             , Function<Marker, Boolean> touch
             , Supplier<OperatingSystem.Type> osType
@@ -1272,9 +1275,9 @@ final class EnvVars
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path, String info)
 {
-    Marker query(Predicate<Marker> existsFn)
+    Marker query(Predicate<Path> existsFn)
     {
-        final var exists = existsFn.test(this);
+        final var exists = existsFn.test(this.path);
         if (exists)
         {
             return new Marker(true, touched, path, info);
@@ -1360,9 +1363,9 @@ class FileSystem
         FileSystem.idempotentMkDirs(root.resolve(directory));
     }
 
-    boolean exists(Marker marker)
+    boolean exists(Path path)
     {
-        return root.resolve(marker.path()).toFile().exists();
+        return root.resolve(path).toFile().exists();
     }
 
     boolean touch(Marker marker)
@@ -1986,6 +1989,7 @@ final class QuarkusCheck
             final var linked = GraalBuild.Graal.link(
                 options
                 , Link::new
+                , path -> true
             );
             assertThat(linked.link(), is(Homes.graal()));
         }
@@ -2006,7 +2010,9 @@ final class QuarkusCheck
         void graalMandrelBuild()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var fs = InMemoryFileSystem.empty();
+            final var fs = InMemoryFileSystem.ofExists(
+                Path.of("mandrel", "README-Mandrel.md")
+            );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var markers = GraalBuild.Graal.build(cli(Args.mandrelTree()), effects);
             os.assertNumberOfTasks(2);
@@ -2030,7 +2036,7 @@ final class QuarkusCheck
         @Test
         void graalOracleLink()
         {
-            final var linked = GraalBuild.Graal.link(cli(), Link::new);
+            final var linked = GraalBuild.Graal.link(cli(), Link::new, path -> true);
             assertThat(linked.link(), is(Homes.graal()));
             assertThat(linked.target(), is(Path.of("graal", "sdk", "latest_graalvm_home")));
         }
@@ -2038,7 +2044,7 @@ final class QuarkusCheck
         @Test
         void graalMandrelLink()
         {
-            final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new);
+            final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new, path -> true);
             assertThat(linked.link(), is(Expects.graalHome()));
             assertThat(linked.target(), is(Expects.graalHome()));
         }
@@ -2493,16 +2499,16 @@ final class QuarkusCheck
 
     private static final class InMemoryFileSystem
     {
-        final Map<Marker, Boolean> exists;
+        final Map<Path, Boolean> exists;
 
-        private InMemoryFileSystem(Map<Marker, Boolean> exists)
+        private InMemoryFileSystem(Map<Path, Boolean> exists)
         {
             this.exists = exists;
         }
 
-        boolean exists(Marker marker)
+        boolean exists(Path path)
         {
-            final var doesExist = exists.get(marker);
+            final var doesExist = exists.get(path);
             return doesExist == null ? false : doesExist;
         }
 
@@ -2516,10 +2522,20 @@ final class QuarkusCheck
             return new InMemoryFileSystem(Collections.emptyMap());
         }
 
+        static InMemoryFileSystem ofExists(Path... paths)
+        {
+            final var map = Stream.of(paths)
+                .collect(
+                    Collectors.toMap(Function.identity(), marker -> true)
+                );
+            return new InMemoryFileSystem(map);
+        }
+
         static InMemoryFileSystem ofExists(Step... steps)
         {
             final var map = Stream.of(steps)
                 .map(Marker::of)
+                .map(Marker::path)
                 .collect(
                     Collectors.toMap(Function.identity(), marker -> true)
                 );
