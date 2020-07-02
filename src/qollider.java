@@ -38,6 +38,7 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
@@ -73,7 +74,8 @@ import java.util.stream.Stream;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 @Command
@@ -995,6 +997,7 @@ record Repository(
     , String name
     , Repository.Type type
     , String branch
+    , int depth
     , URI cloneUri
 )
 {
@@ -1012,16 +1015,31 @@ record Repository(
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
             final var branch = extractBranch(path).toString();
+            final var depth = extractDepth(uri, name);
             final var cloneUri = gitCloneUri(organization, name);
-            return new Repository(organization, name, Type.GIT, branch, cloneUri);
+            return new Repository(organization, name, Type.GIT, branch, depth, cloneUri);
         }
         else if (host.equals("hg.openjdk.java.net"))
         {
             final var organization = "openjdk";
             final var name = path.getFileName().toString();
-            return new Repository(organization, name, Type.MERCURIAL, null, uri);
+            return new Repository(organization, name, Type.MERCURIAL, null, 1, uri);
         }
         throw Illegal.value(host);
+    }
+
+    private static int extractDepth(URI uri, String repoName)
+    {
+        final var params = URIs.splitQuery(uri);
+        final var value = params.get("depth");
+        if (Objects.nonNull(value))
+        {
+            return Integer.parseInt(value);
+        }
+
+        return repoName.equals("labs-openjdk-11")
+            ? 20
+            : 1;
     }
 
     private static URI gitCloneUri(String organization, String name)
@@ -1230,24 +1248,22 @@ class Git
 
     static String[] toClone(Repository repo)
     {
-        return new String[]{
+        final var result = Lists.mutable(
             "git"
             , "clone"
             , "-b"
             , repo.branch()
-            , "--depth"
-            , String.valueOf(depth(repo))
-            , repo.cloneUri().toString()
-        };
-    }
+        );
 
-    static int depth(Repository repo)
-    {
-        return switch (repo.name())
+        if (repo.depth() > 0)
         {
-            case "labs-openjdk-11" -> 20;
-            default -> 1;
-        };
+            result.add("--depth");
+            result.add(String.valueOf(repo.depth()));
+        }
+
+        result.add(repo.cloneUri().toString());
+
+        return result.toArray(String[]::new);
     }
 }
 
@@ -1687,6 +1703,26 @@ final class URLs
     }
 }
 
+final class URIs
+{
+    public static Map<String, String> splitQuery(URI uri)
+    {
+        if (uri.getRawQuery() == null || uri.getRawQuery().isEmpty())
+        {
+            return Collections.emptyMap();
+        }
+
+        return Stream.of(uri.getRawQuery().split("&"))
+            .map(e -> e.split("="))
+            .collect(
+                Collectors.toMap(
+                    e -> URLDecoder.decode(e[0], StandardCharsets.UTF_8)
+                    , e -> URLDecoder.decode(e[1], StandardCharsets.UTF_8)
+                )
+            );
+    }
+}
+
 final class Lists
 {
     static <E> List<E> append(E element, List<E> list)
@@ -1711,6 +1747,12 @@ final class Lists
             }
         }
         return result;
+    }
+
+    @SafeVarargs
+    static <E> List<E> mutable(E... a)
+    {
+        return new ArrayList<>(List.of(a));
     }
 }
 
@@ -1783,6 +1825,18 @@ final class QuarkusCheck
             assertThat(repo.organization(), is("openjdk"));
             assertThat(repo.name(), is("jdk11u-dev"));
             assertThat(repo.branch(), is("master"));
+            assertThat(repo.depth(), is(1));
+            assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
+        }
+
+        @Test
+        void uriWithDepth()
+        {
+            final var repo = Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master?depth=0");
+            assertThat(repo.organization(), is("openjdk"));
+            assertThat(repo.name(), is("jdk11u-dev"));
+            assertThat(repo.branch(), is("master"));
+            assertThat(repo.depth(), is(0));
             assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
@@ -1848,6 +1902,26 @@ final class QuarkusCheck
                 , "--depth"
                 , "20"
                 , "https://github.com/graalvm/labs-openjdk-11"
+            );
+            os.assertExecutedOneTask(expected, marker);
+        }
+
+        @Test
+        void gitCloneFull()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var os = RecordingOperatingSystem.macOS();
+            final Repository repo = Repository.of(
+                "https://github.com/openjdk/jdk11u-dev/tree/master?depth=0"
+            );
+            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var marker = Git.clone(repo, effects);
+            final var expected = Steps.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , "master"
+                , "https://github.com/openjdk/jdk11u-dev"
             );
             os.assertExecutedOneTask(expected, marker);
         }
