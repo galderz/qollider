@@ -992,6 +992,7 @@ final class Maven
     }
 }
 
+// TODO depth might not be needed once --force is implemented (forces git clone + rebuild)
 record Repository(
     String organization
     , String name

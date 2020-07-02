@@ -1,0 +1,23 @@
+FROM centos:7
+
+RUN yum -y install \
+        alsa-lib-devel \
+        autoconf \
+        cups-devel \
+        diffutils \
+        file \
+        findutils \
+        fontconfig-devel \
+        gcc \
+        git \
+        gcc-c++ \
+        libXi-devel \
+        libXrandr-devel \
+        libXrender-devel \
+        libXt-devel \
+        libXtst-devel \
+        make \
+        python \
+        unzip \
+        which \
+        zip
