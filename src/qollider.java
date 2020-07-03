@@ -101,10 +101,10 @@ public class qollider implements Runnable
         // TODO consider collapsing graal-build and maven-build into build
         // depending on the tree passed in, the code could multiplex.
         // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintenance of code)
-        final var graalBuild = GraalBuild.ofSystem(today, home);
+        final var graalBuild = GraalBuild.ofSystem(home, today);
         final var graalGet = GraalGet.ofSystem(today);
-        final var mavenBuild = MavenBuild.ofSystem(today, home);
-        final var mavenTest = MavenTest.ofSystem(today);
+        final var mavenBuild = MavenBuild.ofSystem(home, today);
+        final var mavenTest = MavenTest.ofSystem(home, today);
 
         final var cli = Cli.of(
             graalBuild
@@ -339,9 +339,9 @@ class GraalBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static GraalBuild ofSystem(FileSystem today, FileSystem home)
+    static GraalBuild ofSystem(FileSystem home, FileSystem today)
     {
-        return new GraalBuild(new BuildRunner(today, home));
+        return new GraalBuild(new BuildRunner(home, today));
     }
 
     static GraalBuild of(Function<Options, List<?>> runner)
@@ -356,7 +356,7 @@ class GraalBuild implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    record BuildRunner(FileSystem today, FileSystem home) implements Function<Options, List<?>>
+    record BuildRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
     {
         @Override
         public List<?> apply(Options options)
@@ -365,6 +365,7 @@ class GraalBuild implements Callable<List<?>>
 
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
+            final var roots = new Roots(home::resolve, today::resolve);
 
             return Lists.flatten(
                 Java.clone(options, Steps.Exec.Effects.of(osToday))
@@ -374,9 +375,9 @@ class GraalBuild implements Callable<List<?>>
                     , Steps.Exec.Effects.of(osHome)
                     , Steps.Download.Effects.of(Web.of(home), osHome)
                 )
-                , Java.build(options, Steps.Exec.Effects.of(osToday), osToday::type)
+                , Java.build(options, Steps.Exec.Effects.of(osToday), osToday::type, roots)
                 , Java.link(options, today::symlink)
-                , Graal.build(options, Steps.Exec.Effects.of(osToday))
+                , Graal.build(options, Steps.Exec.Effects.of(osToday), roots)
                 , Graal.link(options, today::symlink, osToday.fs::exists)
             );
         }
@@ -443,10 +444,10 @@ class GraalBuild implements Callable<List<?>>
             Options options
             , Steps.Exec.Effects effects
             , Supplier<OperatingSystem.Type> osType
+            , Roots roots
         )
         {
-            final var home = Path.of("..", "..", "..");
-            final var bootJdkHome = home.resolve(options.bootJdkHome(osType));
+            final var bootJdkHome = roots.home().apply(options.bootJdkHome(osType));
             final var tasks = switch (options.javaType())
                 {
                     case OPENJDK -> Java.OpenJDK.buildSteps(options, bootJdkHome);
@@ -597,13 +598,13 @@ class GraalBuild implements Callable<List<?>>
 
     static final class Graal
     {
-        static List<Marker> build(Options options, Steps.Exec.Effects exec)
+        static List<Marker> build(Options options, Steps.Exec.Effects exec, Roots roots)
         {
             final var type = options.graalType(exec.exists());
             return switch (type)
             {
-                case MANDREL -> Mandrel.build(options, exec);
-                case ORACLE -> List.of(Oracle.build(options, exec));
+                case MANDREL -> Mandrel.build(options, exec, roots);
+                case ORACLE -> List.of(Oracle.build(options, exec, roots));
             };
         }
 
@@ -619,17 +620,19 @@ class GraalBuild implements Callable<List<?>>
 
         static final class Mandrel
         {
-            static List<Marker> build(Options options, Steps.Exec.Effects exec)
+            static List<Marker> build(Options options, Steps.Exec.Effects exec, Roots roots)
             {
                 final var cloneMarker = Git.clone(options.packaging, exec);
+                final var today = roots.today();
                 final var buildMarker = Steps.Exec.run(
                     Steps.Exec.of(
                         Path.of("mandrel-packaging")
                         , List.of(
-                            EnvVars.javaHome(Homes.java())
-                            , EnvVar.of("MX_HOME", options.mxHome())
-                            , EnvVar.of("MANDREL_REPO", options.graal.name())
-                            , EnvVar.of("MANDREL_HOME", Homes.graal())
+                            EnvVar.javaHome(today.apply(Homes.java()))
+                            , EnvVar.of("MX_HOME", today.apply(options.mxHome()))
+                            , EnvVar.of("MANDREL_REPO", today.apply(Path.of(options.graal.name())))
+                            , EnvVar.of("MANDREL_HOME", today.apply(Homes.graal()))
+                            , EnvVar.of("MAVEN_HOME", Maven.home(roots.home()))
                         )
                         , "./buildJDK.sh"
                     )
@@ -642,16 +645,16 @@ class GraalBuild implements Callable<List<?>>
 
         static final class Oracle
         {
-            static Marker build(Options options, Steps.Exec.Effects effects)
+            static Marker build(Options options, Steps.Exec.Effects effects, Roots roots)
             {
-                final var root = Path.of("..", "..");
                 final var svm = Path.of(options.graal.name(), "substratevm");
+                final var today = roots.today();
                 return Steps.Exec.run(
                     Steps.Exec.of(
                         svm
-                        , root.resolve(options.mxPath()).toString()
+                        , today.apply(options.mxPath()).toString()
                         , "--java-home"
-                        , root.resolve(Homes.java()).toString()
+                        , today.apply(Homes.java()).toString()
                         , "build"
                     )
                     , effects
@@ -741,9 +744,9 @@ class MavenBuild implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static MavenBuild ofSystem(FileSystem today, FileSystem home)
+    static MavenBuild ofSystem(FileSystem home, FileSystem today)
     {
-        return new MavenBuild(new BuildRunner(today, home));
+        return new MavenBuild(new BuildRunner(home, today));
     }
 
     static MavenBuild of(Function<Options, List<?>> runner)
@@ -758,7 +761,7 @@ class MavenBuild implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    record BuildRunner(FileSystem today, FileSystem home) implements Function<Options, List<?>>
+    record BuildRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
     {
         @Override
         public List<?> apply(Options options)
@@ -767,6 +770,7 @@ class MavenBuild implements Callable<List<?>>
 
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
+            final var roots = new Roots(home::resolve, today::resolve);
 
             return Lists.flatten(
                 Git.clone(options.tree, Steps.Exec.Effects.of(osToday))
@@ -774,7 +778,7 @@ class MavenBuild implements Callable<List<?>>
                     Steps.Exec.Effects.of(osHome)
                     , Steps.Download.Effects.of(Web.of(home), osHome)
                 )
-                , MavenBuild.build(options, Steps.Exec.Effects.of(osToday))
+                , MavenBuild.build(options, Steps.Exec.Effects.of(osToday), roots)
             );
         }
     }
@@ -787,31 +791,29 @@ class MavenBuild implements Callable<List<?>>
         }
     }
 
-    static Marker build(Options options, Steps.Exec.Effects effects)
+    static Marker build(Options options, Steps.Exec.Effects effects, Roots roots)
     {
         final var project = options.project();
         final var arguments =
-            arguments(options, project.toString())
+            arguments(options, project.toString(), roots)
                 .toArray(String[]::new);
 
         // Use a java home that already points to the jdk + graal.
         // Enables maven build to be used to build for sample Quarkus apps with native bits.
         // This is not strictly necessary for say building Quarkus.
-        final var envVars = List.of(EnvVars.javaHome(Homes.graal()));
+        final var envVars = List.of(EnvVar.javaHome(Homes.graal()));
         return Steps.Exec.run(
             Steps.Exec.of(project, envVars, arguments)
             , effects
         );
     }
 
-    private static Stream<String> arguments(Options options, String directory)
+    private static Stream<String> arguments(Options options, String directory, Roots roots)
     {
-        final var home = Path.of("..", "..", "..");
-        final var mvn = Path.of("maven", "bin", "mvn");
         // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
         final var arguments = Stream.concat(
             Stream.of(
-                home.resolve(mvn).toString()
+                Maven.mvn(roots.home()).toString()
                 , "install"
                 , "-DskipTests"
                 , "-DskipITs"
@@ -876,9 +878,9 @@ class MavenTest implements Callable<List<?>>
         this.runner = runner;
     }
 
-    static MavenTest ofSystem(FileSystem fs)
+    static MavenTest ofSystem(FileSystem home, FileSystem today)
     {
-        return new MavenTest(new TestRunner(fs));
+        return new MavenTest(new TestRunner(home, today));
     }
 
     static MavenTest of(Function<Options, List<?>> runner)
@@ -893,13 +895,13 @@ class MavenTest implements Callable<List<?>>
         return runner.apply(options);
     }
 
-    record TestRunner(FileSystem today) implements Function<Options, List<?>>
+    record TestRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
     {
         @Override
         public List<?> apply(Options options)
         {
             final var os = OperatingSystem.of(today);
-            Maven.test(options, os::exec);
+            MavenTest.test(options, os::exec, new Roots(home::resolve, today::resolve));
             // TODO make it return markers so that it can be tested just like other commands
             return List.of();
         }
@@ -907,70 +909,64 @@ class MavenTest implements Callable<List<?>>
 
     record Options(String suite, List<String> additionalTestArgs) {}
 
-    static class Maven
+    static void test(Options options, Consumer<Steps.Exec> exec, Roots roots)
     {
-        static void test(Options options, Consumer<Steps.Exec> exec)
+        final var task = MavenTest.toTest(options, roots);
+        MavenTest.doTest(task, exec);
+    }
+
+    private static void doTest(
+        Steps.Exec task
+        , Consumer<Steps.Exec> exec
+    )
+    {
+        exec.accept(task);
+    }
+
+    private static Steps.Exec toTest(Options options, Roots roots)
+    {
+        final var directory = MavenTest.suitePath(options.suite);
+        final var arguments = arguments(options, directory, roots).toArray(String[]::new);
+        final var envVars = List.of(EnvVar.javaHome(Homes.graal()));
+        return Steps.Exec.of(directory, envVars, arguments);
+    }
+
+    private static Stream<String> arguments(Options options, Path directory, Roots roots)
+    {
+        final var args = Stream.of(
+            Maven.mvn(roots.home()).toString()
+            , "install"
+            , "-Dnative"
+            , "-Dformat.skip"
+        );
+
+        final var userArgs = options.additionalTestArgs;
+        final var extraArgs = EXTRA_TEST_ARGS.get(directory);
+        if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
         {
-            final var task = Maven.toTest(options);
-            Maven.doTest(task, exec);
+            return Stream
+                .of(args, extraArgs.stream(), userArgs.stream())
+                .flatMap(Function.identity());
         }
 
-        private static void doTest(
-            Steps.Exec task
-            , Consumer<Steps.Exec> exec
-        )
+        if (Objects.nonNull(extraArgs))
         {
-            exec.accept(task);
+            return Stream.concat(args, extraArgs.stream());
         }
 
-        private static Steps.Exec toTest(Options options)
+        if (Objects.nonNull(userArgs))
         {
-            final var directory = Maven.suitePath(options.suite);
-            final var arguments = arguments(options, directory).toArray(String[]::new);
-            final var envVars = List.of(EnvVars.javaHome(Homes.graal()));
-            return Steps.Exec.of(directory, envVars, arguments);
+            return Stream.concat(args, userArgs.stream());
         }
 
-        private static Stream<String> arguments(Options options, Path directory)
-        {
-            final var home = Path.of("..", "..", "..");
-            final var mvn = Path.of("maven", "bin", "mvn");
+        return args;
+    }
 
-            final var args = Stream.of(
-                home.resolve(mvn).toString()
-                , "install"
-                , "-Dnative"
-                , "-Dformat.skip"
-            );
-
-            final var userArgs = options.additionalTestArgs;
-            final var extraArgs = EXTRA_TEST_ARGS.get(directory);
-            if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
-            {
-                return Stream
-                    .of(args, extraArgs.stream(), userArgs.stream())
-                    .flatMap(Function.identity());
-            }
-
-            if (Objects.nonNull(extraArgs))
-            {
-                return Stream.concat(args, extraArgs.stream());
-            }
-
-            if (Objects.nonNull(userArgs))
-            {
-                return Stream.concat(args, userArgs.stream());
-            }
-
-            return args;
-        }
-
-        private static Path suitePath(String suite)
-        {
-            return suite.equals("quarkus")
-                ? Path.of("quarkus", "integration-tests")
-                : Path.of(suite);
-        }
+    private static Path suitePath(String suite)
+    {
+        return suite.equals("quarkus")
+            ? Path.of("quarkus", "integration-tests")
+            : Path.of(suite);
     }
 }
 
@@ -989,6 +985,16 @@ final class Maven
             , download
             , exec
         );
+    }
+
+    static Path home(Function<Path, Path> resolve)
+    {
+        return resolve.apply(Path.of("maven"));
+    }
+
+    static Path mvn(Function<Path, Path> resolve)
+    {
+        return home(resolve).resolve(Path.of("bin", "mvn"));
     }
 }
 
@@ -1121,7 +1127,14 @@ record EnvVar(String name, Path path)
     {
         return new EnvVar(name, path);
     }
+
+    static EnvVar javaHome(Path path)
+    {
+        return of("JAVA_HOME", path);
+    }
 }
+
+record Roots(Function<Path, Path> home, Function<Path, Path> today) {}
 
 interface Step {}
 
@@ -1278,14 +1291,6 @@ final class Homes
     static Path graal()
     {
         return Path.of("graalvm_home");
-    }
-}
-
-final class EnvVars
-{
-    static EnvVar javaHome(Path path)
-    {
-        return new EnvVar("JAVA_HOME", path);
     }
 }
 
@@ -1496,7 +1501,7 @@ class OperatingSystem
                 envVar ->
                     processBuilder.environment().put(
                         envVar.name()
-                        , fs.resolve(envVar.path()).toString()
+                        , envVar.path().toString()
                     )
             );
 
@@ -1949,7 +1954,7 @@ final class QuarkusCheck
             final var options = cli();
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type);
+            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
             final var marker = markers.get(0);
             assertThat(marker.touched(), is(true));
             os.assertNumberOfTasks(1);
@@ -1971,53 +1976,21 @@ final class QuarkusCheck
             );
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type);
+            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
-            final var configure = Steps.Exec.of(
-                Path.of("jdk11u-dev")
-                , "bash"
-                , "configure"
-                , "--with-conf-name=graal-server-release"
-                , "--disable-warnings-as-errors"
-                , "--with-jvm-features=graal"
-                , "--with-jvm-variants=server"
-                , "--with-extra-cflags=-fcommon"
-                , "--enable-aot=no"
-                , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
-            );
-            os.assertExecutedTask(configure, markers.get(0));
+            os.assertExecutedTask(Expects.javaOpenJDKConfigure(), markers.get(0));
             os.forward();
-            final var make = Steps.Exec.of(
-                Path.of("jdk11u-dev")
-                , "make"
-                , "graal-builder-image"
-            );
-            os.assertExecutedTask(make, markers.get(1));
+            os.assertExecutedTask(Expects.javaOpenJDKMake(), markers.get(1));
         }
 
         @Test
         void skipJavaOpenJDK()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var configure = Steps.Exec.of(
-                Path.of("jdk11u-dev")
-                , "bash"
-                , "configure"
-                , "--with-conf-name=graal-server-release"
-                , "--disable-warnings-as-errors"
-                , "--with-jvm-features=graal"
-                , "--with-jvm-variants=server"
-                , "--with-extra-cflags=-fcommon"
-                , "--enable-aot=no"
-                , "--with-boot-jdk=../../../boot-jdk-11/Contents/Home"
-            );
-            final var make = Steps.Exec.of(
-                Path.of("jdk11u-dev")
-                , "make"
-                , "graal-builder-image"
-            );
+            final var configure = Expects.javaOpenJDKConfigure();
+            final var make = Expects.javaOpenJDKMake();
             final var fs = InMemoryFileSystem.ofExists(configure, make);
             final var options = cli(
                 "--jdk-tree",
@@ -2025,7 +1998,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type);
+            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
             os.assertNumberOfTasks(0);
             final var configureMarker = markers.get(0);
             assertThat(configureMarker.exists(), is(true));
@@ -2044,13 +2017,13 @@ final class QuarkusCheck
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , "../../../boot-jdk-11/Contents/Home"
+                , "/home/boot-jdk-11/Contents/Home"
             );
             final var fs = InMemoryFileSystem.ofExists(configure);
             final var options = cli();
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type);
+            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
             os.assertNumberOfTasks(0);
             final var marker = markers.get(0);
             assertThat(marker.exists(), is(true));
@@ -2076,7 +2049,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var options = cli();
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects).get(0);
+            final var marker = GraalBuild.Graal.build(options, effects, Args.roots()).get(0);
             final var expected = Expects.graalOracleBuild();
             os.assertExecutedOneTask(expected, marker);
         }
@@ -2089,7 +2062,7 @@ final class QuarkusCheck
                 Path.of("mandrel", "README-Mandrel.md")
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Graal.build(cli(Args.mandrelTree()), effects);
+            final var markers = GraalBuild.Graal.build(cli(Args.mandrelTree()), effects, Args.roots());
             os.assertNumberOfTasks(2);
             os.assertExecutedTask(Expects.gitClone("graalvm/mandrel-packaging"), markers.get(0));
             os.forward();
@@ -2104,7 +2077,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.ofExists(step);
             final var options = cli();
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects).get(0);
+            final var marker = GraalBuild.Graal.build(options, effects, Args.roots()).get(0);
             os.assertNoTask(marker);
         }
 
@@ -2371,7 +2344,7 @@ final class QuarkusCheck
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects);
+            final var marker = MavenBuild.build(options, effects, Args.roots());
             final var expected = Expects.mavenBuild(Path.of("quarkus"));
             os.assertExecutedOneTask(expected, marker);
         }
@@ -2387,7 +2360,7 @@ final class QuarkusCheck
                 , "https://github.com/quarkusio/quarkus/tree/master"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects);
+            final var marker = MavenBuild.build(options, effects, Args.roots());
             os.assertNumberOfTasks(0);
             assertThat(marker.exists(), is(true));
             assertThat(marker.touched(), is(false));
@@ -2404,7 +2377,7 @@ final class QuarkusCheck
             );
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects);
+            final var marker = MavenBuild.build(options, effects, Args.roots());
             final var expected = Expects.mavenBuild(
                 Path.of("camel-quarkus")
                 , "-Dquarkus.version=999-SNAPSHOT"
@@ -2424,7 +2397,7 @@ final class QuarkusCheck
                 , "-Pfastinstall,-Pdoesnotexist"
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects);
+            final var marker = MavenBuild.build(options, effects, Args.roots());
             final var expected = Expects.mavenBuild(
                 Path.of("camel")
                 , "-Pfastinstall"
@@ -2467,13 +2440,13 @@ final class QuarkusCheck
                 "--suite", "suite-a"
                 , "--additional-test-args", "p1,:p2,:p3,-p4"
             );
-            MavenTest.Maven.test(options, os::record);
+            MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
             os.assertTask(t ->
                 assertThat(
                     String.join(" ", t.args())
-                    , is(equalTo("../../../maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
+                    , is(equalTo("/home/maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
                 )
             );
         }
@@ -2483,10 +2456,10 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var options = cli("--suite", "suite-a");
-            MavenTest.Maven.test(options, os::record);
+            MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
-            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("../../../maven/bin/mvn"))));
+            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("/home/maven/bin/mvn"))));
             os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
         }
 
@@ -2495,12 +2468,12 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var options = cli("-s", "quarkus");
-            MavenTest.Maven.test(options, os::record);
+            MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("../../../maven/bin/mvn")));
+                assertThat(task.args().stream().findFirst(), is(Optional.of("/home/maven/bin/mvn")));
                 assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
             });
         }
@@ -2510,14 +2483,14 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var options = cli("-s", "quarkus-platform");
-            MavenTest.Maven.test(options, os::record);
+            MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
             os.assertTask(task ->
             {
                 assertThat(task.directory(), is(Path.of("quarkus-platform")));
                 final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("../../../maven/bin/mvn")));
+                assertThat(arguments.stream().findFirst(), is(Optional.of("/home/maven/bin/mvn")));
                 assertThat(
                     arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
                     , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
@@ -2740,15 +2713,41 @@ final class QuarkusCheck
             );
         }
 
+        static Steps.Exec javaOpenJDKConfigure()
+        {
+            return Steps.Exec.of(
+                Path.of("jdk11u-dev")
+                , "bash"
+                , "configure"
+                , "--with-conf-name=graal-server-release"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                , "--with-extra-cflags=-fcommon"
+                , "--enable-aot=no"
+                , "--with-boot-jdk=/home/boot-jdk-11/Contents/Home"
+            );
+        }
+
+        static Steps.Exec javaOpenJDKMake()
+        {
+            return Steps.Exec.of(
+                Path.of("jdk11u-dev")
+                , "make"
+                , "graal-builder-image"
+            );
+        }
+
         static Steps.Exec graalMandrelBuild()
         {
             return Steps.Exec.of(
                 Path.of("mandrel-packaging")
                 , List.of(
-                    EnvVar.of("JAVA_HOME", "java_home")
-                    , EnvVar.of("MX_HOME", "mx")
-                    , EnvVar.of("MANDREL_REPO", "mandrel")
-                    , EnvVar.of("MANDREL_HOME", "graalvm_home")
+                    EnvVar.of("JAVA_HOME", "/today/java_home")
+                    , EnvVar.of("MX_HOME", "/today/mx")
+                    , EnvVar.of("MANDREL_REPO", "/today/mandrel")
+                    , EnvVar.of("MANDREL_HOME", "/today/graalvm_home")
+                    , EnvVar.of("MAVEN_HOME", "/home/maven")
                 )
                 , "./buildJDK.sh"
             );
@@ -2758,9 +2757,9 @@ final class QuarkusCheck
         {
             return Steps.Exec.of(
                 Path.of("graal", "substratevm")
-                , "../../mx/mx"
+                , "/today/mx/mx"
                 , "--java-home"
-                , "../../java_home"
+                , "/today/java_home"
                 , "build"
             );
         }
@@ -2774,7 +2773,7 @@ final class QuarkusCheck
         {
             final var args = Stream.concat(
                 Stream.of(
-                    "../../../maven/bin/mvn"
+                    "/home/maven/bin/mvn"
                     , "install"
                     , "-DskipTests"
                     , "-DskipITs"
@@ -2800,6 +2799,14 @@ final class QuarkusCheck
                 "--graal-tree"
                 , "https://github.com/graalvm/mandrel/tree/master"
             };
+        }
+
+        static Roots roots()
+        {
+            return new Roots(
+                p -> Path.of("/", "home").resolve(p)
+                , p -> Path.of("/", "today").resolve(p)
+            );
         }
     }
 
