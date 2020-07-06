@@ -8,5 +8,4 @@ build-centos7:
 	docker build -t centos7 -f Dockerfile.centos7 .
 
 run-centos7:
-	docker run -it --storage-opt size=20G fedora /bin/bash
-
+	docker run -it --storage-opt size=20G centos7 /bin/bash
