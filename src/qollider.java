@@ -251,7 +251,7 @@ class GraalGet implements Callable<List<?>>
         )
         {
             final var install = new Steps.Install(options.url, options.graal);
-            final var installMarkers = Steps.Install.install(install, download, exec);
+            final var installMarkers = Steps.Install.install(install, download);
 
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
@@ -367,17 +367,17 @@ class GraalBuild implements Callable<List<?>>
             final var osHome = OperatingSystem.of(home);
             final var roots = new Roots(home::resolve, today::resolve);
 
+            final var execToday = Steps.Exec.Effects.of(osToday);
+            final var downloadHome = Steps.Download.Effects.of(Web.of(home), osHome);
+
             return Lists.flatten(
-                Java.clone(options, Steps.Exec.Effects.of(osToday))
-                , Git.clone(options.mx, Steps.Exec.Effects.of(osToday))
-                , Git.clone(options.graal, Steps.Exec.Effects.of(osToday))
-                , Java.install(options
-                    , Steps.Exec.Effects.of(osHome)
-                    , Steps.Download.Effects.of(Web.of(home), osHome)
-                )
-                , Java.build(options, Steps.Exec.Effects.of(osToday), osToday::type, roots)
+                Java.clone(options, execToday)
+                , Git.clone(options.mx, execToday)
+                , Git.clone(options.graal, execToday)
+                , Java.install(options, downloadHome)
+                , Java.build(options, execToday, osToday::type, roots)
                 , Java.link(options, today::symlink)
-                , Graal.build(options, Steps.Exec.Effects.of(osToday), roots)
+                , Graal.build(options, execToday, downloadHome, roots)
                 , Graal.link(options, today::symlink, osToday.fs::exists)
             );
         }
@@ -474,11 +474,7 @@ class GraalBuild implements Callable<List<?>>
         }
 
         // TODO create a record to capture Java version info (major, minor, micro, build)
-        static List<Marker> install(
-            Options options
-            , Steps.Exec.Effects exec
-            , Steps.Download.Effects download
-        )
+        static List<Marker> install(Options options, Steps.Download.Effects download)
         {
             final var javaVersionMajor = "11";
             final var javaVersionBuild = "10";
@@ -504,11 +500,7 @@ class GraalBuild implements Callable<List<?>>
                 , javaVersionBuild
             );
 
-            return Steps.Install.install(
-                new Steps.Install(url, options.bootJdkPath())
-                , download
-                , exec
-            );
+            return Steps.Install.install(new Steps.Install(url, options.bootJdkPath()), download);
         }
 
         private static final class OpenJDK
@@ -598,12 +590,12 @@ class GraalBuild implements Callable<List<?>>
 
     static final class Graal
     {
-        static List<Marker> build(Options options, Steps.Exec.Effects exec, Roots roots)
+        static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Download.Effects download, Roots roots)
         {
             final var type = options.graalType(exec.exists());
             return switch (type)
             {
-                case MANDREL -> Mandrel.build(options, exec, roots);
+                case MANDREL -> Mandrel.build(options, exec, download, roots);
                 case ORACLE -> List.of(Oracle.build(options, exec, roots));
             };
         }
@@ -620,9 +612,11 @@ class GraalBuild implements Callable<List<?>>
 
         static final class Mandrel
         {
-            static List<Marker> build(Options options, Steps.Exec.Effects exec, Roots roots)
+            static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Download.Effects download, Roots roots)
             {
                 final var cloneMarker = Git.clone(options.packaging, exec);
+                final var mavenInstallMarkers = Maven.install(download);
+
                 final var today = roots.today();
                 final var buildMarker = Steps.Exec.run(
                     Steps.Exec.of(
@@ -639,7 +633,11 @@ class GraalBuild implements Callable<List<?>>
                     , exec
                 );
 
-                return List.of(cloneMarker, buildMarker);
+                // TODO Create Lists.flatten(List<E>...)
+                final var result = Lists.mutable(cloneMarker);
+                result.addAll(mavenInstallMarkers);
+                result.add(buildMarker);
+                return result;
             }
         }
 
@@ -772,13 +770,13 @@ class MavenBuild implements Callable<List<?>>
             final var osHome = OperatingSystem.of(home);
             final var roots = new Roots(home::resolve, today::resolve);
 
+            final var execToday = Steps.Exec.Effects.of(osToday);
+            final var downloadHome = Steps.Download.Effects.of(Web.of(home), osHome);
+
             return Lists.flatten(
-                Git.clone(options.tree, Steps.Exec.Effects.of(osToday))
-                , Maven.install(
-                    Steps.Exec.Effects.of(osHome)
-                    , Steps.Download.Effects.of(Web.of(home), osHome)
-                )
-                , MavenBuild.build(options, Steps.Exec.Effects.of(osToday), roots)
+                Git.clone(options.tree, execToday)
+                , Maven.install(downloadHome)
+                , MavenBuild.build(options, execToday, roots)
             );
         }
     }
@@ -972,7 +970,7 @@ class MavenTest implements Callable<List<?>>
 
 final class Maven
 {
-    static List<Marker> install(Steps.Exec.Effects exec, Steps.Download.Effects download)
+    static List<Marker> install(Steps.Download.Effects download)
     {
         final var version = "3.6.3";
         final var url = URLs.of(
@@ -980,11 +978,7 @@ final class Maven
             , version
         );
 
-        return Steps.Install.install(
-            new Steps.Install(url, Path.of("maven"))
-            , download
-            , exec
-        );
+        return Steps.Install.install(new Steps.Install(url, Path.of("maven")), download);
     }
 
     static Path home(Function<Path, Path> resolve)
@@ -1144,11 +1138,7 @@ final class Steps
     // Install = Download + Extract
     record Install(URL url, Path path) implements Step
     {
-        static List<Marker> install(
-            Install install
-            , Download.Effects download
-            , Exec.Effects exec
-        )
+        static List<Marker> install(Install install, Download.Effects download)
         {
             final var url = install.url;
             final var fileName = Path.of(url.getFile()).getFileName();
@@ -1171,7 +1161,7 @@ final class Steps
                     , "--strip-components"
                     , "1"
                 )
-                , exec
+                , download.exec
             );
 
             return List.of(downloadMarker, extractMarker);
@@ -1226,24 +1216,24 @@ final class Steps
     {
         static Marker lazy(Download task, Effects effects)
         {
-            final var marker = Marker.of(task).query(effects.exists);
+            final var marker = Marker.of(task).query(effects.exec.exists);
             if (marker.exists())
                 return marker;
 
             effects.download.accept(task);
-            return marker.touch(effects.touch);
+            return marker.touch(effects.exec.touch);
         }
 
         record Effects(
-            Predicate<Path> exists
+            Steps.Exec.Effects exec
             , Consumer<Download> download
-            , Function<Marker, Boolean> touch
             , Supplier<OperatingSystem.Type> osType
         )
         {
             static Effects of(Web web, OperatingSystem os)
             {
-                return new Effects(os.fs::exists, web::download, os.fs::touch, os::type);
+                final var exec = Exec.Effects.of(os);
+                return new Effects(exec, web::download, os::type);
             }
         }
     }
@@ -1980,18 +1970,17 @@ final class QuarkusCheck
             assertThat(markers.get(0).touched(), is(true));
             assertThat(markers.get(1).touched(), is(true));
             os.assertNumberOfTasks(2);
-            os.assertExecutedTask(Expects.javaOpenJDKConfigure(), markers.get(0));
-            os.forward();
-            os.assertExecutedTask(Expects.javaOpenJDKMake(), markers.get(1));
+            os.assertExecutedTask(Expect.javaOpenJDKConfigure().step, markers.get(0));
+            os.assertExecutedTask(Expect.javaOpenJDKMake().step, markers.get(1));
         }
 
         @Test
         void skipJavaOpenJDK()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var configure = Expects.javaOpenJDKConfigure();
-            final var make = Expects.javaOpenJDKMake();
-            final var fs = InMemoryFileSystem.ofExists(configure, make);
+            final var configure = Expect.javaOpenJDKConfigure();
+            final var make = Expect.javaOpenJDKMake();
+            final var fs = InMemoryFileSystem.ofExists(configure.step, make.step);
             final var options = cli(
                 "--jdk-tree",
                 "https://github.com/openjdk/jdk11u-dev/tree/master"
@@ -2045,40 +2034,36 @@ final class QuarkusCheck
         @Test
         void graalOracleBuild()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
-            final var options = cli();
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects, Args.roots()).get(0);
-            final var expected = Expects.graalOracleBuild();
-            os.assertExecutedOneTask(expected, marker);
+            Asserts.tasks(
+                GraalBuild.Graal.build(cli(), fs.exec(), fs.download(), Args.roots())
+                , Expect.graalOracleBuild()
+            );
         }
 
         @Test
         void graalMandrelBuild()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
                 Path.of("mandrel", "README-Mandrel.md")
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Graal.build(cli(Args.mandrelTree()), effects, Args.roots());
-            os.assertNumberOfTasks(2);
-            os.assertExecutedTask(Expects.gitClone("graalvm/mandrel-packaging"), markers.get(0));
-            os.forward();
-            os.assertExecutedTask(Expects.graalMandrelBuild(), markers.get(1));
+            Asserts.tasks(
+                GraalBuild.Graal.build(cli(Args.mandrelTree()), fs.exec(), fs.download(), Args.roots())
+                , Expect.gitClone("graalvm/mandrel-packaging")
+                , Expect.mavenDownload()
+                , Expect.mavenUntar()
+                , Expect.graalMandrelBuild()
+            );
         }
 
         @Test
         void skipBuild()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var step = Expects.graalOracleBuild();
-            final var fs = InMemoryFileSystem.ofExists(step);
-            final var options = cli();
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = GraalBuild.Graal.build(options, effects, Args.roots()).get(0);
-            os.assertNoTask(marker);
+            final var fs = InMemoryFileSystem.ofExists(Expect.graalOracleBuild().step);
+            Asserts.tasks(
+                GraalBuild.Graal.build(cli(), fs.exec(), fs.download(), Args.roots())
+                , Expect.graalOracleBuild().untouched()
+            );
         }
 
         @Test
@@ -2093,8 +2078,8 @@ final class QuarkusCheck
         void graalMandrelLink()
         {
             final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new, path -> true);
-            assertThat(linked.link(), is(Expects.graalHome()));
-            assertThat(linked.target(), is(Expects.graalHome()));
+            assertThat(linked.link(), is(Expect.graalHome()));
+            assertThat(linked.target(), is(Expect.graalHome()));
         }
 
         @Test
@@ -2175,8 +2160,8 @@ final class QuarkusCheck
             final var web = new RecordingWeb();
             final var options = cli();
             final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, web::record, fs::touch, os::type);
-            final var markers = GraalBuild.Java.install(options, exec, download);
+            final var download = new Steps.Download.Effects(exec, web::record, os::type);
+            final var markers = GraalBuild.Java.install(options, download);
             final var downloadTask = web.tasks.remove();
             final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
             final var url = URLs.of("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
@@ -2209,12 +2194,13 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
+            final var web = new RecordingWeb();
             final var options = cli(
                 "--url",
                 "https://doestnotexist.com/archive.tar.gz"
             );
             final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var download = new Steps.Download.Effects(exec, web::record, os::type);
             final var markers = GraalGet.Graal.get(options, exec, download);
             assertThat(markers.size(), is(2));
             final var downloadMarker = markers.get(0);
@@ -2237,12 +2223,13 @@ final class QuarkusCheck
         {
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
+            final var web = new RecordingWeb();
             final var options = cli(
                 "--url",
                 "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz"
             );
             final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var download = new Steps.Download.Effects(exec, web::record, os::type);
             final var markers = GraalGet.Graal.get(options, exec, download);
             assertThat(markers.size(), is(3));
             final var downloadMarker = markers.get(0);
@@ -2279,8 +2266,9 @@ final class QuarkusCheck
                 new Steps.Download(URLs.of(url), downloadPath)
                 , Steps.Exec.of(extractArgs)
             );
+            final var web = new RecordingWeb();
             final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var download = new Steps.Download.Effects(exec, web::record, os::type);
             final var markers = GraalGet.Graal.get(options, exec, download);
             os.assertNumberOfTasks(0);
             assertThat(markers.size(), is(2));
@@ -2302,9 +2290,10 @@ final class QuarkusCheck
 
             final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(step);
+            final var web = new RecordingWeb();
 
             final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(fs::exists, RecordingWeb::noop, fs::touch, os::type);
+            final var download = new Steps.Download.Effects(exec, web::record, os::type);
             final var markers = GraalGet.Graal.get(options, exec, download);
             os.assertNumberOfTasks(1);
             assertThat(markers.size(), is(2));
@@ -2345,16 +2334,16 @@ final class QuarkusCheck
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expects.mavenBuild(Path.of("quarkus"));
-            os.assertExecutedOneTask(expected, marker);
+            final var expected = Expect.mavenBuild(Path.of("quarkus"));
+            os.assertExecutedOneTask(expected.step, marker);
         }
 
         @Test
         void skipQuarkus()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var step = Expects.mavenBuild(Path.of("quarkus"));
-            final var fs = InMemoryFileSystem.ofExists(step);
+            final var expect = Expect.mavenBuild(Path.of("quarkus"));
+            final var fs = InMemoryFileSystem.ofExists(expect.step);
             final var options = cli(
                 "-t"
                 , "https://github.com/quarkusio/quarkus/tree/master"
@@ -2378,11 +2367,11 @@ final class QuarkusCheck
 
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expects.mavenBuild(
+            final var expected = Expect.mavenBuild(
                 Path.of("camel-quarkus")
                 , "-Dquarkus.version=999-SNAPSHOT"
             );
-            os.assertExecutedOneTask(expected, marker);
+            os.assertExecutedOneTask(expected.step, marker);
         }
 
         @Test
@@ -2398,12 +2387,12 @@ final class QuarkusCheck
             );
             final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
             final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expects.mavenBuild(
+            final var expected = Expect.mavenBuild(
                 Path.of("camel")
                 , "-Pfastinstall"
                 , "-Pdoesnotexist"
             );
-            os.assertExecutedOneTask(expected, marker);
+            os.assertExecutedOneTask(expected.step, marker);
         }
 
         // TODO avoid dup
@@ -2554,6 +2543,7 @@ final class QuarkusCheck
             this.exists = exists;
         }
 
+        // TODO Make private
         boolean exists(Path path)
         {
             final var doesExist = exists.get(path);
@@ -2563,6 +2553,16 @@ final class QuarkusCheck
         boolean touch(Marker marker)
         {
             return true;
+        }
+
+        Steps.Exec.Effects exec()
+        {
+            return new Steps.Exec.Effects(this::exists, e -> {}, this::touch);
+        }
+
+        Steps.Download.Effects download()
+        {
+            return new Steps.Download.Effects(exec(), d -> {}, () -> OperatingSystem.Type.MACOSX);
         }
 
         static InMemoryFileSystem empty()
@@ -2579,6 +2579,7 @@ final class QuarkusCheck
             return new InMemoryFileSystem(map);
         }
 
+        // TODO take Expect instead of Step
         static InMemoryFileSystem ofExists(Step... steps)
         {
             final var map = Stream.of(steps)
@@ -2640,6 +2641,7 @@ final class QuarkusCheck
                 result.path()
                 , is(Path.of(format("%s.marker", Hashing.sha1(expected.toString()))))
             );
+            forward();
         }
 
         void assertNoTask(Marker result)
@@ -2675,7 +2677,7 @@ final class QuarkusCheck
 
         void forward()
         {
-            tasks.remove();
+            tasks.poll();
         }
 
         @SuppressWarnings("unchecked")
@@ -2694,15 +2696,43 @@ final class QuarkusCheck
         {
             tasks.offer(task);
         }
-
-        static void noop(Steps.Download task) {}
     }
 
-    static final class Expects
+    static final class Asserts
     {
-        static Steps.Exec gitClone(String repo)
+        static void tasks(List<Marker> markers, Expect... expects)
         {
-            return Steps.Exec.of(
+            assertThat(markers.toString(), markers.size(), is(expects.length));
+            for (int i = 0; i < expects.length; i++)
+            {
+                final var actual = markers.get(i);
+                final var expected = expects[i];
+                assertThat(actual.info(), is(expected.step.toString()));
+                assertThat(actual.exists(), is(true));
+                assertThat(actual.touched(), is(expected.touched));
+                assertThat(
+                    actual.path().toString()
+                    , is(format("%s.marker", Hashing.sha1(expected.step.toString())))
+                );
+            }
+        }
+    }
+
+    record Expect(Step step, boolean touched)
+    {
+        Expect untouched()
+        {
+            return new Expect(step, false);
+        }
+
+        static Expect of(Step step)
+        {
+            return new Expect(step, true);
+        }
+
+        static Expect gitClone(String repo)
+        {
+            return Expect.of(Steps.Exec.of(
                 "git"
                 , "clone"
                 , "-b"
@@ -2710,12 +2740,12 @@ final class QuarkusCheck
                 , "--depth"
                 , "1"
                 , String.format("https://github.com/%s", repo)
-            );
+            ));
         }
 
-        static Steps.Exec javaOpenJDKConfigure()
+        static Expect javaOpenJDKConfigure()
         {
-            return Steps.Exec.of(
+            return Expect.of(Steps.Exec.of(
                 Path.of("jdk11u-dev")
                 , "bash"
                 , "configure"
@@ -2726,21 +2756,21 @@ final class QuarkusCheck
                 , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
                 , "--with-boot-jdk=/home/boot-jdk-11/Contents/Home"
-            );
+            ));
         }
 
-        static Steps.Exec javaOpenJDKMake()
+        static Expect javaOpenJDKMake()
         {
-            return Steps.Exec.of(
+            return Expect.of(Steps.Exec.of(
                 Path.of("jdk11u-dev")
                 , "make"
                 , "graal-builder-image"
-            );
+            ));
         }
 
-        static Steps.Exec graalMandrelBuild()
+        static Expect graalMandrelBuild()
         {
-            return Steps.Exec.of(
+            return Expect.of(Steps.Exec.of(
                 Path.of("mandrel-packaging")
                 , List.of(
                     EnvVar.of("JAVA_HOME", "/today/java_home")
@@ -2750,18 +2780,18 @@ final class QuarkusCheck
                     , EnvVar.of("MAVEN_HOME", "/home/maven")
                 )
                 , "./buildJDK.sh"
-            );
+            ));
         }
 
-        static Steps.Exec graalOracleBuild()
+        static Expect graalOracleBuild()
         {
-            return Steps.Exec.of(
+            return Expect.of(Steps.Exec.of(
                 Path.of("graal", "substratevm")
                 , "/today/mx/mx"
                 , "--java-home"
                 , "/today/java_home"
                 , "build"
-            );
+            ));
         }
 
         public static Path graalHome()
@@ -2769,7 +2799,7 @@ final class QuarkusCheck
             return Path.of("graalvm_home");
         }
 
-        static Steps.Exec mavenBuild(Path path, String... extra)
+        static Expect mavenBuild(Path path, String... extra)
         {
             final var args = Stream.concat(
                 Stream.of(
@@ -2783,11 +2813,33 @@ final class QuarkusCheck
                 , Stream.of(extra)
             );
 
-            return Steps.Exec.of(
+            return Expect.of(Steps.Exec.of(
                 path
                 , List.of(new EnvVar("JAVA_HOME", Path.of("graalvm_home")))
                 , args.toArray(String[]::new)
-            );
+            ));
+        }
+
+        static Expect mavenDownload()
+        {
+            return Expect.of(new Steps.Download(
+                URLs.of("https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz")
+                , Path.of("downloads", "apache-maven-3.6.3-bin.tar.gz")
+            ));
+        }
+
+        static Expect mavenUntar()
+        {
+            return Expect.of(Steps.Exec.of(
+                Path.of("")
+                , "tar"
+                , "-xzvpf"
+                , "downloads/apache-maven-3.6.3-bin.tar.gz"
+                , "-C"
+                , "maven"
+                , "--strip-components"
+                , "1"
+            ));
         }
     }
 
