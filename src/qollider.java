@@ -795,7 +795,7 @@ class MavenBuild implements Callable<List<?>>
         // Use a java home that already points to the jdk + graal.
         // Enables maven build to be used to build for sample Quarkus apps with native bits.
         // This is not strictly necessary for say building Quarkus.
-        final var envVars = List.of(EnvVar.javaHome(Homes.graal()));
+        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
         return Steps.Exec.run(
             Steps.Exec.of(project, envVars, arguments)
             , effects
@@ -921,7 +921,7 @@ class MavenTest implements Callable<List<?>>
     {
         final var directory = MavenTest.suitePath(options.suite);
         final var arguments = arguments(options, directory, roots).toArray(String[]::new);
-        final var envVars = List.of(EnvVar.javaHome(Homes.graal()));
+        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
         return Steps.Exec.of(directory, envVars, arguments);
     }
 
@@ -2066,7 +2066,7 @@ final class QuarkusCheck
         void graalOracleBuild()
         {
             final var fs = InMemoryFileSystem.empty();
-            Asserts.tasks(
+            Asserts.steps(
                 GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
                 , Expect.graalOracleBuild()
             );
@@ -2078,7 +2078,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.ofExists(
                 Path.of("mandrel", "README-Mandrel.md")
             );
-            Asserts.tasks(
+            Asserts.steps(
                 GraalBuild.Graal.build(cli(Args.mandrelTree()), fs.exec(), fs.install(), Args.roots())
                 , Expect.gitClone("graalvm/mandrel-packaging")
                 , Expect.mavenDownload()
@@ -2091,7 +2091,7 @@ final class QuarkusCheck
         void skipBuild()
         {
             final var fs = InMemoryFileSystem.ofExists(Expect.graalOracleBuild().step);
-            Asserts.tasks(
+            Asserts.steps(
                 GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
                 , Expect.graalOracleBuild().untouched()
             );
@@ -2190,7 +2190,7 @@ final class QuarkusCheck
             final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
             final var url = format("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
 
-            Asserts.tasks(
+            Asserts.steps(
                 GraalBuild.Java.install(cli(), fs.install())
                 , Expect.download(url, String.format("downloads/%s", tarName))
                 , Expect.extract(String.format("downloads/%s", tarName), "boot-jdk-11")
@@ -2212,7 +2212,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var url = "https://doestnotexist.com/archive.tar.gz";
 
-            Asserts.tasks(
+            Asserts.steps(
                 GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
                 , Expect.download(url, "downloads/archive.tar.gz")
                 , Expect.extract("downloads/archive.tar.gz", "graalvm/graal")
@@ -2225,7 +2225,7 @@ final class QuarkusCheck
             final var fs = InMemoryFileSystem.empty();
             final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
 
-            Asserts.tasks(
+            Asserts.steps(
                 GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
                 , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
                 , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm/graal")
@@ -2245,7 +2245,7 @@ final class QuarkusCheck
                 , Expect.extract(downloadPath, extractPath).step
             );
 
-            Asserts.tasks(
+            Asserts.steps(
                 GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
                 , Expect.download(url, downloadPath).untouched()
                 , Expect.extract(downloadPath, extractPath).untouched()
@@ -2262,7 +2262,7 @@ final class QuarkusCheck
                 Expect.download(url, path).step
             );
 
-            Asserts.tasks(
+            Asserts.steps(
                 GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
                 , Expect.download(url, path).untouched()
                 , Expect.extract(path, "graalvm/graal")
@@ -2290,58 +2290,39 @@ final class QuarkusCheck
         @Test
         void quarkus()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
-            final var options = cli(
-                "-t"
-                , "https://github.com/quarkusio/quarkus/tree/master"
+            final var tree = "https://github.com/quarkusio/quarkus/tree/master";
+            Asserts.step(
+                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                , Expect.mavenBuild("quarkus")
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expect.mavenBuild(Path.of("quarkus"));
-            os.assertExecutedOneTask(expected.step, marker);
         }
 
         @Test
         void skipQuarkus()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var expect = Expect.mavenBuild(Path.of("quarkus"));
-            final var fs = InMemoryFileSystem.ofExists(expect.step);
-            final var options = cli(
-                "-t"
-                , "https://github.com/quarkusio/quarkus/tree/master"
+            final var fs = InMemoryFileSystem.ofExists(Expect.mavenBuild("quarkus").step);
+            final var tree = "https://github.com/quarkusio/quarkus/tree/master";
+            Asserts.step(
+                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                , Expect.mavenBuild("quarkus").untouched()
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects, Args.roots());
-            os.assertNumberOfTasks(0);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(false));
         }
 
         @Test
         void camelQuarkus()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
-            final var options = cli(
-                "-t"
-                , "https://github.com/apache/camel-quarkus/tree/master"
+            final var tree = "https://github.com/apache/camel-quarkus/tree/master";
+            Asserts.step(
+                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                , Expect.mavenBuild("camel-quarkus", "-Dquarkus.version=999-SNAPSHOT")
             );
-
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expect.mavenBuild(
-                Path.of("camel-quarkus")
-                , "-Dquarkus.version=999-SNAPSHOT"
-            );
-            os.assertExecutedOneTask(expected.step, marker);
         }
 
         @Test
         void camel()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
                 "-t"
@@ -2349,14 +2330,14 @@ final class QuarkusCheck
                 , "-aba"
                 , "-Pfastinstall,-Pdoesnotexist"
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var marker = MavenBuild.build(options, effects, Args.roots());
-            final var expected = Expect.mavenBuild(
-                Path.of("camel")
-                , "-Pfastinstall"
-                , "-Pdoesnotexist"
+            Asserts.step(
+                MavenBuild.build(options, fs.exec(), Args.roots())
+                , Expect.mavenBuild(
+                    "camel"
+                    , "-Pfastinstall"
+                    , "-Pdoesnotexist"
+                )
             );
-            os.assertExecutedOneTask(expected.step, marker);
         }
 
         // TODO avoid dup
@@ -2656,20 +2637,23 @@ final class QuarkusCheck
 
     static final class Asserts
     {
-        static void tasks(List<Marker> markers, Expect... expects)
+        static void step(Marker actual, Expect expected)
+        {
+            assertThat(actual.info(), is(expected.step.toString()));
+            assertThat(actual.exists(), is(true));
+            assertThat(actual.touched(), is(expected.touched));
+            assertThat(
+                actual.path().toString()
+                , is(format("%s.marker", Hashing.sha1(expected.step.toString())))
+            );
+        }
+
+        static void steps(List<Marker> markers, Expect... expects)
         {
             assertThat(markers.toString(), markers.size(), is(expects.length));
             for (int i = 0; i < expects.length; i++)
             {
-                final var actual = markers.get(i);
-                final var expected = expects[i];
-                assertThat(actual.info(), is(expected.step.toString()));
-                assertThat(actual.exists(), is(true));
-                assertThat(actual.touched(), is(expected.touched));
-                assertThat(
-                    actual.path().toString()
-                    , is(format("%s.marker", Hashing.sha1(expected.step.toString())))
-                );
+                step(markers.get(i), expects[i]);
             }
         }
     }
@@ -2755,7 +2739,7 @@ final class QuarkusCheck
             return Path.of("graalvm_home");
         }
 
-        static Expect mavenBuild(Path path, String... extra)
+        static Expect mavenBuild(String path, String... extra)
         {
             final var args = Stream.concat(
                 Stream.of(
@@ -2770,8 +2754,8 @@ final class QuarkusCheck
             );
 
             return Expect.of(Steps.Exec.of(
-                path
-                , List.of(new EnvVar("JAVA_HOME", Path.of("graalvm_home")))
+                Path.of(path)
+                , List.of(new EnvVar("JAVA_HOME", Path.of("/", "today", "graalvm_home")))
                 , args.toArray(String[]::new)
             ));
         }
