@@ -227,16 +227,14 @@ class GraalGet implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            fs.mkdirs(options.graal);
-
             final var os = OperatingSystem.of(fs);
             final var web = Web.of(fs);
 
             final var exec = Steps.Exec.Effects.of(os);
-            final var download = Steps.Download.Effects.of(web, os);
+            final var install = Steps.Install.Effects.of(web, os);
 
             return Lists.flatten(
-                Graal.get(options, exec, download)
+                Graal.get(options, exec, install)
                 , Graal.link(options, fs::symlink)
             );
         }
@@ -247,11 +245,13 @@ class GraalGet implements Callable<List<?>>
         static List<Marker> get(
             Options options
             , Steps.Exec.Effects exec
-            , Steps.Download.Effects download
+            , Steps.Install.Effects install
         )
         {
-            final var install = new Steps.Install(options.url, options.graal);
-            final var installMarkers = Steps.Install.install(install, download);
+            final var installMarkers = Steps.Install.install(
+                new Steps.Install(options.url, options.graal)
+                , install
+            );
 
             final var orgName = Path.of(options.url.getPath()).getName(0);
             if (!orgName.equals(Path.of("graalvm")))
@@ -361,23 +361,21 @@ class GraalBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            home.mkdirs(options.bootJdkPath());
-
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
             final var roots = new Roots(home::resolve, today::resolve);
 
             final var execToday = Steps.Exec.Effects.of(osToday);
-            final var downloadHome = Steps.Download.Effects.of(Web.of(home), osHome);
+            final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
             return Lists.flatten(
                 Java.clone(options, execToday)
                 , Git.clone(options.mx, execToday)
                 , Git.clone(options.graal, execToday)
-                , Java.install(options, downloadHome)
+                , Java.install(options, installHome)
                 , Java.build(options, execToday, osToday::type, roots)
                 , Java.link(options, today::symlink)
-                , Graal.build(options, execToday, downloadHome, roots)
+                , Graal.build(options, execToday, installHome, roots)
                 , Graal.link(options, today::symlink, osToday.fs::exists)
             );
         }
@@ -474,7 +472,7 @@ class GraalBuild implements Callable<List<?>>
         }
 
         // TODO create a record to capture Java version info (major, minor, micro, build)
-        static List<Marker> install(Options options, Steps.Download.Effects download)
+        static List<Marker> install(Options options, Steps.Install.Effects install)
         {
             final var javaVersionMajor = "11";
             final var javaVersionBuild = "10";
@@ -484,7 +482,7 @@ class GraalBuild implements Callable<List<?>>
                 , javaVersionMajor
             );
 
-            final var osType = download.osType().get();
+            final var osType = install.download().osType().get();
             final var javaOsType = osType.isMac() ? "mac" : osType;
             final var arch = "x64";
 
@@ -500,7 +498,7 @@ class GraalBuild implements Callable<List<?>>
                 , javaVersionBuild
             );
 
-            return Steps.Install.install(new Steps.Install(url, options.bootJdkPath()), download);
+            return Steps.Install.install(new Steps.Install(url, options.bootJdkPath()), install);
         }
 
         private static final class OpenJDK
@@ -590,12 +588,12 @@ class GraalBuild implements Callable<List<?>>
 
     static final class Graal
     {
-        static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Download.Effects download, Roots roots)
+        static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Install.Effects install, Roots roots)
         {
             final var type = options.graalType(exec.exists());
             return switch (type)
             {
-                case MANDREL -> Mandrel.build(options, exec, download, roots);
+                case MANDREL -> Mandrel.build(options, exec, install, roots);
                 case ORACLE -> List.of(Oracle.build(options, exec, roots));
             };
         }
@@ -612,10 +610,10 @@ class GraalBuild implements Callable<List<?>>
 
         static final class Mandrel
         {
-            static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Download.Effects download, Roots roots)
+            static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Install.Effects install, Roots roots)
             {
                 final var cloneMarker = Git.clone(options.packaging, exec);
-                final var mavenInstallMarkers = Maven.install(download);
+                final var mavenInstallMarkers = Maven.install(install);
 
                 final var today = roots.today();
                 final var buildMarker = Steps.Exec.run(
@@ -764,18 +762,16 @@ class MavenBuild implements Callable<List<?>>
         @Override
         public List<?> apply(Options options)
         {
-            home.mkdirs(Path.of("maven"));
-
             final var osToday = OperatingSystem.of(today);
             final var osHome = OperatingSystem.of(home);
             final var roots = new Roots(home::resolve, today::resolve);
 
             final var execToday = Steps.Exec.Effects.of(osToday);
-            final var downloadHome = Steps.Download.Effects.of(Web.of(home), osHome);
+            final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
             return Lists.flatten(
                 Git.clone(options.tree, execToday)
-                , Maven.install(downloadHome)
+                , Maven.install(installHome)
                 , MavenBuild.build(options, execToday, roots)
             );
         }
@@ -970,7 +966,7 @@ class MavenTest implements Callable<List<?>>
 
 final class Maven
 {
-    static List<Marker> install(Steps.Download.Effects download)
+    static List<Marker> install(Steps.Install.Effects install)
     {
         final var version = "3.6.3";
         final var url = URLs.of(
@@ -978,7 +974,7 @@ final class Maven
             , version
         );
 
-        return Steps.Install.install(new Steps.Install(url, Path.of("maven")), download);
+        return Steps.Install.install(new Steps.Install(url, Path.of("maven")), install);
     }
 
     static Path home(Function<Path, Path> resolve)
@@ -1138,7 +1134,7 @@ final class Steps
     // Install = Download + Extract
     record Install(URL url, Path path) implements Step
     {
-        static List<Marker> install(Install install, Download.Effects download)
+        static List<Marker> install(Install install, Install.Effects effects)
         {
             final var url = install.url;
             final var fileName = Path.of(url.getFile()).getFileName();
@@ -1147,24 +1143,59 @@ final class Steps
 
             final var downloadMarker = Download.lazy(
                 new Download(url, tarPath)
-                , download
+                , effects.download
             );
 
-            final var extractMarker = Exec.run(
+            final var extractMarker = Extract.extract(
+                new Extract(tarPath, install.path)
+                , effects.extract
+            );
+
+            return List.of(downloadMarker, extractMarker);
+        }
+
+        record Effects(Download.Effects download, Extract.Effects extract)
+        {
+            static Effects of(Web web, OperatingSystem os)
+            {
+                final var download = Download.Effects.of(web, os);
+                final var extract = Extract.Effects.of(os);
+                return new Effects(download, extract);
+            }
+        }
+    }
+
+    record Extract(Path tar, Path path) implements Step
+    {
+        static Marker extract(Extract extract, Extract.Effects effects)
+        {
+            effects.mkdirs.accept(extract.path); // cheap so do it regardless, no marker
+
+            return Exec.run(
                 Exec.of(
                     "tar"
                     // TODO make it quiet
                     , "-xzvpf"
-                    , tarPath.toString()
+                    , extract.tar.toString()
                     , "-C"
-                    , install.path.toString()
+                    , extract.path.toString()
                     , "--strip-components"
                     , "1"
                 )
-                , download.exec
+                , effects.exec
             );
+        }
 
-            return List.of(downloadMarker, extractMarker);
+        record Effects(
+            Exec.Effects exec
+            , Consumer<Path> mkdirs
+        )
+        {
+            static Effects of(OperatingSystem os)
+            {
+                final var exec = Exec.Effects.of(os);
+                return new Effects(exec, os.fs::mkdirs);
+            }
         }
     }
 
@@ -1216,24 +1247,24 @@ final class Steps
     {
         static Marker lazy(Download task, Effects effects)
         {
-            final var marker = Marker.of(task).query(effects.exec.exists);
+            final var marker = Marker.of(task).query(effects.exists);
             if (marker.exists())
                 return marker;
 
             effects.download.accept(task);
-            return marker.touch(effects.exec.touch);
+            return marker.touch(effects.touch);
         }
 
         record Effects(
-            Steps.Exec.Effects exec
+            Predicate<Path> exists
+            , Function<Marker, Boolean> touch
             , Consumer<Download> download
             , Supplier<OperatingSystem.Type> osType
         )
         {
             static Effects of(Web web, OperatingSystem os)
             {
-                final var exec = Exec.Effects.of(os);
-                return new Effects(exec, web::download, os::type);
+                return new Effects(os.fs::exists, os.fs::touch, web::download, os::type);
             }
         }
     }
@@ -2036,7 +2067,7 @@ final class QuarkusCheck
         {
             final var fs = InMemoryFileSystem.empty();
             Asserts.tasks(
-                GraalBuild.Graal.build(cli(), fs.exec(), fs.download(), Args.roots())
+                GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
                 , Expect.graalOracleBuild()
             );
         }
@@ -2048,10 +2079,10 @@ final class QuarkusCheck
                 Path.of("mandrel", "README-Mandrel.md")
             );
             Asserts.tasks(
-                GraalBuild.Graal.build(cli(Args.mandrelTree()), fs.exec(), fs.download(), Args.roots())
+                GraalBuild.Graal.build(cli(Args.mandrelTree()), fs.exec(), fs.install(), Args.roots())
                 , Expect.gitClone("graalvm/mandrel-packaging")
                 , Expect.mavenDownload()
-                , Expect.mavenUntar()
+                , Expect.mavenExtract()
                 , Expect.graalMandrelBuild()
             );
         }
@@ -2061,7 +2092,7 @@ final class QuarkusCheck
         {
             final var fs = InMemoryFileSystem.ofExists(Expect.graalOracleBuild().step);
             Asserts.tasks(
-                GraalBuild.Graal.build(cli(), fs.exec(), fs.download(), Args.roots())
+                GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
                 , Expect.graalOracleBuild().untouched()
             );
         }
@@ -2156,28 +2187,14 @@ final class QuarkusCheck
         void javaInstall()
         {
             final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final var web = new RecordingWeb();
-            final var options = cli();
-            final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(exec, web::record, os::type);
-            final var markers = GraalBuild.Java.install(options, download);
-            final var downloadTask = web.tasks.remove();
             final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
-            final var url = URLs.of("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
-            assertThat(downloadTask.url(), is(url));
-            assertThat(downloadTask.path(), is(Path.of("downloads", tarName)));
-            assertThat(markers.get(0).touched(), is(true));
-            final var expected = Steps.Exec.of(
-                "tar",
-                "-xzvpf"
-                , format("downloads/%s", tarName)
-                , "-C"
-                , "boot-jdk-11"
-                , "--strip-components"
-                , "1"
+            final var url = format("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
+
+            Asserts.tasks(
+                GraalBuild.Java.install(cli(), fs.install())
+                , Expect.download(url, String.format("downloads/%s", tarName))
+                , Expect.extract(String.format("downloads/%s", tarName), "boot-jdk-11")
             );
-            os.assertExecutedOneTask(expected, markers.get(1));
         }
 
         private static GraalBuild.Options cli(String... extra)
@@ -2192,117 +2209,64 @@ final class QuarkusCheck
         @Test
         void get()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
-            final var web = new RecordingWeb();
-            final var options = cli(
-                "--url",
-                "https://doestnotexist.com/archive.tar.gz"
-            );
-            final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(exec, web::record, os::type);
-            final var markers = GraalGet.Graal.get(options, exec, download);
-            assertThat(markers.size(), is(2));
-            final var downloadMarker = markers.get(0);
-            assertThat(downloadMarker.exists(), is(true));
-            assertThat(downloadMarker.touched(), is(true));
-            final var extractMarker = markers.get(1);
-            assertThat(extractMarker.exists(), is(true));
-            assertThat(extractMarker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(t ->
-                assertThat(
-                    String.join(" ", t.args())
-                    , is(equalTo("tar -xzvpf downloads/archive.tar.gz -C graalvm/graal --strip-components 1"))
-                )
+            final var url = "https://doestnotexist.com/archive.tar.gz";
+
+            Asserts.tasks(
+                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
+                , Expect.download(url, "downloads/archive.tar.gz")
+                , Expect.extract("downloads/archive.tar.gz", "graalvm/graal")
             );
         }
 
         @Test
         void getAndDownloadNativeImage()
         {
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.empty();
-            final var web = new RecordingWeb();
-            final var options = cli(
-                "--url",
-                "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz"
+            final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
+
+            Asserts.tasks(
+                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
+                , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
+                , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm/graal")
+                , Expect.guNativeImage()
             );
-            final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(exec, web::record, os::type);
-            final var markers = GraalGet.Graal.get(options, exec, download);
-            assertThat(markers.size(), is(3));
-            final var downloadMarker = markers.get(0);
-            assertThat(downloadMarker.exists(), is(true));
-            assertThat(downloadMarker.touched(), is(true));
-            final var extractMarker = markers.get(1);
-            assertThat(extractMarker.exists(), is(true));
-            assertThat(extractMarker.touched(), is(true));
-            final var downloadNativeImageMarker = markers.get(2);
-            assertThat(downloadNativeImageMarker.exists(), is(true));
-            assertThat(downloadNativeImageMarker.touched(), is(true));
         }
 
         @Test
         void skipBothDownloadAndExtract()
         {
             final var url = "https://skip.both/download";
-            final var downloadPath = Path.of("downloads", "download");
+            final var downloadPath = "downloads/download";
+            final var extractPath = "graalvm/graal";
 
-            final var extractArgs = new String[]{
-                "tar"
-                , "-xzvpf"
-                , downloadPath.toString()
-                , "-C"
-                , Path.of("graalvm", "graal").toString()
-                , "--strip-components"
-                , "1"
-            };
-
-            final var options = cli("--url", url);
-
-            final var os = RecordingOperatingSystem.macOS();
             final var fs = InMemoryFileSystem.ofExists(
-                new Steps.Download(URLs.of(url), downloadPath)
-                , Steps.Exec.of(extractArgs)
+                Expect.download(url, downloadPath).step
+                , Expect.extract(downloadPath, extractPath).step
             );
-            final var web = new RecordingWeb();
-            final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(exec, web::record, os::type);
-            final var markers = GraalGet.Graal.get(options, exec, download);
-            os.assertNumberOfTasks(0);
-            assertThat(markers.size(), is(2));
-            final var downloadMarker = markers.get(0);
-            assertThat(downloadMarker.exists(), is(true));
-            assertThat(downloadMarker.touched(), is(false));
-            final var extractMarker = markers.get(1);
-            assertThat(extractMarker.exists(), is(true));
-            assertThat(extractMarker.touched(), is(false));
+
+            Asserts.tasks(
+                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
+                , Expect.download(url, downloadPath).untouched()
+                , Expect.extract(downloadPath, extractPath).untouched()
+            );
         }
 
         @Test
         void skipOnlyDownload()
         {
-            final var url = "https://skip.only/download";
-            final var path = Path.of("downloads", "download");
-            final var step = new Steps.Download(URLs.of(url), path);
-            final var options = cli("--url", url);
+            final var url = "https://skip.only/download.tar.gz";
+            final var path = "downloads/download.tar.gz";
 
-            final var os = RecordingOperatingSystem.macOS();
-            final var fs = InMemoryFileSystem.ofExists(step);
-            final var web = new RecordingWeb();
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.download(url, path).step
+            );
 
-            final var exec = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var download = new Steps.Download.Effects(exec, web::record, os::type);
-            final var markers = GraalGet.Graal.get(options, exec, download);
-            os.assertNumberOfTasks(1);
-            assertThat(markers.size(), is(2));
-            final var downloadMarker = markers.get(0);
-            assertThat(downloadMarker.exists(), is(true));
-            assertThat(downloadMarker.touched(), is(false));
-            final var extractMarker = markers.get(1);
-            assertThat(extractMarker.exists(), is(true));
-            assertThat(extractMarker.touched(), is(true));
+            Asserts.tasks(
+                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
+                , Expect.download(url, path).untouched()
+                , Expect.extract(path, "graalvm/graal")
+            );
         }
 
         @Test
@@ -2560,9 +2524,12 @@ final class QuarkusCheck
             return new Steps.Exec.Effects(this::exists, e -> {}, this::touch);
         }
 
-        Steps.Download.Effects download()
+        Steps.Install.Effects install()
         {
-            return new Steps.Download.Effects(exec(), d -> {}, () -> OperatingSystem.Type.MACOSX);
+            return new Steps.Install.Effects(
+                new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> OperatingSystem.Type.MACOSX)
+                , new Steps.Extract.Effects(exec(), p -> {})
+            );
         }
 
         static InMemoryFileSystem empty()
@@ -2684,17 +2651,6 @@ final class QuarkusCheck
         private <T> T peekTask()
         {
             return (T) tasks.peek();
-        }
-    }
-
-    // TODO merge with RecordingOperatingSystem? Or wait until no need for record?
-    private static final class RecordingWeb
-    {
-        private final Queue<Steps.Download> tasks = new ArrayDeque<>();
-
-        void record(Steps.Download task)
-        {
-            tasks.offer(task);
         }
     }
 
@@ -2822,23 +2778,46 @@ final class QuarkusCheck
 
         static Expect mavenDownload()
         {
+            return download(
+                "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"
+                , "downloads/apache-maven-3.6.3-bin.tar.gz"
+            );
+        }
+
+        static Expect download(String url, String path)
+        {
             return Expect.of(new Steps.Download(
-                URLs.of("https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz")
-                , Path.of("downloads", "apache-maven-3.6.3-bin.tar.gz")
+                URLs.of(url)
+                , Path.of(path)
             ));
         }
 
-        static Expect mavenUntar()
+        static Expect mavenExtract()
+        {
+            return extract("downloads/apache-maven-3.6.3-bin.tar.gz", "maven");
+        }
+
+        static Expect extract(String tar, String path)
         {
             return Expect.of(Steps.Exec.of(
                 Path.of("")
                 , "tar"
                 , "-xzvpf"
-                , "downloads/apache-maven-3.6.3-bin.tar.gz"
+                , tar
                 , "-C"
-                , "maven"
+                , path
                 , "--strip-components"
                 , "1"
+            ));
+        }
+
+        static Expect guNativeImage()
+        {
+            return Expect.of(Steps.Exec.of(
+                Path.of("graal/bin")
+                , "./gu"
+                , "install"
+                , "native-image"
             ));
         }
     }
