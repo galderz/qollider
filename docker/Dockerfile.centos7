@@ -9,8 +9,9 @@ RUN yum -y install \
         findutils \
         fontconfig-devel \
         gcc \
-        git \
         gcc-c++ \
+        git \
+        libffi-devel \
         libXi-devel \
         libXrandr-devel \
         libXrender-devel \

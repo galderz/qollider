@@ -11,6 +11,7 @@ RUN dnf -y install \
         gcc \
         git \
         g++ \
+        libffi-devel \
         libXi-devel \
         libXrandr-devel \
         libXrender-devel \
