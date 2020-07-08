@@ -72,6 +72,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
+import static java.lang.System.Logger.Level.INFO;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -93,7 +94,7 @@ public class qollider implements Runnable
         Configurator.setRootLevel(Level.DEBUG);
 
         // Run checks
-        QuarkusCheck.check();
+        Check.check();
 
         final var today = FileSystem.ofToday();
         final var home = FileSystem.ofHome();
@@ -1800,8 +1801,10 @@ final class Illegal
     }
 }
 
-final class QuarkusCheck
+final class Check
 {
+    static final System.Logger log = System.getLogger("Check");
+
     static void check()
     {
         // TODO remove summary listener, a bit too noisy
@@ -1819,12 +1822,20 @@ final class QuarkusCheck
         Launcher launcher = LauncherFactory.create();
         launcher.registerTestExecutionListeners(listener);
         launcher.execute(request);
-        // TODO only log first line
-        listener.getSummary().printTo(new PrintWriter(System.out));
-        listener.getSummary().printFailuresTo(new PrintWriter(System.err));
-        final var failureCount = listener.getSummary().getTestsFailedCount();
-        if (failureCount > 0)
+        final var summary = listener.getSummary();
+        final var failureCount = summary.getTestsFailedCount();
+        if (summary.getTestsFailedCount() == 0)
         {
+            final var duration = summary.getTimeFinished() - summary.getTimeStarted();
+            log.log(INFO
+                , "Tests ({0}) run successfully after {1} ms"
+                , summary.getTestsSucceededCount()
+                , duration
+            );
+        }
+        else
+        {
+            summary.printFailuresTo(new PrintWriter(System.err));
             throw new AssertionError(format(
                 "Number of failed tests: %d"
                 , failureCount
@@ -2827,6 +2838,6 @@ final class QuarkusCheck
 
     public static void main(String[] args)
     {
-        QuarkusCheck.check();
+        Check.check();
     }
 }
