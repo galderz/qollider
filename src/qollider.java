@@ -2,20 +2,11 @@
 //JAVAC_OPTIONS --enable-preview -source 14
 //JAVA_OPTIONS --enable-preview
 //DEPS info.picocli:picocli:4.2.0
-//DEPS org.apache.logging.log4j:log4j-core:2.13.0
 //DEPS org.hamcrest:hamcrest:2.2
 //DEPS org.junit.jupiter:junit-jupiter-engine:5.6.1
 //DEPS org.junit.platform:junit-platform-launcher:1.6.1
 
-import org.apache.logging.log4j.Level;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.core.config.Configurator;
-import org.apache.logging.log4j.core.config.DefaultConfiguration;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.BeforeAllCallback;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.platform.launcher.Launcher;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -72,6 +63,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
+import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.System.Logger.Level.INFO;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -82,17 +74,13 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 @Command
 public class qollider implements Runnable
 {
-    static final Logger LOG = LogManager.getLogger(qollider.class);
+    static final System.Logger log = System.getLogger(qollider.class.getName());
 
     @Spec
     CommandSpec spec;
 
     public static void main(String[] args)
     {
-        // TODO improve logging by only log 2 things: the inputs and the resulting outputs/effects
-        Configurator.initialize(new DefaultConfiguration());
-        Configurator.setRootLevel(Level.DEBUG);
-
         // Run checks
         Check.check();
 
@@ -116,14 +104,14 @@ public class qollider implements Runnable
         final var result = cli.execute(args);
         if (0 == result.exitCode())
         {
-            LOG.info("Execution summary:");
-            LOG.info("Inputs:{}{}"
+            log.log(INFO, "Execution summary:");
+            log.log(INFO, "Inputs:{0}{1}"
                 , System.lineSeparator()
                 , List.of(args).stream()
                     .map(Object::toString)
                     .collect(Collectors.joining(System.lineSeparator()))
             );
-            LOG.info("Outputs:{}{}"
+            log.log(INFO, "Outputs:{0}{1}"
                 , System.lineSeparator()
                 , result.outputs().stream()
                     .map(Object::toString)
@@ -132,7 +120,7 @@ public class qollider implements Runnable
         }
         else
         {
-            LOG.error("Failed executing: {}", result);
+            log.log(ERROR, "Failed executing: {0}", result);
         }
         System.exit(result.exitCode());
     }
@@ -1485,7 +1473,7 @@ class FileSystem
 // Dependency
 class OperatingSystem
 {
-    static final Logger LOG = LogManager.getLogger(qollider.class);
+    static final System.Logger LOG = System.getLogger(qollider.class.getName());
 
     final FileSystem fs;
 
@@ -1507,8 +1495,8 @@ class OperatingSystem
 
         final var directory = fs.root.resolve(exec.directory());
         // TODO print task without commas
-        LOG.debug(
-            "Execute {} in {} with environment variables {}"
+        LOG.log(INFO
+            ,"Execute {0} in {1} with environment variables {2}"
             , taskList
             , directory
             , exec.envVars()
@@ -1605,7 +1593,7 @@ final class Hashing
 // Dependency
 final class Web
 {
-    static final Logger LOG = LogManager.getLogger(qollider.class);
+    static final System.Logger LOG = System.getLogger(qollider.class.getName());
 
     final FileSystem fs;
 
@@ -1669,8 +1657,8 @@ final class Web
                 if (logChunk != logCount)
                 {
                     logCount = logChunk;
-                    LOG.info(
-                        "Download progress {} received"
+                    LOG.log(INFO
+                        ,"Download progress {0} received"
                         , humanReadableByteCountBin(bytesCount)
                     );
                 }
@@ -1803,7 +1791,7 @@ final class Illegal
 
 final class Check
 {
-    static final System.Logger log = System.getLogger("Check");
+    static final System.Logger LOG = System.getLogger(qollider.class.getName());
 
     static void check()
     {
@@ -1827,7 +1815,7 @@ final class Check
         if (summary.getTestsFailedCount() == 0)
         {
             final var duration = summary.getTimeFinished() - summary.getTimeStarted();
-            log.log(INFO
+            LOG.log(INFO
                 , "Tests ({0}) run successfully after {1} ms"
                 , summary.getTestsSucceededCount()
                 , duration
@@ -1843,17 +1831,6 @@ final class Check
         }
     }
 
-    private static class LoggingExtension implements BeforeAllCallback
-    {
-        @Override
-        public void beforeAll(ExtensionContext extensionContext)
-        {
-            Configurator.initialize(new DefaultConfiguration());
-            Configurator.setRootLevel(Level.DEBUG);
-        }
-    }
-
-    @ExtendWith(LoggingExtension.class)
     static class CheckGit
     {
         @Test
@@ -1975,7 +1952,6 @@ final class Check
         }
     }
 
-    @ExtendWith(LoggingExtension.class)
     static class CheckGraalBuild
     {
         @Test
@@ -2214,7 +2190,6 @@ final class Check
         }
     }
 
-    @ExtendWith(LoggingExtension.class)
     static class CheckGraalGet
     {
         @Test
@@ -2295,7 +2270,6 @@ final class Check
         }
     }
 
-    @ExtendWith(LoggingExtension.class)
     static class CheckMavenBuild
     {
         @Test
