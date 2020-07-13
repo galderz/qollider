@@ -35,6 +35,7 @@ import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -84,8 +85,8 @@ public class qollider implements Runnable
         // Run checks
         Check.check();
 
-        final var today = FileSystem.ofToday();
         final var home = FileSystem.ofHome();
+        final var today = FileSystem.ofToday(home);
 
         // TODO consider collapsing graal-build and maven-build into build
         // depending on the tree passed in, the code could multiplex.
@@ -1349,19 +1350,23 @@ record Link(Path link, Path target) {}
 // Dependency
 class FileSystem
 {
+    static final System.Logger LOG = System.getLogger(qollider.class.getName());
+
     final Path root;
 
-    static FileSystem ofToday()
+    static FileSystem ofToday(FileSystem home)
     {
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
-        var baseDir = Path.of(
-            System.getProperty("user.home")
-            , ".qollider"
-            , "cache"
-        );
+        var baseDir = home.root.resolve("cache");
         final var path = baseDir.resolve(today);
+        final var isNewDay = !path.toFile().exists();
+        if (isNewDay)
+        {
+            home.symlink(Path.of("cache", "latest"), Path.of(today));
+        }
+
         return FileSystem.of(path);
     }
 
@@ -1419,8 +1424,10 @@ class FileSystem
         final var link = root.resolve(relativeLink);
         try
         {
-            if (Files.exists(link))
+            if (Files.exists(link, LinkOption.NOFOLLOW_LINKS))
+            {
                 Files.delete(link);
+            }
 
             final var symbolicLink = Files.createSymbolicLink(link, relativeTarget);
             return new Link(symbolicLink, relativeTarget);
