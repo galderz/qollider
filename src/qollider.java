@@ -1362,12 +1362,12 @@ class FileSystem
         var baseDir = home.root.resolve("cache");
         final var path = baseDir.resolve(today);
         final var isNewDay = !path.toFile().exists();
+        var fs = FileSystem.of(path);
         if (isNewDay)
         {
             home.symlink(Path.of("cache", "latest"), Path.of(today));
         }
-
-        return FileSystem.of(path);
+        return fs;
     }
 
     static FileSystem ofHome()
