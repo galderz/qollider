@@ -77,14 +77,14 @@ public class qollider
         final var home = FileSystem.ofHome();
         final var today = FileSystem.ofToday(home);
 
-        final var cli = Cli.read(args);
+        final var cli = Cli.read(List.of(args));
         var outputs =
             switch (cli.command)
             {
-                case GRAAL_GET -> GraalGet.ofSystem(today).with(cli).call();
-                case GRAAL_BUILD -> GraalBuild.ofSystem(home, today).with(cli).call();
-                case MAVEN_BUILD -> MavenBuild.ofSystem(home, today).with(cli).call();
-                case MAVEN_TEST -> MavenTest.ofSystem(home, today).with(cli).call();
+                case GRAAL_GET -> GraalGet.ofSystem(cli, today).call();
+                case GRAAL_BUILD -> GraalBuild.ofSystem(cli, home, today).call();
+                case MAVEN_BUILD -> MavenBuild.ofSystem(cli, home, today).call();
+                case MAVEN_TEST -> MavenTest.ofSystem(cli, home, today).call();
             };
 
         log.log(INFO, "Execution summary:");
@@ -149,22 +149,22 @@ final class Cli
         return option != null ? option.get(0) : defaultValue;
     }
 
-    static Cli read(String... args)
+    static Cli read(List<String> args)
     {
-        if (args.length < 1)
+        if (args.size() < 1)
             throw new IllegalArgumentException("Not enough arguments");
 
         final var command =
             Command.valueOf(
-                args[0].replace("-", "_").toUpperCase()
+                args.get(0).replace("-", "_").toUpperCase()
             );
 
         final Map<String, List<String>> params = new HashMap<>();
 
         List<String> options = null;
-        for (int i = 1; i < args.length; i++)
+        for (int i = 1; i < args.size(); i++)
         {
-            final var arg = args[i];
+            final var arg = args.get(i);
             if (arg.startsWith("--"))
             {
                 if (arg.length() < 3)
@@ -193,54 +193,32 @@ final class Cli
 
 class GraalGet implements Callable<List<?>>
 {
-    private final Function<Options, List<?>> runner;
+    final Options options;
+    final FileSystem fs;
 
-    URL url;
-
-    private GraalGet(Function<Options, List<?>> runner)
-    {
-        this.runner = runner;
+    GraalGet(Options options, FileSystem fs) {
+        this.options = options;
+        this.fs = fs;
     }
 
-    static GraalGet ofSystem(FileSystem fs)
+    static GraalGet ofSystem(Cli cli, FileSystem fs)
     {
-        return new GraalGet(new GraalGet.GetRunner(fs));
-    }
-
-    static GraalGet of(Function<Options, List<?>> runner)
-    {
-        return new GraalGet(runner);
-    }
-
-    GraalGet with(Cli cli)
-    {
-        url = URLs.of(cli.required("url"));
-        return this;
+        return new GraalGet(Options.of(cli), fs);
     }
 
     @Override
     public List<?> call()
     {
-        final var options = new Options(url, Path.of("graalvm", "graal"));
-        return runner.apply(options);
-    }
+        final var os = OperatingSystem.of(fs);
+        final var web = Web.of(fs);
 
-    record GetRunner(FileSystem fs) implements Function<Options, List<?>>
-    {
-        @Override
-        public List<?> apply(Options options)
-        {
-            final var os = OperatingSystem.of(fs);
-            final var web = Web.of(fs);
+        final var exec = Steps.Exec.Effects.of(os);
+        final var install = Steps.Install.Effects.of(web, os);
 
-            final var exec = Steps.Exec.Effects.of(os);
-            final var install = Steps.Install.Effects.of(web, os);
-
-            return Lists.flatten(
-                Graal.get(options, exec, install)
-                , Graal.link(options, fs::symlink)
-            );
-        }
+        return Lists.flatten(
+            Graal.get(options, exec, install)
+            , Graal.link(options, fs::symlink)
+        );
     }
 
     static final class Graal
@@ -280,85 +258,56 @@ class GraalGet implements Callable<List<?>>
         }
     }
 
-    record Options(URL url, Path graal) {}
+    record Options(URL url, Path graal)
+    {
+        static Options of(Cli cli)
+        {
+            return new Options(
+                URLs.of(cli.required("url"))
+                , Path.of("graalvm", "graal")
+            );
+        }
+    }
 }
 
 class GraalBuild implements Callable<List<?>>
 {
-    private final Function<Options, List<?>> runner;
+    final Options options;
+    final FileSystem home;
+    final FileSystem today;
 
-    Repository jdkTree;
-    Repository mxTree;
-    Repository graalTree;
-    Repository packagingTree;
-
-    private GraalBuild(Function<Options, List<?>> runner)
+    private GraalBuild(Options options, FileSystem home, FileSystem today)
     {
-        this.runner = runner;
+        this.options = options;
+        this.home = home;
+        this.today = today;
     }
 
-    static GraalBuild ofSystem(FileSystem home, FileSystem today)
+    static GraalBuild ofSystem(Cli cli, FileSystem home, FileSystem today)
     {
-        return new GraalBuild(new BuildRunner(home, today));
-    }
-
-    static GraalBuild of(Function<Options, List<?>> runner)
-    {
-        return new GraalBuild(runner);
-    }
-
-    GraalBuild with(Cli cli)
-    {
-        jdkTree = Repository.of(cli.optional(
-            "jdk-tree"
-            , "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
-        ));
-        mxTree = Repository.of(cli.optional(
-            "mx-tree"
-            , "https://github.com/graalvm/mx/tree/master"
-        ));
-        graalTree = Repository.of(cli.optional(
-            "graal-tree"
-            ,"https://github.com/oracle/graal/tree/master"
-        ));
-        packagingTree = Repository.of(cli.optional(
-            "packaging-tree"
-            , "https://github.com/graalvm/mandrel-packaging/tree/master"
-        ));
-
-        return this;
+        return new GraalBuild(Options.of(cli), home, today);
     }
 
     @Override
     public List<?> call()
     {
-        final var options = new Options(jdkTree, mxTree, graalTree, packagingTree);
-        return runner.apply(options);
-    }
+        final var osToday = OperatingSystem.of(today);
+        final var osHome = OperatingSystem.of(home);
+        final var roots = new Roots(home::resolve, today::resolve);
 
-    record BuildRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
-    {
-        @Override
-        public List<?> apply(Options options)
-        {
-            final var osToday = OperatingSystem.of(today);
-            final var osHome = OperatingSystem.of(home);
-            final var roots = new Roots(home::resolve, today::resolve);
+        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
-            final var execToday = Steps.Exec.Effects.of(osToday);
-            final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
-
-            return Lists.flatten(
-                Java.clone(options, execToday)
-                , Git.clone(options.mx, execToday)
-                , Git.clone(options.graal, execToday)
-                , Java.install(options, installHome)
-                , Java.build(options, execToday, osToday::type, roots)
-                , Java.link(options, today::symlink)
-                , Graal.build(options, execToday, installHome, roots)
-                , Graal.link(options, today::symlink, osToday.fs::exists)
-            );
-        }
+        return Lists.flatten(
+            Java.clone(options, execToday)
+            , Git.clone(options.mx, execToday)
+            , Git.clone(options.graal, execToday)
+            , Java.install(options, installHome)
+            , Java.build(options, execToday, osToday::type, roots)
+            , Java.link(options, today::symlink)
+            , Graal.build(options, execToday, installHome, roots)
+            , Graal.link(options, today::symlink, osToday.fs::exists)
+        );
     }
 
     record Options(
@@ -399,6 +348,28 @@ class GraalBuild implements Callable<List<?>>
             return osType.get().isMac()
                 ? root.resolve(Path.of("Contents", "Home"))
                 : root;
+        }
+
+        static Options of(Cli cli)
+        {
+            var jdkTree = Repository.of(cli.optional(
+                "jdk-tree"
+                , "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
+            ));
+            var mxTree = Repository.of(cli.optional(
+                "mx-tree"
+                , "https://github.com/graalvm/mx/tree/master"
+            ));
+            var graalTree = Repository.of(cli.optional(
+                "graal-tree"
+                ,"https://github.com/oracle/graal/tree/master"
+            ));
+            var packagingTree = Repository.of(cli.optional(
+                "packaging-tree"
+                , "https://github.com/graalvm/mandrel-packaging/tree/master"
+            ));
+
+            return new Options(jdkTree, mxTree, graalTree, packagingTree);
         }
     }
 
@@ -685,58 +656,36 @@ class MavenBuild implements Callable<List<?>>
         )
     );
 
-    private final Function<Options, List<?>> runner;
+    final Options options;
+    final FileSystem home;
+    final FileSystem today;
 
-    Repository tree;
-    List<String> additionalBuildArgs;
-
-    private MavenBuild(Function<Options, List<?>> runner)
-    {
-        this.runner = runner;
+    MavenBuild(Options options, FileSystem home, FileSystem today) {
+        this.options = options;
+        this.home = home;
+        this.today = today;
     }
 
-    static MavenBuild ofSystem(FileSystem home, FileSystem today)
+    static MavenBuild ofSystem(Cli cli, FileSystem home, FileSystem today)
     {
-        return new MavenBuild(new BuildRunner(home, today));
-    }
-
-    static MavenBuild of(Function<Options, List<?>> runner)
-    {
-        return new MavenBuild(runner);
-    }
-
-    MavenBuild with(Cli cli)
-    {
-        tree = Repository.of(cli.required("tree"));
-        additionalBuildArgs = cli.multi("additional-build-args");
-        return this;
+        return new MavenBuild(Options.of(cli), home, today);
     }
 
     @Override
     public List<?> call()
     {
-        final var options = new Options(tree, additionalBuildArgs);
-        return runner.apply(options);
-    }
+        final var osToday = OperatingSystem.of(today);
+        final var osHome = OperatingSystem.of(home);
+        final var roots = new Roots(home::resolve, today::resolve);
 
-    record BuildRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
-    {
-        @Override
-        public List<?> apply(Options options)
-        {
-            final var osToday = OperatingSystem.of(today);
-            final var osHome = OperatingSystem.of(home);
-            final var roots = new Roots(home::resolve, today::resolve);
+        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
-            final var execToday = Steps.Exec.Effects.of(osToday);
-            final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
-
-            return Lists.flatten(
-                Git.clone(options.tree, execToday)
-                , Maven.install(installHome)
-                , MavenBuild.build(options, execToday, roots)
-            );
-        }
+        return Lists.flatten(
+            Git.clone(options.tree, execToday)
+            , Maven.install(installHome)
+            , MavenBuild.build(options, execToday, roots)
+        );
     }
 
     record Options(Repository tree, List<String> additionalBuildArgs)
@@ -744,6 +693,14 @@ class MavenBuild implements Callable<List<?>>
         Path project()
         {
             return Path.of(tree.name());
+        }
+
+        static Options of(Cli cli)
+        {
+            return new Options(
+                Repository.of(cli.required("tree"))
+                , cli.multi("additional-build-args")
+            );
         }
     }
 
@@ -799,53 +756,40 @@ class MavenTest implements Callable<List<?>>
         )
     );
 
-    private final Function<Options, List<?>> runner;
+    final Options options;
+    final FileSystem home;
+    final FileSystem today;
 
-    String suite;
-    List<String> additionalTestArgs;
-
-    private MavenTest(Function<Options, List<?>> runner)
-    {
-        this.runner = runner;
+    MavenTest(Options options, FileSystem home, FileSystem today) {
+        this.options = options;
+        this.home = home;
+        this.today = today;
     }
 
-    static MavenTest ofSystem(FileSystem home, FileSystem today)
+    static MavenTest ofSystem(Cli cli, FileSystem home, FileSystem today)
     {
-        return new MavenTest(new TestRunner(home, today));
-    }
-
-    static MavenTest of(Function<Options, List<?>> runner)
-    {
-        return new MavenTest(runner);
-    }
-
-    MavenTest with(Cli cli)
-    {
-        suite = cli.required("suite");
-        additionalTestArgs = cli.multi("additional-test-args");
-        return this;
+        return new MavenTest(Options.of(cli), home, today);
     }
 
     @Override
     public List<?> call()
     {
-        var options = new Options(suite, additionalTestArgs);
-        return runner.apply(options);
+        final var os = OperatingSystem.of(today);
+        MavenTest.test(options, os::exec, new Roots(home::resolve, today::resolve));
+        // TODO make it return markers so that it can be tested just like other commands
+        return List.of();
     }
 
-    record TestRunner(FileSystem home, FileSystem today) implements Function<Options, List<?>>
+    record Options(String suite, List<String> additionalTestArgs)
     {
-        @Override
-        public List<?> apply(Options options)
+        static Options of(Cli cli)
         {
-            final var os = OperatingSystem.of(today);
-            MavenTest.test(options, os::exec, new Roots(home::resolve, today::resolve));
-            // TODO make it return markers so that it can be tested just like other commands
-            return List.of();
+            return new Options(
+                cli.required("suite")
+                , cli.multi("additional-test-args")
+            );
         }
     }
-
-    record Options(String suite, List<String> additionalTestArgs) {}
 
     static void test(Options options, Consumer<Steps.Exec> exec, Roots roots)
     {
@@ -1709,6 +1653,14 @@ final class Lists
         return Collections.unmodifiableList(result);
     }
 
+    static <E> List<E> prepend(E element, List<E> list)
+    {
+        final var result = new ArrayList<E>(list.size() + 1);
+        result.add(element);
+        result.addAll(list);
+        return Collections.unmodifiableList(result);
+    }
+
     static <E> List<E> flatten(Object... elements)
     {
         final var result = new ArrayList<E>();
@@ -2147,8 +2099,9 @@ final class Check
 
         private static GraalBuild.Options cli(String... extra)
         {
-            final var args = MiniCli.asOptions("graal-build", extra);
-            return (GraalBuild.Options) GraalBuild.of(List::of).with(Cli.read(args)).call().get(0);
+            return GraalBuild.Options.of(
+                Cli.read(Lists.prepend("graal-build", Arrays.asList(extra)))
+            );
         }
     }
 
@@ -2223,7 +2176,7 @@ final class Check
             // TODO check junit way of dealing with tests that throw exceptions
             try
             {
-                GraalGet.of(List::of).with(Cli.read()).call();
+                GraalGet.Options.of(Cli.read(List.of()));
                 assertThat("Expected exception", false);
             } catch (IllegalArgumentException e)
             {
@@ -2233,8 +2186,9 @@ final class Check
 
         private static GraalGet.Options cli(String... extra)
         {
-            final var args = MiniCli.asOptions("graal-get", extra);
-            return (GraalGet.Options) GraalGet.of(List::of).with(Cli.read(args)).call().get(0);
+            return GraalGet.Options.of(
+                Cli.read(Lists.prepend("graal-get", Arrays.asList(extra)))
+            );
         }
     }
 
@@ -2294,11 +2248,11 @@ final class Check
             );
         }
 
-        // TODO avoid dup
         private static MavenBuild.Options cli(String... extra)
         {
-            final var args = MiniCli.asOptions("maven-build", extra);
-            return (MavenBuild.Options) MavenBuild.of(List::of).with(Cli.read(args)).call().get(0);
+            return MavenBuild.Options.of(
+                Cli.read(Lists.prepend("maven-build", Arrays.asList(extra)))
+            );
         }
     }
 
@@ -2392,21 +2346,9 @@ final class Check
 
         private static MavenTest.Options cli(String... extra)
         {
-            final var args = MiniCli.asOptions("maven-test", extra);
-            return (MavenTest.Options) MavenTest.of(List::of).with(Cli.read(args)).call().get(0);
-        }
-    }
-
-    private static final class MiniCli
-    {
-        private static String[] asOptions(String commandName, String... extra)
-        {
-            final List<String> list = new ArrayList<>();
-            list.add(commandName);
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-            return args;
+            return MavenTest.Options.of(
+                Cli.read(Lists.prepend("maven-test", Arrays.asList(extra)))
+            );
         }
     }
 
