@@ -2,7 +2,6 @@
 //JAVA 14+
 //JAVAC_OPTIONS --enable-preview -source 14
 //JAVA_OPTIONS --enable-preview
-//DEPS info.picocli:picocli:4.2.0
 //DEPS org.hamcrest:hamcrest:2.2
 //DEPS org.junit.jupiter:junit-jupiter-engine:5.6.1
 //DEPS org.junit.platform:junit-platform-launcher:1.6.1
@@ -13,13 +12,6 @@ import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
 import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.ParameterException;
-import picocli.CommandLine.ParseResult;
-import picocli.CommandLine.Spec;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -49,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,7 +58,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
-import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.System.Logger.Level.INFO;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -73,13 +65,9 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
-@Command
-public class qollider implements Runnable
+public class qollider
 {
     static final System.Logger log = System.getLogger(qollider.class.getName());
-
-    @Spec
-    CommandSpec spec;
 
     public static void main(String[] args)
     {
@@ -89,106 +77,124 @@ public class qollider implements Runnable
         final var home = FileSystem.ofHome();
         final var today = FileSystem.ofToday(home);
 
-        // TODO consider collapsing graal-build and maven-build into build
-        // depending on the tree passed in, the code could multiplex.
-        // Downside is that you loose the ability to have defaults for graal-build (better be explicit? less maintenance of code)
-        final var graalBuild = GraalBuild.ofSystem(home, today);
-        final var graalGet = GraalGet.ofSystem(today);
-        final var mavenBuild = MavenBuild.ofSystem(home, today);
-        final var mavenTest = MavenTest.ofSystem(home, today);
+        final var cli = Cli.read(args);
+        var outputs =
+            switch (cli.command)
+            {
+                case GRAAL_GET -> GraalGet.ofSystem(today).with(cli).call();
+                case GRAAL_BUILD -> GraalBuild.ofSystem(home, today).with(cli).call();
+                case MAVEN_BUILD -> MavenBuild.ofSystem(home, today).with(cli).call();
+                case MAVEN_TEST -> MavenTest.ofSystem(home, today).with(cli).call();
+            };
 
-        final var cli = Cli.of(
-            graalBuild
-            , graalGet
-            , mavenBuild
-            , mavenTest
+        log.log(INFO, "Execution summary:");
+        log.log(INFO, "Inputs:{0}{1}"
+            , System.lineSeparator()
+            , List.of(args).stream()
+                .map(Object::toString)
+                .collect(Collectors.joining(System.lineSeparator()))
         );
-        final var result = cli.execute(args);
-        if (0 == result.exitCode())
-        {
-            log.log(INFO, "Execution summary:");
-            log.log(INFO, "Inputs:{0}{1}"
-                , System.lineSeparator()
-                , List.of(args).stream()
-                    .map(Object::toString)
-                    .collect(Collectors.joining(System.lineSeparator()))
-            );
-            log.log(INFO, "Outputs:{0}{1}"
-                , System.lineSeparator()
-                , result.outputs().stream()
-                    .map(Object::toString)
-                    .collect(Collectors.joining(System.lineSeparator()))
-            );
-        }
-        else
-        {
-            log.log(ERROR, "Failed executing: {0}", result);
-        }
-        System.exit(result.exitCode());
-    }
-
-    @Override
-    public void run()
-    {
-        throw new ParameterException(
-            spec.commandLine()
-            , "Missing required subcommand"
+        log.log(INFO, "Outputs:{0}{1}"
+            , System.lineSeparator()
+            , outputs.stream()
+                .map(Object::toString)
+                .collect(Collectors.joining(System.lineSeparator()))
         );
     }
+}
+
+// Use same command when parameters are same
+enum Command
+{
+    GRAAL_GET
+    // TODO graal-build does too much, split into: jdk-build, mandrel-build and graal-build
+    // it'd allow jdk to be build alone
+    // it'd signal that packaging tree is only for mandrel-build
+    , GRAAL_BUILD
+    , MAVEN_BUILD
+    , MAVEN_TEST
 }
 
 final class Cli
 {
-    final CommandLine picoCli;
+    final Command command;
+    private final Map<String, List<String>> params;
 
-    private Cli(CommandLine picoCli)
-    {
-        this.picoCli = picoCli;
+    Cli(Command command, Map<String, List<String>> params) {
+        this.command = command;
+        this.params = params;
     }
 
-    Result execute(String... args)
+    List<String> multi(String name)
     {
-        final var exitCode = picoCli.execute(args);
-        ParseResult parseResult = picoCli.getParseResult();
-        CommandLine sub = parseResult.subcommand().commandSpec().commandLine();
-        return new Result(exitCode, sub.getExecutionResult());
+        final var options = params.get(name);
+        return options == null ? List.of() : options;
     }
 
-    static Cli of(Object... subcommands)
+    String required(String name)
     {
-        final var cmdline = new CommandLine(new qollider());
-        // Sub-commands need to be added first,
-        // for converters and other options to have effect
-        Arrays.asList(subcommands).forEach(cmdline::addSubcommand);
-        return new Cli(
-            cmdline
-                .registerConverter(Repository.class, Repository::of)
-                .setCaseInsensitiveEnumValuesAllowed(true)
-        );
+        final var option = params.get(name);
+        if (Objects.isNull(option))
+            throw new IllegalArgumentException(String.format(
+                "Missing mandatory --%s"
+                , name
+            ));
+
+        return option.get(0);
     }
 
-    record Result(int exitCode, List<?> outputs) {}
+    String optional(String name, String defaultValue)
+    {
+        final var option = params.get(name);
+        return option != null ? option.get(0) : defaultValue;
+    }
+
+    static Cli read(String... args)
+    {
+        if (args.length < 1)
+            throw new IllegalArgumentException("Not enough arguments");
+
+        final var command =
+            Command.valueOf(
+                args[0].replace("-", "_").toUpperCase()
+            );
+
+        final Map<String, List<String>> params = new HashMap<>();
+
+        List<String> options = null;
+        for (int i = 1; i < args.length; i++)
+        {
+            final var arg = args[i];
+            if (arg.startsWith("--"))
+            {
+                if (arg.length() < 3)
+                {
+                    throw new IllegalArgumentException(
+                        String.format("Error at argument %s", arg)
+                    );
+                }
+
+                options = new ArrayList<>();
+                params.put(arg.substring(2), options);
+            }
+            else if (options != null)
+            {
+                options.add(arg);
+            }
+            else
+            {
+                throw new IllegalArgumentException("Illegal parameter usage");
+            }
+        }
+
+        return new Cli(command, params);
+    }
 }
 
-@Command(
-    name = "graal-get"
-    , aliases = {"gg"}
-    , description = "Get Graal."
-    , mixinStandardHelpOptions = true
-)
 class GraalGet implements Callable<List<?>>
 {
     private final Function<Options, List<?>> runner;
 
-    @Option(
-        description = "URL of distribution"
-        , names =
-        {
-            "-u"
-            , "--url"
-        }
-        , required = true
-    )
     URL url;
 
     private GraalGet(Function<Options, List<?>> runner)
@@ -204,6 +210,12 @@ class GraalGet implements Callable<List<?>>
     static GraalGet of(Function<Options, List<?>> runner)
     {
         return new GraalGet(runner);
+    }
+
+    GraalGet with(Cli cli)
+    {
+        url = URLs.of(cli.required("url"));
+        return this;
     }
 
     @Override
@@ -271,58 +283,13 @@ class GraalGet implements Callable<List<?>>
     record Options(URL url, Path graal) {}
 }
 
-@Command(
-    name = "graal-build"
-    , aliases = {"gb"}
-    , description = "Build Graal."
-    , mixinStandardHelpOptions = true
-)
 class GraalBuild implements Callable<List<?>>
 {
     private final Function<Options, List<?>> runner;
 
-    @Option(
-        defaultValue = "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
-        , description = "JDK source tree URL"
-        , names =
-        {
-            "-jt"
-            , "--jdk-tree"
-        }
-    )
     Repository jdkTree;
-
-    @Option(
-        defaultValue = "https://github.com/graalvm/mx/tree/master"
-        , description = "mx source tree URL"
-        , names =
-        {
-            "-mt"
-            , "--mx-tree"
-        }
-    )
     Repository mxTree;
-
-    @Option(
-        defaultValue = "https://github.com/oracle/graal/tree/master"
-        , description = "Graal source tree URL"
-        , names =
-        {
-            "-gt"
-            , "--graal-tree"
-        }
-    )
     Repository graalTree;
-
-    @Option(
-        defaultValue = "https://github.com/graalvm/mandrel-packaging/tree/master"
-        , description = "Mandrel packaging source tree URL"
-        , names =
-        {
-            "-pt"
-            , "--packaging-tree"
-        }
-    )
     Repository packagingTree;
 
     private GraalBuild(Function<Options, List<?>> runner)
@@ -338,6 +305,28 @@ class GraalBuild implements Callable<List<?>>
     static GraalBuild of(Function<Options, List<?>> runner)
     {
         return new GraalBuild(runner);
+    }
+
+    GraalBuild with(Cli cli)
+    {
+        jdkTree = Repository.of(cli.optional(
+            "jdk-tree"
+            , "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
+        ));
+        mxTree = Repository.of(cli.optional(
+            "mx-tree"
+            , "https://github.com/graalvm/mx/tree/master"
+        ));
+        graalTree = Repository.of(cli.optional(
+            "graal-tree"
+            ,"https://github.com/oracle/graal/tree/master"
+        ));
+        packagingTree = Repository.of(cli.optional(
+            "packaging-tree"
+            , "https://github.com/graalvm/mandrel-packaging/tree/master"
+        ));
+
+        return this;
     }
 
     @Override
@@ -681,12 +670,6 @@ class GraalBuild implements Callable<List<?>>
     }
 }
 
-@Command(
-    name = "maven-build"
-    , aliases = {"mb"}
-    , description = "Maven build."
-    , mixinStandardHelpOptions = true
-)
 class MavenBuild implements Callable<List<?>>
 {
     // TODO avoid duplication with MavenTest
@@ -704,27 +687,8 @@ class MavenBuild implements Callable<List<?>>
 
     private final Function<Options, List<?>> runner;
 
-    @Option(
-        description = "Source tree URL"
-        , names =
-        {
-            "-t"
-            , "--tree"
-        }
-        , required = true
-    )
     Repository tree;
-
-    @Option(
-        description = "Additional build arguments"
-        , names =
-        {
-            "-aba"
-            , "--additional-build-args"
-        }
-        , split = ","
-    )
-    List<String> additionalBuildArgs = new ArrayList<>();
+    List<String> additionalBuildArgs;
 
     private MavenBuild(Function<Options, List<?>> runner)
     {
@@ -739,6 +703,13 @@ class MavenBuild implements Callable<List<?>>
     static MavenBuild of(Function<Options, List<?>> runner)
     {
         return new MavenBuild(runner);
+    }
+
+    MavenBuild with(Cli cli)
+    {
+        tree = Repository.of(cli.required("tree"));
+        additionalBuildArgs = cli.multi("additional-build-args");
+        return this;
     }
 
     @Override
@@ -815,12 +786,6 @@ class MavenBuild implements Callable<List<?>>
     }
 }
 
-@Command(
-    name = "maven-test"
-    , aliases = {"mt"}
-    , description = "Maven test."
-    , mixinStandardHelpOptions = true
-)
 class MavenTest implements Callable<List<?>>
 {
     // TODO avoid duplication with MavenBuild
@@ -836,27 +801,8 @@ class MavenTest implements Callable<List<?>>
 
     private final Function<Options, List<?>> runner;
 
-    @Option(
-        description = "Test suite to run"
-        , names =
-        {
-            "-s"
-            , "--suite"
-        }
-        , required = true
-    )
     String suite;
-
-    @Option(
-        description = "Additional test arguments, each argument separated by comma (',')"
-        , names =
-        {
-            "-ata"
-            , "--additional-test-args"
-        }
-        , split = ","
-    )
-    final List<String> additionalTestArgs = new ArrayList<>();
+    List<String> additionalTestArgs;
 
     private MavenTest(Function<Options, List<?>> runner)
     {
@@ -871,6 +817,13 @@ class MavenTest implements Callable<List<?>>
     static MavenTest of(Function<Options, List<?>> runner)
     {
         return new MavenTest(runner);
+    }
+
+    MavenTest with(Cli cli)
+    {
+        suite = cli.required("suite");
+        additionalTestArgs = cli.multi("additional-test-args");
+        return this;
     }
 
     @Override
@@ -2194,7 +2147,8 @@ final class Check
 
         private static GraalBuild.Options cli(String... extra)
         {
-            return MiniCli.asOptions("graal-build", GraalBuild.of(List::of), extra);
+            final var args = MiniCli.asOptions("graal-build", extra);
+            return (GraalBuild.Options) GraalBuild.of(List::of).with(Cli.read(args)).call().get(0);
         }
     }
 
@@ -2266,15 +2220,21 @@ final class Check
         @Test
         void missingURL()
         {
-            final var command = GraalGet.of(List::of);
-            final var result = MiniCli.asError("graal-get", command);
-            assertThat(result, is(2));
+            // TODO check junit way of dealing with tests that throw exceptions
+            try
+            {
+                GraalGet.of(List::of).with(Cli.read()).call();
+                assertThat("Expected exception", false);
+            } catch (IllegalArgumentException e)
+            {
+                assertThat(e.getMessage(), is("Not enough arguments"));
+            }
         }
 
         private static GraalGet.Options cli(String... extra)
         {
-            final var command = GraalGet.of(List::of);
-            return MiniCli.asOptions("graal-get", command, extra);
+            final var args = MiniCli.asOptions("graal-get", extra);
+            return (GraalGet.Options) GraalGet.of(List::of).with(Cli.read(args)).call().get(0);
         }
     }
 
@@ -2286,7 +2246,7 @@ final class Check
             final var fs = InMemoryFileSystem.empty();
             final var tree = "https://github.com/quarkusio/quarkus/tree/master";
             Asserts.step(
-                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
                 , Expect.mavenBuild("quarkus")
             );
         }
@@ -2297,7 +2257,7 @@ final class Check
             final var fs = InMemoryFileSystem.ofExists(Expect.mavenBuild("quarkus").step);
             final var tree = "https://github.com/quarkusio/quarkus/tree/master";
             Asserts.step(
-                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
                 , Expect.mavenBuild("quarkus").untouched()
             );
         }
@@ -2308,7 +2268,7 @@ final class Check
             final var fs = InMemoryFileSystem.empty();
             final var tree = "https://github.com/apache/camel-quarkus/tree/master";
             Asserts.step(
-                MavenBuild.build(cli("-t", tree), fs.exec(), Args.roots())
+                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
                 , Expect.mavenBuild("camel-quarkus", "-Dquarkus.version=999-SNAPSHOT")
             );
         }
@@ -2318,10 +2278,11 @@ final class Check
         {
             final var fs = InMemoryFileSystem.empty();
             final var options = cli(
-                "-t"
+                "--tree"
                 , "https://github.com/apache/camel/tree/master"
-                , "-aba"
-                , "-Pfastinstall,-Pdoesnotexist"
+                , "--additional-build-args"
+                , "-Pfastinstall"
+                , "-Pdoesnotexist"
             );
             Asserts.step(
                 MavenBuild.build(options, fs.exec(), Args.roots())
@@ -2336,8 +2297,8 @@ final class Check
         // TODO avoid dup
         private static MavenBuild.Options cli(String... extra)
         {
-            final var command = MavenBuild.of(List::of);
-            return MiniCli.asOptions("maven-build", command, extra);
+            final var args = MiniCli.asOptions("maven-build", extra);
+            return (MavenBuild.Options) MavenBuild.of(List::of).with(Cli.read(args)).call().get(0);
         }
     }
 
@@ -2348,8 +2309,8 @@ final class Check
         {
             assertThat(
                 cli(
-                    "-s", "ignore"
-                    , "-ata", "b,:c,-y,-Dx=w"
+                    "--suite", "ignore"
+                    , "--additional-test-args", "b", ":c", "-y", "-Dx=w"
                 ).additionalTestArgs()
                 , is(equalTo(
                     List.of(
@@ -2365,7 +2326,7 @@ final class Check
             final var os = RecordingOperatingSystem.macOS();
             final var options = cli(
                 "--suite", "suite-a"
-                , "--additional-test-args", "p1,:p2,:p3,-p4"
+                , "--additional-test-args", "p1", ":p2", ":p3", "-p4"
             );
             MavenTest.test(options, os::record, Args.roots());
 
@@ -2394,7 +2355,7 @@ final class Check
         void quarkus()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var options = cli("-s", "quarkus");
+            final var options = cli("--suite", "quarkus");
             MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
@@ -2409,7 +2370,7 @@ final class Check
         void quarkusPlatform()
         {
             final var os = RecordingOperatingSystem.macOS();
-            final var options = cli("-s", "quarkus-platform");
+            final var options = cli("--suite", "quarkus-platform");
             MavenTest.test(options, os::record, Args.roots());
 
             os.assertNumberOfTasks(1);
@@ -2431,44 +2392,21 @@ final class Check
 
         private static MavenTest.Options cli(String... extra)
         {
-            final var command = MavenTest.of(List::of);
-            return MiniCli.asOptions("maven-test", command, extra);
+            final var args = MiniCli.asOptions("maven-test", extra);
+            return (MavenTest.Options) MavenTest.of(List::of).with(Cli.read(args)).call().get(0);
         }
     }
 
     private static final class MiniCli
     {
-        private static <T> T asOptions(String commandName, Object command, String... extra)
+        private static String[] asOptions(String commandName, String... extra)
         {
             final List<String> list = new ArrayList<>();
             list.add(commandName);
             list.addAll(Arrays.asList(extra));
             final String[] args = new String[list.size()];
             list.toArray(args);
-
-            final var cli = Cli.of(command);
-            final var result = cli.execute(args);
-            assertThat(result.exitCode(), is(0));
-            // TODO create an umbrella Input interface for all options
-            return (T) result.outputs().get(0);
-        }
-
-        private static int asError(String commandName, Object command, String...extra)
-        {
-            final List<String> list = new ArrayList<>();
-            list.add(commandName);
-            list.addAll(Arrays.asList(extra));
-            final String[] args = new String[list.size()];
-            list.toArray(args);
-
-            final var picoCli = Cli.of(command).picoCli;
-            // Force an error and make it silent
-            return picoCli
-                .setParameterExceptionHandler(
-                    (ex, cmdArgs) ->
-                        ex.getCommandLine().getCommandSpec().exitCodeOnInvalidInput()
-                )
-                .execute(args);
+            return args;
         }
     }
 
