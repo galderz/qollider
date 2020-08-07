@@ -81,6 +81,7 @@ public class qollider
         var outputs =
             switch (cli.command)
             {
+                case JDK_BUILD -> SystemJdk.build(cli, home, today);
                 case GRAAL_GET -> GraalGet.ofSystem(cli, today).call();
                 case GRAAL_BUILD -> GraalBuild.ofSystem(cli, home, today).call();
                 case MAVEN_BUILD -> MavenBuild.ofSystem(cli, home, today).call();
@@ -106,9 +107,9 @@ public class qollider
 // Use same command when parameters are same
 enum Command
 {
-    GRAAL_GET
-    // TODO graal-build does too much, split into: jdk-build, mandrel-build and graal-build
-    // it'd allow jdk to be build alone
+    JDK_BUILD
+    , GRAAL_GET
+    // TODO graal-build does too much, split into: mandrel-build and graal-build
     // it'd signal that packaging tree is only for mandrel-build
     , GRAAL_BUILD
     , MAVEN_BUILD
@@ -188,6 +189,237 @@ final class Cli
         }
 
         return new Cli(command, params);
+    }
+}
+
+interface Output {}
+
+final class SystemJdk
+{
+    static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
+    {
+        final var osToday = OperatingSystem.of(today);
+        final var osHome = OperatingSystem.of(home);
+        final var roots = new Roots(home::resolve, today::resolve);
+
+        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+
+        final var jdkGet = Jdk.Get.of(roots, osToday::type);
+        final var jdkBuild = Jdk.Build.of(cli, jdkGet);
+
+        final var linking = new Steps.Linking.Effects(today::symlink);
+        return Jdk.build(jdkBuild, installHome, execToday, linking);
+    }
+}
+
+final class Jdk
+{
+    static final Version JDK_11_0_7 = new Version(11, 0, 7, 10);
+
+    record Version(int major, int minor, int micro, int build)
+    {
+        String majorMinorMicro()
+        {
+            return String. format("%d.%d.%d", major, minor, micro);
+        }
+    }
+
+    enum Type
+    {
+        OPENJDK
+        , LABSJDK
+    }
+
+    record Build(Repository tree, Get get)
+    {
+        Type javaType()
+        {
+            return type(tree);
+        }
+
+        static Build of(Cli cli, Jdk.Get get)
+        {
+            final var tree = Repository.of(cli.optional(
+                "tree"
+                , "https://github.com/openjdk/jdk11u-dev"
+            ));
+
+            return new Build(tree, get);
+        }
+
+        private static Jdk.Type type(Repository repo)
+        {
+            return repo.name().startsWith("labs") ? Type.LABSJDK : Type.OPENJDK;
+        }
+    }
+
+    static List<? extends Output> build(
+        Build build
+        , Steps.Install.Effects install
+        , Steps.Exec.Effects exec
+        , Steps.Linking.Effects linking
+    )
+    {
+        final var getOut = get(build.get, install);
+
+        // TODO Remove List.of when rest of calls have migrated
+        final var cloneOut = List.of(
+            clone(build.tree(), exec)
+        );
+
+        final var buildSteps = switch (build.javaType())
+        {
+            case OPENJDK -> OpenJDK.buildSteps(build);
+            case LABSJDK -> LabsJDK.buildSteps(build);
+        };
+
+        final var buildOut = buildSteps
+            .map(t -> Steps.Exec.run(t, exec))
+            .collect(Collectors.toList());
+
+        // TODO Remove List.of when rest of calls have migrated
+        final var linkOut = List.of(
+            link(build, linking)
+        );
+
+        // TODO Use typed flatten
+        return Lists.flatten(getOut, cloneOut, buildOut, linkOut);
+    }
+
+    static Marker clone(Repository tree, Steps.Exec.Effects effects)
+    {
+        return switch (tree.type())
+        {
+            case GIT -> Git.clone(tree, effects);
+            case MERCURIAL -> Mercurial.clone(tree, effects);
+        };
+    }
+
+    static Link link(Build build, Steps.Linking.Effects effects)
+    {
+        final var jdkPath = Path.of(build.tree.name());
+        final var target = switch (build.javaType())
+        {
+            case OPENJDK -> OpenJDK.javaHome(jdkPath);
+            case LABSJDK -> LabsJDK.javaHome(jdkPath);
+        };
+
+        final var link = Homes.java();
+        final var linking = new Steps.Linking(link, target);
+        return Steps.Linking.link(linking, effects);
+    }
+
+    private static final class OpenJDK
+    {
+        static Stream<Steps.Exec> buildSteps(Build build)
+        {
+            return Stream.of(configure(build), make(build));
+        }
+
+        static Path javaHome(Path jdk)
+        {
+            return jdk.resolve(
+                Path.of(
+                    "build"
+                    , "graal-server-release"
+                    , "images"
+                    , "graal-builder-jdk"
+                )
+            );
+        }
+
+        private static Steps.Exec configure(Build build)
+        {
+            return Steps.Exec.of(
+                Path.of(build.tree.name())
+                , "bash"
+                , "configure"
+                , "--with-conf-name=graal-server-release"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
+                , "--with-extra-cflags=-fcommon"
+                , "--enable-aot=no"
+                , format("--with-boot-jdk=%s", build.get.home().toString())
+            );
+        }
+
+        private static Steps.Exec make(Build build)
+        {
+            return Steps.Exec.of(
+                Path.of(build.tree.name())
+                , "make"
+                , "graal-builder-image"
+            );
+        }
+    }
+
+    private static final class LabsJDK
+    {
+        static Stream<Steps.Exec> buildSteps(Build build)
+        {
+            return Stream.of(buildJDK(build));
+        }
+
+        static Path javaHome(Path jdk)
+        {
+            return jdk.resolve("java_home");
+        }
+
+        private static Steps.Exec buildJDK(Build build)
+        {
+            return Steps.Exec.of(
+                Path.of(build.tree.name())
+                , "python"
+                , "build_labsjdk.py"
+                , "--boot-jdk"
+                , build.get.home().toString()
+            );
+        }
+    }
+
+    record Get(Jdk.Version version, Path home)
+    {
+        static Get of(Roots roots, Supplier<OperatingSystem.Type> osType)
+        {
+            final var path = Path.of("boot-jdk-11");
+
+            final var absolutePath = roots.home().apply(
+                osType.get().isMac()
+                    ? path.resolve(Path.of("Contents", "Home"))
+                    : path
+            );
+
+            return new Jdk.Get(JDK_11_0_7, absolutePath);
+        }
+    }
+
+    private static List<? extends Output> get(Get get, Steps.Install.Effects install)
+    {
+        final var javaBaseUrl = format(
+            "https://github.com/AdoptOpenJDK/openjdk%d-binaries/releases/download"
+            , get.version().major()
+        );
+
+        final var osType = install.download().osType().get();
+        final var javaOsType = osType.isMac() ? "mac" : osType.toString();
+        final var arch = "x64";
+
+        final var url = URLs.of(
+            "%s/jdk-%s%%2B%d/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
+            , javaBaseUrl
+            , get.version().majorMinorMicro()
+            , get.version().build()
+            , get.version().major()
+            , arch
+            , javaOsType
+            , get.version().majorMinorMicro()
+            , get.version().build()
+        );
+
+        return Steps.Install.install(new Steps.Install(url, get.home()), install);
     }
 }
 
@@ -299,29 +531,19 @@ class GraalBuild implements Callable<List<?>>
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
         return Lists.flatten(
-            Java.clone(options, execToday)
-            , Git.clone(options.mx, execToday)
+            Git.clone(options.mx, execToday)
             , Git.clone(options.graal, execToday)
-            , Java.install(options, installHome)
-            , Java.build(options, execToday, osToday::type, roots)
-            , Java.link(options, today::symlink)
             , Graal.build(options, execToday, installHome, roots)
             , Graal.link(options, today::symlink, osToday.fs::exists)
         );
     }
 
     record Options(
-        Repository jdk
-        , Repository mx
+        Repository mx
         , Repository graal
         , Repository packaging
     )
     {
-        Java.Type javaType()
-        {
-            return Java.type(jdk);
-        }
-
         Graal.Type graalType(Predicate<Path> exists)
         {
             return Graal.type(graal, exists);
@@ -337,203 +559,28 @@ class GraalBuild implements Callable<List<?>>
             return Path.of(mx.name());
         }
 
-        Path bootJdkPath()
-        {
-            return Path.of("boot-jdk-11");
-        }
-
-        Path bootJdkHome(Supplier<OperatingSystem.Type> osType)
-        {
-            final var root = bootJdkPath();
-            return osType.get().isMac()
-                ? root.resolve(Path.of("Contents", "Home"))
-                : root;
-        }
-
         static Options of(Cli cli)
         {
-            var jdkTree = Repository.of(cli.optional(
-                "jdk-tree"
-                , "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
-            ));
-            var mxTree = Repository.of(cli.optional(
-                "mx-tree"
-                , "https://github.com/graalvm/mx/tree/master"
-            ));
-            var graalTree = Repository.of(cli.optional(
-                "graal-tree"
-                ,"https://github.com/oracle/graal/tree/master"
-            ));
-            var packagingTree = Repository.of(cli.optional(
-                "packaging-tree"
-                , "https://github.com/graalvm/mandrel-packaging/tree/master"
-            ));
-
-            return new Options(jdkTree, mxTree, graalTree, packagingTree);
-        }
-    }
-
-    static final class Java
-    {
-        static Marker clone(Options options, Steps.Exec.Effects effects)
-        {
-            return switch (options.jdk.type())
-            {
-                case GIT ->
-                    Git.clone(
-                        options.jdk
-                        , effects
-                    );
-                case MERCURIAL ->
-                    Mercurial.clone(options.jdk, effects);
-            };
-        }
-
-        static List<Marker> build(
-            Options options
-            , Steps.Exec.Effects effects
-            , Supplier<OperatingSystem.Type> osType
-            , Roots roots
-        )
-        {
-            final var bootJdkHome = roots.home().apply(options.bootJdkHome(osType));
-            final var tasks = switch (options.javaType())
-                {
-                    case OPENJDK -> Java.OpenJDK.buildSteps(options, bootJdkHome);
-                    case LABSJDK -> Java.LabsJDK.buildSteps(options, bootJdkHome);
-                };
-
-            return tasks
-                .map(t -> Steps.Exec.run(t, effects))
-                .collect(Collectors.toList());
-        }
-
-        static Link link(Options options, BiFunction<Path, Path, Link> symLink)
-        {
-            final var jdkPath = Path.of(options.jdk.name());
-            final var target =
-                switch (options.javaType())
-                    {
-                        case OPENJDK -> Java.OpenJDK.javaHome(jdkPath);
-                        case LABSJDK -> Java.LabsJDK.javaHome(jdkPath);
-                    };
-
-            final var link = Homes.java();
-            return symLink.apply(link, target);
-        }
-
-        // TODO create a record to capture Java version info (major, minor, micro, build)
-        static List<Marker> install(Options options, Steps.Install.Effects install)
-        {
-            final var javaVersionMajor = "11";
-            final var javaVersionBuild = "10";
-            final var javaVersion = format("%s.0.7", javaVersionMajor);
-            final var javaBaseUrl = format(
-                "https://github.com/AdoptOpenJDK/openjdk%s-binaries/releases/download"
-                , javaVersionMajor
+            var mxTree = Repository.of(
+                cli.optional(
+                    "mx-tree"
+                    , "https://github.com/graalvm/mx/tree/master"
+                )
+            );
+            var graalTree = Repository.of(
+                cli.optional(
+                    "graal-tree"
+                    ,"https://github.com/oracle/graal/tree/master"
+                )
+            );
+            var packagingTree = Repository.of(
+                cli.optional(
+                    "packaging-tree"
+                    , "https://github.com/graalvm/mandrel-packaging/tree/master"
+                )
             );
 
-            final var osType = install.download().osType().get();
-            final var javaOsType = osType.isMac() ? "mac" : osType;
-            final var arch = "x64";
-
-            final var url = URLs.of(
-                "%s/jdk-%s%%2B%s/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
-                , javaBaseUrl
-                , javaVersion
-                , javaVersionBuild
-                , javaVersionMajor
-                , arch
-                , javaOsType
-                , javaVersion
-                , javaVersionBuild
-            );
-
-            return Steps.Install.install(new Steps.Install(url, options.bootJdkPath()), install);
-        }
-
-        private static final class OpenJDK
-        {
-            static Stream<Steps.Exec> buildSteps(Options options, Path bootJdkHome)
-            {
-                return Stream.of(
-                    configure(options, bootJdkHome)
-                    , make(options)
-                );
-            }
-
-            static Path javaHome(Path jdk)
-            {
-                return jdk.resolve(
-                    Path.of(
-                        "build"
-                        , "graal-server-release"
-                        , "images"
-                        , "graal-builder-jdk"
-                    )
-                );
-            }
-
-            private static Steps.Exec configure(Options options, Path bootJdkHome)
-            {
-                return Steps.Exec.of(
-                    Path.of(options.jdk.name())
-                    , "bash"
-                    , "configure"
-                    , "--with-conf-name=graal-server-release"
-                    , "--disable-warnings-as-errors"
-                    , "--with-jvm-features=graal"
-                    , "--with-jvm-variants=server"
-                    // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
-                    , "--with-extra-cflags=-fcommon"
-                    , "--enable-aot=no"
-                    , format("--with-boot-jdk=%s", bootJdkHome.toString())
-                );
-            }
-
-            private static Steps.Exec make(Options options)
-            {
-                return Steps.Exec.of(
-                    Path.of(options.jdk.name())
-                    , "make"
-                    , "graal-builder-image"
-                );
-            }
-        }
-
-        private static final class LabsJDK
-        {
-            static Stream<Steps.Exec> buildSteps(Options options, Path bootJdkHome)
-            {
-                return Stream.of(buildJDK(options, bootJdkHome));
-            }
-
-            static Path javaHome(Path jdk)
-            {
-                return jdk.resolve("java_home");
-            }
-
-            private static Steps.Exec buildJDK(Options options, Path bootJdkHome)
-            {
-                return Steps.Exec.of(
-                    Path.of(options.jdk.name())
-                    , "python"
-                    , "build_labsjdk.py"
-                    , "--boot-jdk"
-                    , bootJdkHome.toString()
-                );
-            }
-        }
-
-        static Java.Type type(Repository repo)
-        {
-            return repo.name().startsWith("labs") ? Type.LABSJDK : Type.OPENJDK;
-        }
-
-        enum Type
-        {
-            OPENJDK
-            , LABSJDK
+            return new Options(mxTree, graalTree, packagingTree);
         }
     }
 
@@ -1087,6 +1134,7 @@ final class Steps
         }
     }
 
+    // TODO create better to string: two line, first with folder, second with command, see command line for ideas
     record Exec(
         List<String> args
         , Path directory
@@ -1156,6 +1204,16 @@ final class Steps
             }
         }
     }
+
+    record Linking(Path link, Path target) implements Step
+    {
+        static Link link(Linking linking, Effects effects)
+        {
+            return effects.symLink.apply(linking.link, linking.target);
+        }
+
+        record Effects(BiFunction<Path, Path, Link> symLink) {}
+    }
 }
 
 // TODO if the marker is gone (e.g. it doesn't exist) remove any existing folder and clone again (saves a step on user)
@@ -1204,17 +1262,17 @@ final class Homes
 }
 
 // Boundary value
-record Marker(boolean exists, boolean touched, Path path, String info)
+record Marker(boolean exists, boolean touched, Path path, String cause) implements Output
 {
     Marker query(Predicate<Path> existsFn)
     {
         final var exists = existsFn.test(this.path);
         if (exists)
         {
-            return new Marker(true, touched, path, info);
+            return new Marker(true, touched, path, cause);
         }
 
-        return new Marker(false, touched, path, info);
+        return new Marker(false, touched, path, cause);
     }
 
     Marker touch(Function<Marker, Boolean> touchFn)
@@ -1227,23 +1285,23 @@ record Marker(boolean exists, boolean touched, Path path, String info)
         final var touched = touchFn.apply(this);
         if (touched)
         {
-            return new Marker(true, true, path, info);
+            return new Marker(true, true, path, cause);
         }
 
-        return new Marker(false, false, path, info);
+        return new Marker(false, false, path, cause);
     }
 
     static Marker of(Step step)
     {
-        final var info = step.toString();
-        final var hash = Hashing.sha1(info);
+        final var producer = step.toString();
+        final var hash = Hashing.sha1(producer);
         final var path = Path.of(format("%s.marker", hash));
-        return new Marker(false, false, path, info);
+        return new Marker(false, false, path, producer);
     }
 }
 
 // Boundary value
-record Link(Path link, Path target) {}
+record Link(Path link, Path target) implements Output {}
 
 // Dependency
 class FileSystem
@@ -1308,7 +1366,7 @@ class FileSystem
         final var path = root.resolve(marker.path());
         try
         {
-            Files.writeString(path, marker.info());
+            Files.writeString(path, marker.cause());
             return true;
         }
         catch (IOException e)
@@ -1438,6 +1496,7 @@ class OperatingSystem
     enum Type
     {
         WINDOWS
+        // TODO rename to MAC_OS
         , MACOSX
         , LINUX
         , OTHER
@@ -1661,6 +1720,7 @@ final class Lists
         return Collections.unmodifiableList(result);
     }
 
+    // TODO make it typesafe
     static <E> List<E> flatten(Object... elements)
     {
         final var result = new ArrayList<E>();
@@ -1714,6 +1774,7 @@ final class Check
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
+                , selectClass(CheckJdkBuild.class)
                 , selectClass(CheckGraalBuild.class)
                 , selectClass(CheckGraalGet.class)
                 , selectClass(CheckMavenBuild.class)
@@ -1865,91 +1926,108 @@ final class Check
         }
     }
 
-    static class CheckGraalBuild
+    static class CheckJdkBuild
     {
         @Test
-        void javaLabsJDK()
+        void labsJdk()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var fs = InMemoryFileSystem.empty();
-            final var options = cli();
-
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
-            final var marker = markers.get(0);
-            assertThat(marker.touched(), is(true));
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("python")));
-                assertThat(task.directory(), is(Path.of("labs-openjdk-11")));
-            });
+            Asserts.steps2(
+                jdkBuild(InMemoryFileSystem.empty(), Args.labsJdkTree())
+                , Expect.jdkDownload()
+                , Expect.jdkExtract()
+                , Expect.gitLabsJdkClone()
+                , Expect.javaLabsJdkBuild()
+                , Expect.javaLabsJdkLink()
+            );
         }
 
         @Test
         void javaOpenJDK()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var fs = InMemoryFileSystem.empty();
-            final var options = cli(
-                "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
+            Asserts.steps2(
+                jdkBuild(InMemoryFileSystem.empty(), Args.openJdkTree())
+                , Expect.jdkDownload()
+                , Expect.jdkExtract()
+                , Expect.gitOpenJdkClone()
+                , Expect.javaOpenJdkConfigure()
+                , Expect.javaOpenJdkMake()
+                , Expect.javaOpenJdkLink()
             );
-
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
-            assertThat(markers.get(0).touched(), is(true));
-            assertThat(markers.get(1).touched(), is(true));
-            os.assertNumberOfTasks(2);
-            os.assertExecutedTask(Expect.javaOpenJDKConfigure().step, markers.get(0));
-            os.assertExecutedTask(Expect.javaOpenJDKMake().step, markers.get(1));
         }
 
         @Test
         void skipJavaOpenJDK()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var configure = Expect.javaOpenJDKConfigure();
-            final var make = Expect.javaOpenJDKMake();
-            final var fs = InMemoryFileSystem.ofExists(configure.step, make.step);
-            final var options = cli(
-                "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.jdkDownload().step
+                , Expect.jdkExtract().step
+                , Expect.gitOpenJdkClone().step
+                , Expect.javaOpenJdkConfigure().step
+                , Expect.javaOpenJdkMake().step
             );
 
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
-            os.assertNumberOfTasks(0);
-            final var configureMarker = markers.get(0);
-            assertThat(configureMarker.exists(), is(true));
-            assertThat(configureMarker.touched(), is(false));
-            final var makeMarker = markers.get(1);
-            assertThat(makeMarker.exists(), is(true));
-            assertThat(makeMarker.touched(), is(false));
+            Asserts.steps2(
+                jdkBuild(fs, Args.openJdkTree())
+                , Expect.jdkDownload().untouched()
+                , Expect.jdkExtract().untouched()
+                , Expect.gitOpenJdkClone().untouched()
+                , Expect.javaOpenJdkConfigure().untouched()
+                , Expect.javaOpenJdkMake().untouched()
+                , Expect.javaOpenJdkLink()
+            );
         }
 
         @Test
         void skipJavaLabsJDK()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var configure = Steps.Exec.of(
-                Path.of("labs-openjdk-11")
-                , "python"
-                , "build_labsjdk.py"
-                , "--boot-jdk"
-                , "/home/boot-jdk-11/Contents/Home"
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.jdkDownload().step
+                , Expect.jdkExtract().step
+                , Expect.gitLabsJdkClone().step
+                , Expect.javaLabsJdkBuild().step
             );
-            final var fs = InMemoryFileSystem.ofExists(configure);
-            final var options = cli();
 
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, m -> true);
-            final var markers = GraalBuild.Java.build(options, effects, os::type, Args.roots());
-            os.assertNumberOfTasks(0);
-            final var marker = markers.get(0);
-            assertThat(marker.exists(), is(true));
-            assertThat(marker.touched(), is(false));
+            Asserts.steps2(
+                jdkBuild(fs, Args.labsJdkTree())
+                , Expect.jdkDownload().untouched()
+                , Expect.jdkExtract().untouched()
+                , Expect.gitLabsJdkClone().untouched()
+                , Expect.javaLabsJdkBuild().untouched()
+                , Expect.javaLabsJdkLink()
+            );
         }
 
+        @Test
+        void javaCloneMercurial()
+        {
+            Asserts.steps2(
+                jdkClone(InMemoryFileSystem.empty(), Args.mercurialTree())
+                , Expect.mercurialOpenJdkClone()
+            );
+        }
+
+        static List<? extends Output> jdkClone(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
+            final var build = Jdk.Build.of(cli, Jdk.Get.of(Args.roots(), Args.macOs()));
+            // TODO Remove List.of when all return List
+            return List.of(Jdk.clone(build.tree(), fs.exec()));
+        }
+
+        static List<? extends Output> jdkBuild(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
+            return Jdk.build(
+                Jdk.Build.of(cli, Jdk.Get.of(Args.roots(), Args.macOs()))
+                , fs.install()
+                , fs.exec()
+                , fs.linking()
+            );
+        }
+    }
+
+    static class CheckGraalBuild
+    {
         @Test
         void graalLink()
         {
@@ -2011,90 +2089,6 @@ final class Check
             final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new, path -> true);
             assertThat(linked.link(), is(Expect.graalHome()));
             assertThat(linked.target(), is(Expect.graalHome()));
-        }
-
-        @Test
-        void labsJDKLink()
-        {
-            final var options = cli();
-            final var linked = GraalBuild.Java.link(options, Link::new);
-            assertThat(linked.link(), is(Homes.java()));
-            assertThat(linked.target(), is(Path.of("labs-openjdk-11", "java_home")));
-        }
-
-        @Test
-        void openJDKLink()
-        {
-            final var options = cli(
-                "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
-            );
-            final var linked = GraalBuild.Java.link(options, Link::new);
-            assertThat(linked.link(), is(Homes.java()));
-            assertThat(linked.target(),
-                is(Path.of(
-                    "jdk11u-dev"
-                    , "build"
-                    , "graal-server-release"
-                    , "images"
-                    , "graal-builder-jdk"
-                )));
-        }
-
-        @Test
-        void javaCloneGit()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli(
-                "--jdk-tree",
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
-            );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = GraalBuild.Java.clone(options, effects);
-            final var expected = Steps.Exec.of(
-                "git"
-                , "clone"
-                , "-b"
-                , "master"
-                , "--depth"
-                , "1"
-                , "https://github.com/openjdk/jdk11u-dev"
-            );
-            os.assertExecutedOneTask(expected,  cloned);
-        }
-
-        @Test
-        void javaCloneMercurial()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli(
-                "--jdk-tree",
-                "http://hg.openjdk.java.net/jdk8/jdk8"
-            );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var cloned = GraalBuild.Java.clone(options, effects);
-            final var expected = Steps.Exec.of(
-                "hg"
-                , "clone"
-                , "http://hg.openjdk.java.net/jdk8/jdk8"
-            );
-            os.assertExecutedOneTask(expected, cloned);
-        }
-
-        @Test
-        void javaInstall()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var tarName = "OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz";
-            final var url = format("https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%%2B10/%s", tarName);
-
-            Asserts.steps(
-                GraalBuild.Java.install(cli(), fs.install())
-                , Expect.download(url, String.format("downloads/%s", tarName))
-                , Expect.extract(String.format("downloads/%s", tarName), "boot-jdk-11")
-            );
         }
 
         private static GraalBuild.Options cli(String... extra)
@@ -2386,6 +2380,11 @@ final class Check
             );
         }
 
+        Steps.Linking.Effects linking()
+        {
+            return new Steps.Linking.Effects(Link::new);
+        }
+
         static InMemoryFileSystem empty()
         {
             return new InMemoryFileSystem(Collections.emptyMap());
@@ -2512,7 +2511,7 @@ final class Check
     {
         static void step(Marker actual, Expect expected)
         {
-            assertThat(actual.info(), is(expected.step.toString()));
+            assertThat(actual.cause(), is(expected.step.toString()));
             assertThat(actual.exists(), is(true));
             assertThat(actual.touched(), is(expected.touched));
             assertThat(
@@ -2521,12 +2520,45 @@ final class Check
             );
         }
 
+        static void step(Link actual, Expect expected)
+        {
+            // TODO avoid cast? the only step that can produce a Link is Linking...
+            final var linking = (Steps.Linking) expected.step;
+            assertThat(actual.link(), is(linking.link()));
+            assertThat(actual.target(), is(linking.target()));
+        }
+
+        @Deprecated // use steps2
         static void steps(List<Marker> markers, Expect... expects)
         {
             assertThat(markers.toString(), markers.size(), is(expects.length));
             for (int i = 0; i < expects.length; i++)
             {
                 step(markers.get(i), expects[i]);
+            }
+        }
+
+        static void steps2(List<? extends Output> outputs, Expect... expects)
+        {
+            assertThat(outputs.toString(), outputs.size(), is(expects.length));
+            for (int i = 0; i < expects.length; i++)
+            {
+                final Output output = outputs.get(i);
+                if (output instanceof Marker marker)
+                {
+                    step(marker, expects[i]);
+                }
+                else if (output instanceof Link link)
+                {
+                    step(link, expects[i]);
+                }
+                else
+                {
+                    throw new IllegalStateException(String.format(
+                        "Unknown output implementation for: %s"
+                        , output
+                    ));
+                }
             }
         }
     }
@@ -2543,6 +2575,24 @@ final class Check
             return new Expect(step, true);
         }
 
+        static Expect gitOpenJdkClone()
+        {
+            return gitClone("openjdk/jdk11u-dev");
+        }
+
+        static Expect gitLabsJdkClone()
+        {
+            return Expect.of(Steps.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , "jvmci-20.2-b02"
+                , "--depth"
+                , "20"
+                , "https://github.com/graalvm/labs-openjdk-11"
+            ));
+        }
+
         static Expect gitClone(String repo)
         {
             return Expect.of(Steps.Exec.of(
@@ -2556,7 +2606,7 @@ final class Check
             ));
         }
 
-        static Expect javaOpenJDKConfigure()
+        static Expect javaOpenJdkConfigure()
         {
             return Expect.of(Steps.Exec.of(
                 Path.of("jdk11u-dev")
@@ -2572,12 +2622,39 @@ final class Check
             ));
         }
 
-        static Expect javaOpenJDKMake()
+        static Expect javaOpenJdkMake()
         {
             return Expect.of(Steps.Exec.of(
                 Path.of("jdk11u-dev")
                 , "make"
                 , "graal-builder-image"
+            ));
+        }
+
+        static Expect javaOpenJdkLink()
+        {
+            return Expect.of(new Steps.Linking(
+                Path.of("java_home")
+                , Path.of("jdk11u-dev/build/graal-server-release/images/graal-builder-jdk")
+            ));
+        }
+
+        static Expect javaLabsJdkBuild()
+        {
+            return Expect.of(Steps.Exec.of(
+                Path.of("labs-openjdk-11")
+                , "python"
+                , "build_labsjdk.py"
+                , "--boot-jdk"
+                , "/home/boot-jdk-11/Contents/Home"
+            ));
+        }
+
+        static Expect javaLabsJdkLink()
+        {
+            return Expect.of(new Steps.Linking(
+                Path.of("java_home")
+                , Path.of("labs-openjdk-11/java_home")
             ));
         }
 
@@ -2641,6 +2718,14 @@ final class Check
             );
         }
 
+        static Expect jdkDownload()
+        {
+            return download(
+                "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+                , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+            );
+        }
+
         static Expect download(String url, String path)
         {
             return Expect.of(new Steps.Download(
@@ -2652,6 +2737,11 @@ final class Check
         static Expect mavenExtract()
         {
             return extract("downloads/apache-maven-3.6.3-bin.tar.gz", "maven");
+        }
+
+        static Expect jdkExtract()
+        {
+            return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "/home/boot-jdk-11/Contents/Home");
         }
 
         static Expect extract(String tar, String path)
@@ -2677,6 +2767,15 @@ final class Check
                 , "native-image"
             ));
         }
+
+        static Expect mercurialOpenJdkClone()
+        {
+            return Expect.of(Steps.Exec.of(
+                "hg"
+                , "clone"
+                , "http://hg.openjdk.java.net/jdk8/jdk8"
+            ));
+        }
     }
 
     static final class Args
@@ -2689,12 +2788,41 @@ final class Check
             };
         }
 
+        static String[] openJdkTree()
+        {
+            return new String[]{
+                "--tree",
+                "https://github.com/openjdk/jdk11u-dev/tree/master"
+            };
+        }
+
+        static String[] mercurialTree()
+        {
+            return new String[]{
+                "--tree",
+                "http://hg.openjdk.java.net/jdk8/jdk8"
+            };
+        }
+
+        static String[] labsJdkTree()
+        {
+            return new String[]{
+                "--tree"
+                , "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
+            };
+        }
+
         static Roots roots()
         {
             return new Roots(
                 p -> Path.of("/", "home").resolve(p)
                 , p -> Path.of("/", "today").resolve(p)
             );
+        }
+
+        static Supplier<OperatingSystem.Type> macOs()
+        {
+            return () -> OperatingSystem.Type.MACOSX;
         }
     }
 
