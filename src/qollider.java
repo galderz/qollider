@@ -1497,15 +1497,14 @@ class OperatingSystem
     enum Type
     {
         WINDOWS
-        // TODO rename to MAC_OS
-        , MACOSX
+        , MAC_OS
         , LINUX
         , OTHER
         ;
 
         boolean isMac()
         {
-            return this == MACOSX;
+            return this == MAC_OS;
         }
 
         @Override
@@ -1520,7 +1519,7 @@ class OperatingSystem
         String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
 
         if ((OS.contains("mac")) || (OS.contains("darwin")))
-            return Type.MACOSX;
+            return Type.MAC_OS;
 
         if (OS.contains("win"))
             return Type.WINDOWS;
@@ -2373,7 +2372,7 @@ final class Check
         Steps.Install.Effects install()
         {
             return new Steps.Install.Effects(
-                new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> OperatingSystem.Type.MACOSX)
+                new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> OperatingSystem.Type.MAC_OS)
                 , new Steps.Extract.Effects(exec(), p -> {})
             );
         }
@@ -2423,7 +2422,7 @@ final class Check
 
         static RecordingOperatingSystem macOS()
         {
-            return new RecordingOperatingSystem(OperatingSystem.Type.MACOSX);
+            return new RecordingOperatingSystem(OperatingSystem.Type.MAC_OS);
         }
 
         public OperatingSystem.Type type()
@@ -2820,7 +2819,7 @@ final class Check
 
         static Supplier<OperatingSystem.Type> macOs()
         {
-            return () -> OperatingSystem.Type.MACOSX;
+            return () -> OperatingSystem.Type.MAC_OS;
         }
     }
 
