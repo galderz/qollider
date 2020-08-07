@@ -63,6 +63,7 @@ import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 public class qollider
@@ -2167,15 +2168,12 @@ final class Check
         @Test
         void missingURL()
         {
-            // TODO check junit way of dealing with tests that throw exceptions
-            try
-            {
-                GraalGet.Options.of(Cli.read(List.of()));
-                assertThat("Expected exception", false);
-            } catch (IllegalArgumentException e)
-            {
-                assertThat(e.getMessage(), is("Not enough arguments"));
-            }
+            final var exception = assertThrows(
+                IllegalArgumentException.class
+                , () -> GraalGet.Options.of(Cli.read(List.of()))
+            );
+
+            assertThat(exception.getMessage(), is("Not enough arguments"));
         }
 
         private static GraalGet.Options cli(String... extra)
