@@ -1102,8 +1102,7 @@ final class Steps
             return Exec.run(
                 Exec.of(
                     "tar"
-                    // TODO make it quiet
-                    , "-xzvpf"
+                    , "-xzpf"
                     , extract.tar.toString()
                     , "-C"
                     , extract.path.toString()
