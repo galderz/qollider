@@ -39,6 +39,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -84,7 +85,8 @@ public class qollider
             {
                 case JDK_BUILD -> SystemJdk.build(cli, home, today);
                 case GRAAL_GET -> GraalGet.ofSystem(cli, today).call();
-                case GRAAL_BUILD -> GraalBuild.ofSystem(cli, home, today).call();
+                case GRAAL_BUILD -> SystemGraal.build(cli, home, today);
+                case MANDREL_BUILD -> SystemMandrel.build(cli, home, today);
                 case MAVEN_BUILD -> MavenBuild.ofSystem(cli, home, today).call();
                 case MAVEN_TEST -> MavenTest.ofSystem(cli, home, today).call();
             };
@@ -110,9 +112,8 @@ enum Command
 {
     JDK_BUILD
     , GRAAL_GET
-    // TODO graal-build does too much, split into: mandrel-build and graal-build
-    // it'd signal that packaging tree is only for mandrel-build
     , GRAAL_BUILD
+    , MANDREL_BUILD
     , MAVEN_BUILD
     , MAVEN_TEST
 }
@@ -199,18 +200,24 @@ final class SystemJdk
 {
     static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
     {
+        final var roots = new Roots(home::resolve, today::resolve);
+
         final var osToday = OperatingSystem.of(today);
         final var osHome = OperatingSystem.of(home);
-        final var roots = new Roots(home::resolve, today::resolve);
 
         final var execToday = Steps.Exec.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
-        final var jdkGet = Jdk.Get.of(roots, osToday::type);
-        final var jdkBuild = Jdk.Build.of(cli, jdkGet);
+        final var get = new Jdk.Get(Jdk.JDK_11_0_7, Path.of("boot-jdk-11"));
+        final var getLink = new Steps.Linking.Effects(home::symlink, osHome::type);
 
-        final var linking = new Steps.Linking.Effects(today::symlink);
-        return Jdk.build(jdkBuild, installHome, execToday, linking);
+        final var build = Jdk.Build.of(cli);
+        final var buildLink = Steps.Linking.Effects.of(today::symlink);
+
+        return Lists.concat(
+            Jdk.get(get, installHome, getLink)
+            , Jdk.build(build, execToday, buildLink, roots)
+        );
     }
 }
 
@@ -232,21 +239,21 @@ final class Jdk
         , LABSJDK
     }
 
-    record Build(Repository tree, Get get)
+    record Build(Repository tree)
     {
         Type javaType()
         {
             return type(tree);
         }
 
-        static Build of(Cli cli, Jdk.Get get)
+        static Build of(Cli cli)
         {
             final var tree = Repository.of(cli.optional(
                 "tree"
                 , "https://github.com/openjdk/jdk11u-dev"
             ));
 
-            return new Build(tree, get);
+            return new Build(tree);
         }
 
         private static Jdk.Type type(Repository repo)
@@ -255,15 +262,36 @@ final class Jdk
         }
     }
 
-    static List<? extends Output> build(
-        Build build
+    static List<? extends Output> get(
+        Get get
         , Steps.Install.Effects install
-        , Steps.Exec.Effects exec
         , Steps.Linking.Effects linking
     )
     {
-        final var getOut = get(build.get, install);
+        final var getOut = get(get, install);
+        final var linkOut = link(get, linking);
+        return Lists.append(linkOut, getOut);
+    }
 
+    private static Link link(Get get, Steps.Linking.Effects effects)
+    {
+        final var link = Homes.bootJdk();
+        final var target =
+            effects.os().get().isMac()
+                ? get.path.resolve(Path.of("Contents", "Home"))
+                : get.path;
+
+        final var linking = new Steps.Linking(link, target);
+        return Steps.Linking.link(linking, effects);
+    }
+
+    static List<? extends Output> build(
+        Build build
+        , Steps.Exec.Effects exec
+        , Steps.Linking.Effects linking
+        , Roots roots
+    )
+    {
         // TODO Remove List.of when rest of calls have migrated
         final var cloneOut = List.of(
             clone(build.tree(), exec)
@@ -271,8 +299,8 @@ final class Jdk
 
         final var buildSteps = switch (build.javaType())
         {
-            case OPENJDK -> OpenJDK.buildSteps(build);
-            case LABSJDK -> LabsJDK.buildSteps(build);
+            case OPENJDK -> OpenJDK.buildSteps(build, roots);
+            case LABSJDK -> LabsJDK.buildSteps(build, roots);
         };
 
         final var buildOut = buildSteps
@@ -285,7 +313,7 @@ final class Jdk
         );
 
         // TODO Use typed flatten
-        return Lists.flatten(getOut, cloneOut, buildOut, linkOut);
+        return Lists.flatten(cloneOut, buildOut, linkOut);
     }
 
     static Marker clone(Repository tree, Steps.Exec.Effects effects)
@@ -297,7 +325,7 @@ final class Jdk
         };
     }
 
-    static Link link(Build build, Steps.Linking.Effects effects)
+    private static Link link(Build build, Steps.Linking.Effects effects)
     {
         final var jdkPath = Path.of(build.tree.name());
         final var target = switch (build.javaType())
@@ -313,9 +341,9 @@ final class Jdk
 
     private static final class OpenJDK
     {
-        static Stream<Steps.Exec> buildSteps(Build build)
+        static Stream<Steps.Exec> buildSteps(Build build, Roots roots)
         {
-            return Stream.of(configure(build), make(build));
+            return Stream.of(configure(build, roots), make(build));
         }
 
         static Path javaHome(Path jdk)
@@ -330,7 +358,7 @@ final class Jdk
             );
         }
 
-        private static Steps.Exec configure(Build build)
+        private static Steps.Exec configure(Build build, Roots roots)
         {
             return Steps.Exec.of(
                 Path.of(build.tree.name())
@@ -343,7 +371,7 @@ final class Jdk
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
-                , format("--with-boot-jdk=%s", build.get.home().toString())
+                , format("--with-boot-jdk=%s", roots.home().apply(Homes.bootJdk()))
             );
         }
 
@@ -359,9 +387,9 @@ final class Jdk
 
     private static final class LabsJDK
     {
-        static Stream<Steps.Exec> buildSteps(Build build)
+        static Stream<Steps.Exec> buildSteps(Build build, Roots roots)
         {
-            return Stream.of(buildJDK(build));
+            return Stream.of(buildJDK(build, roots));
         }
 
         static Path javaHome(Path jdk)
@@ -369,33 +397,19 @@ final class Jdk
             return jdk.resolve("java_home");
         }
 
-        private static Steps.Exec buildJDK(Build build)
+        private static Steps.Exec buildJDK(Build build, Roots roots)
         {
             return Steps.Exec.of(
                 Path.of(build.tree.name())
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , build.get.home().toString()
+                , roots.home().apply(Homes.bootJdk()).toString()
             );
         }
     }
 
-    record Get(Jdk.Version version, Path home)
-    {
-        static Get of(Roots roots, Supplier<OperatingSystem.Type> osType)
-        {
-            final var path = Path.of("boot-jdk-11");
-
-            final var absolutePath = roots.home().apply(
-                osType.get().isMac()
-                    ? path.resolve(Path.of("Contents", "Home"))
-                    : path
-            );
-
-            return new Jdk.Get(JDK_11_0_7, absolutePath);
-        }
-    }
+    record Get(Jdk.Version version, Path path) {}
 
     private static List<? extends Output> get(Get get, Steps.Install.Effects install)
     {
@@ -420,10 +434,12 @@ final class Jdk
             , get.version().build()
         );
 
-        return Steps.Install.install(new Steps.Install(url, get.home()), install);
+        return Steps.Install.install(new Steps.Install(url, get.path), install);
     }
 }
 
+// TODO Move to Graal
+@Deprecated
 class GraalGet implements Callable<List<?>>
 {
     final Options options;
@@ -503,194 +519,168 @@ class GraalGet implements Callable<List<?>>
     }
 }
 
-class GraalBuild implements Callable<List<?>>
+final class SystemGraal
 {
-    final Options options;
-    final FileSystem home;
-    final FileSystem today;
-
-    private GraalBuild(Options options, FileSystem home, FileSystem today)
-    {
-        this.options = options;
-        this.home = home;
-        this.today = today;
-    }
-
-    static GraalBuild ofSystem(Cli cli, FileSystem home, FileSystem today)
-    {
-        return new GraalBuild(Options.of(cli), home, today);
-    }
-
-    @Override
-    public List<?> call()
+    static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
     {
         final var osToday = OperatingSystem.of(today);
-        final var osHome = OperatingSystem.of(home);
         final var roots = new Roots(home::resolve, today::resolve);
-
         final var execToday = Steps.Exec.Effects.of(osToday);
-        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
-
-        return Lists.flatten(
-            Git.clone(options.mx, execToday)
-            , Git.clone(options.graal, execToday)
-            , Graal.build(options, execToday, installHome, roots)
-            , Graal.link(options, today::symlink, osToday.fs::exists)
-        );
+        final var linking = Steps.Linking.Effects.of(today::symlink);
+        return Graal.build(Graal.Build.of(cli), execToday, linking, roots);
     }
+}
 
-    record Options(
-        Repository mx
-        , Repository graal
-        , Repository packaging
+final class Graal
+{
+    record Build(
+        Repository tree
+        , Repository mx
     )
     {
-        Graal.Type graalType(Predicate<Path> exists)
+        static Build of(Cli cli)
         {
-            return Graal.type(graal, exists);
-        }
-
-        Path mxPath()
-        {
-            return mxHome().resolve("mx");
-        }
-
-        Path mxHome()
-        {
-            return Path.of(mx.name());
-        }
-
-        static Options of(Cli cli)
-        {
-            var mxTree = Repository.of(
+            var tree = Repository.of(
+                cli.optional(
+                    "tree"
+                    , "https://github.com/oracle/graal/tree/master"
+                )
+            );
+            var mx = Repository.of(
                 cli.optional(
                     "mx-tree"
                     , "https://github.com/graalvm/mx/tree/master"
                 )
             );
-            var graalTree = Repository.of(
+
+            return new Build(tree, mx);
+        }
+    }
+
+    static List<? extends Output> build(
+        Build build
+        , Steps.Exec.Effects exec
+        , Steps.Linking.Effects linking
+        , Roots roots
+    )
+    {
+        var mxOut = Git.clone(build.mx, exec);
+
+        var treeOut = Git.clone(build.tree, exec);
+
+        final var svm = Path.of(build.tree.name(), "substratevm");
+        var buildOut = Steps.Exec.run(
+            Steps.Exec.of(
+                svm
+                , roots.today().apply(Path.of(build.mx.name(), "mx")).toString()
+                , "--java-home"
+                , roots.today().apply(Homes.java()).toString()
+                , "build"
+            )
+            , exec
+        );
+
+        final var target = Path.of(
+            build.tree.name()
+            ,"sdk"
+            , "latest_graalvm_home"
+        );
+
+        final var linkOut = Steps.Linking.link(
+            new Steps.Linking(Homes.graal(), target)
+            , linking
+        );
+
+        return Lists.flatten(mxOut, treeOut, buildOut, linkOut);
+    }
+}
+
+final class SystemMandrel
+{
+    static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
+    {
+        final var osToday = OperatingSystem.of(today);
+        final var osHome = OperatingSystem.of(home);
+        final var roots = new Roots(home::resolve, today::resolve);
+        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+        return Mandrel.build(Mandrel.Build.of(cli), execToday, installHome, roots);
+    }
+}
+
+final class Mandrel
+{
+    record Build(
+        Repository tree
+        , Repository mx
+        , Repository packaging
+    )
+    {
+        static Build of(Cli cli)
+        {
+            var tree = Repository.of(
                 cli.optional(
-                    "graal-tree"
-                    ,"https://github.com/oracle/graal/tree/master"
+                    "tree"
+                    , "https://github.com/graalvm/mandrel/tree/mandrel/20.1"
                 )
             );
-            var packagingTree = Repository.of(
+            var mx = Repository.of(
+                cli.optional(
+                    "mx-tree"
+                    , "https://github.com/graalvm/mx/tree/master"
+                )
+            );
+            var packaging = Repository.of(
                 cli.optional(
                     "packaging-tree"
                     , "https://github.com/graalvm/mandrel-packaging/tree/master"
                 )
             );
-
-            return new Options(mxTree, graalTree, packagingTree);
+            return new Build(tree, mx, packaging);
         }
     }
 
-    static final class Graal
+    static List<? extends Output> build(
+        Build build
+        , Steps.Exec.Effects exec
+        , Steps.Install.Effects install
+        , Roots roots
+    )
     {
-        static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Install.Effects install, Roots roots)
-        {
-            final var type = options.graalType(exec.exists());
-            return switch (type)
-            {
-                case MANDREL -> Mandrel.build(options, exec, install, roots);
-                case ORACLE -> List.of(Oracle.build(options, exec, roots));
-            };
-        }
+        final var treeOut = Git.clone(build.tree, exec);
+        final var mxOut = Git.clone(build.mx, exec);
+        final var packagingOut = Git.clone(build.packaging, exec);
 
-        static Link link(Options options, BiFunction<Path, Path, Link> symLink, Predicate<Path> exists)
-        {
-            final var type = options.graalType(exists);
-            return switch (type)
-            {
-                case MANDREL -> new Link(Homes.graal(), Homes.graal());
-                case ORACLE -> Oracle.link(options, symLink);
-            };
-        }
+        final var mavenOut = Maven.install(install);
 
-        static final class Mandrel
-        {
-            static List<Marker> build(Options options, Steps.Exec.Effects exec, Steps.Install.Effects install, Roots roots)
-            {
-                final var cloneMarker = Git.clone(options.packaging, exec);
-                final var mavenInstallMarkers = Maven.install(install);
+        final var today = roots.today();
+        final var buildOut = Steps.Exec.run(
+            Steps.Exec.of(
+                Path.of("mandrel-packaging")
+                , List.of(
+                    EnvVar.javaHome(today.apply(Homes.java()))
+                    , EnvVar.of("MX_HOME", today.apply(Path.of(build.mx.name())))
+                    , EnvVar.of("MANDREL_REPO", today.apply(Path.of(build.tree.name())))
+                    , EnvVar.of("MANDREL_HOME", today.apply(Homes.graal()))
+                    , EnvVar.of("MAVEN_HOME", Maven.home(roots.home()))
+                )
+                , "./buildJDK.sh"
+            )
+            , exec
+        );
 
-                final var today = roots.today();
-                final var buildMarker = Steps.Exec.run(
-                    Steps.Exec.of(
-                        Path.of("mandrel-packaging")
-                        , List.of(
-                            EnvVar.javaHome(today.apply(Homes.java()))
-                            , EnvVar.of("MX_HOME", today.apply(options.mxHome()))
-                            , EnvVar.of("MANDREL_REPO", today.apply(Path.of(options.graal.name())))
-                            , EnvVar.of("MANDREL_HOME", today.apply(Homes.graal()))
-                            , EnvVar.of("MAVEN_HOME", Maven.home(roots.home()))
-                        )
-                        , "./buildJDK.sh"
-                    )
-                    , exec
-                );
-
-                // TODO Create Lists.flatten(List<E>...)
-                final var result = Lists.mutable(cloneMarker);
-                result.addAll(mavenInstallMarkers);
-                result.add(buildMarker);
-                return result;
-            }
-        }
-
-        static final class Oracle
-        {
-            static Marker build(Options options, Steps.Exec.Effects effects, Roots roots)
-            {
-                final var svm = Path.of(options.graal.name(), "substratevm");
-                final var today = roots.today();
-                return Steps.Exec.run(
-                    Steps.Exec.of(
-                        svm
-                        , today.apply(options.mxPath()).toString()
-                        , "--java-home"
-                        , today.apply(Homes.java()).toString()
-                        , "build"
-                    )
-                    , effects
-                );
-            }
-
-            static Link link(Options options, BiFunction<Path, Path, Link> symLink)
-            {
-                final var target = Path.of(
-                    options.graal.name()
-                    ,"sdk"
-                    , "latest_graalvm_home"
-                );
-
-                return symLink.apply(Homes.graal(), target);
-            }
-        }
-
-        static Graal.Type type(Repository repo, Predicate<Path> exists)
-        {
-            return switch (repo.name())
-            {
-                case "mandrel" ->
-                    exists.test(Path.of("mandrel", "README-Mandrel.md"))
-                        ? Type.MANDREL
-                        : Type.ORACLE;
-                case "graal" -> Type.ORACLE;
-                default -> throw Illegal.value(repo.name());
-            };
-        }
-
-        enum Type
-        {
-            MANDREL
-            , ORACLE
-        }
+        // TODO Create Lists.flatten(List<E>...)
+        final var result = Lists.mutable(treeOut, mxOut, packagingOut);
+        result.addAll(mavenOut);
+        result.add(buildOut);
+        return result;
     }
 }
 
 class MavenBuild implements Callable<List<?>>
 {
+    // TODO if -Dnative, add additional args for -J-ea and -J-esa
+
     // TODO avoid duplication with MavenTest
     // TODO read camel-quarkus snapshot version from pom.xml
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
@@ -793,6 +783,8 @@ class MavenBuild implements Callable<List<?>>
 
 class MavenTest implements Callable<List<?>>
 {
+    // TODO if -Dnative, add additional args for -J-ea and -J-esa
+
     // TODO avoid duplication with MavenBuild
     // TODO read camel-quarkus snapshot version from
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
@@ -1210,10 +1202,17 @@ final class Steps
     {
         static Link link(Linking linking, Effects effects)
         {
-            return effects.symLink.apply(linking.link, linking.target);
+            final var target = linking.target;
+            return effects.symLink.apply(linking.link, target);
         }
 
-        record Effects(BiFunction<Path, Path, Link> symLink) {}
+        record Effects(BiFunction<Path, Path, Link> symLink, Supplier<OperatingSystem.Type> os)
+        {
+            static Effects of(BiFunction<Path, Path, Link> symLink)
+            {
+                return new Effects(symLink, () -> OperatingSystem.Type.UNKNOWN);
+            }
+        }
     }
 }
 
@@ -1249,11 +1248,17 @@ class Git
     }
 }
 
+// TODO still needed? Merge with roots or Jdk/Graal?
 final class Homes
 {
     static Path java()
     {
         return Path.of("java_home");
+    }
+
+    static Path bootJdk()
+    {
+        return Path.of("bootjdk_home");
     }
 
     static Path graal()
@@ -1499,7 +1504,7 @@ class OperatingSystem
         WINDOWS
         , MAC_OS
         , LINUX
-        , OTHER
+        , UNKNOWN
         ;
 
         boolean isMac()
@@ -1527,7 +1532,7 @@ class OperatingSystem
         if (OS.contains("nux"))
             return Type.LINUX;
 
-        return Type.OTHER;
+        return Type.UNKNOWN;
     }
 }
 
@@ -1705,9 +1710,9 @@ final class URIs
 
 final class Lists
 {
-    static <E> List<E> append(E element, List<E> list)
+    static <E> List<E> append(E element, List<? extends E> list)
     {
-        final var result = new ArrayList<>(list);
+        final var result = new ArrayList<E>(list);
         result.add(element);
         return Collections.unmodifiableList(result);
     }
@@ -1718,6 +1723,13 @@ final class Lists
         result.add(element);
         result.addAll(list);
         return Collections.unmodifiableList(result);
+    }
+
+    static <E> List<E> concat(List<? extends E> l1, List<? extends E> l2)
+    {
+        return Stream.of(l1, l2)
+            .flatMap(Collection::stream)
+            .collect(Collectors.toList());
     }
 
     // TODO make it typesafe
@@ -1774,8 +1786,9 @@ final class Check
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
                 selectClass(CheckGit.class)
-                , selectClass(CheckJdkBuild.class)
-                , selectClass(CheckGraalBuild.class)
+                , selectClass(CheckJdk.class)
+                , selectClass(CheckGraal.class)
+                , selectClass(CheckMandrel.class)
                 , selectClass(CheckGraalGet.class)
                 , selectClass(CheckMavenBuild.class)
                 , selectClass(CheckMavenTest.class)
@@ -1926,15 +1939,24 @@ final class Check
         }
     }
 
-    static class CheckJdkBuild
+    static class CheckJdk
     {
+        static List<? extends Output> jdkBuild(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
+            return Jdk.build(
+                Jdk.Build.of(cli)
+                , fs.exec()
+                , fs.linking()
+                , Args.roots()
+            );
+        }
+
         @Test
-        void labsJdk()
+        void buildLabsJdk()
         {
             Asserts.steps2(
                 jdkBuild(InMemoryFileSystem.empty(), Args.labsJdkTree())
-                , Expect.jdkDownload()
-                , Expect.jdkExtract()
                 , Expect.gitLabsJdkClone()
                 , Expect.javaLabsJdkBuild()
                 , Expect.javaLabsJdkLink()
@@ -1942,12 +1964,10 @@ final class Check
         }
 
         @Test
-        void javaOpenJDK()
+        void buildOpenJDK()
         {
             Asserts.steps2(
                 jdkBuild(InMemoryFileSystem.empty(), Args.openJdkTree())
-                , Expect.jdkDownload()
-                , Expect.jdkExtract()
                 , Expect.gitOpenJdkClone()
                 , Expect.javaOpenJdkConfigure()
                 , Expect.javaOpenJdkMake()
@@ -1956,11 +1976,11 @@ final class Check
         }
 
         @Test
-        void skipJavaOpenJDK()
+        void skipBuildOpenJDK()
         {
             final var fs = InMemoryFileSystem.ofExists(
                 Expect.jdkDownload().step
-                , Expect.jdkExtract().step
+                , Expect.bootJdkExtract().step
                 , Expect.gitOpenJdkClone().step
                 , Expect.javaOpenJdkConfigure().step
                 , Expect.javaOpenJdkMake().step
@@ -1968,8 +1988,6 @@ final class Check
 
             Asserts.steps2(
                 jdkBuild(fs, Args.openJdkTree())
-                , Expect.jdkDownload().untouched()
-                , Expect.jdkExtract().untouched()
                 , Expect.gitOpenJdkClone().untouched()
                 , Expect.javaOpenJdkConfigure().untouched()
                 , Expect.javaOpenJdkMake().untouched()
@@ -1978,27 +1996,33 @@ final class Check
         }
 
         @Test
-        void skipJavaLabsJDK()
+        void skipBuildLabsJDK()
         {
             final var fs = InMemoryFileSystem.ofExists(
                 Expect.jdkDownload().step
-                , Expect.jdkExtract().step
+                , Expect.bootJdkExtract().step
                 , Expect.gitLabsJdkClone().step
                 , Expect.javaLabsJdkBuild().step
             );
 
             Asserts.steps2(
                 jdkBuild(fs, Args.labsJdkTree())
-                , Expect.jdkDownload().untouched()
-                , Expect.jdkExtract().untouched()
                 , Expect.gitLabsJdkClone().untouched()
                 , Expect.javaLabsJdkBuild().untouched()
                 , Expect.javaLabsJdkLink()
             );
         }
 
+        static List<? extends Output> jdkClone(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
+            final var build = Jdk.Build.of(cli);
+            // TODO Remove List.of when all return List
+            return List.of(Jdk.clone(build.tree(), fs.exec()));
+        }
+
         @Test
-        void javaCloneMercurial()
+        void cloneMercurial()
         {
             Asserts.steps2(
                 jdkClone(InMemoryFileSystem.empty(), Args.mercurialTree())
@@ -2006,99 +2030,133 @@ final class Check
             );
         }
 
-        static List<? extends Output> jdkClone(InMemoryFileSystem fs, String... extra)
+        static List<? extends Output> jdkGet(InMemoryFileSystem fs, OperatingSystem.Type osType)
         {
-            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
-            final var build = Jdk.Build.of(cli, Jdk.Get.of(Args.roots(), Args.macOs()));
-            // TODO Remove List.of when all return List
-            return List.of(Jdk.clone(build.tree(), fs.exec()));
+            return Jdk.get(
+                new Jdk.Get(Jdk.JDK_11_0_7, Path.of("boot-jdk-11"))
+                , fs.install()
+                , fs.linking(osType)
+            );
         }
 
-        static List<? extends Output> jdkBuild(InMemoryFileSystem fs, String... extra)
+        @Test
+        void getBootJdkMacOs()
         {
-            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
-            return Jdk.build(
-                Jdk.Build.of(cli, Jdk.Get.of(Args.roots(), Args.macOs()))
-                , fs.install()
-                , fs.exec()
-                , fs.linking()
+            Asserts.steps2(
+                jdkGet(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS)
+                , Expect.jdkDownload()
+                , Expect.bootJdkExtract()
+                , Expect.bootJdkLinkMacOs()
+            );
+        }
+
+        @Test
+        void getBootJdk()
+        {
+            Asserts.steps2(
+                jdkGet(InMemoryFileSystem.empty(), OperatingSystem.Type.UNKNOWN)
+                , Expect.jdkDownload()
+                , Expect.bootJdkExtract()
+                , Expect.bootJdkLink()
             );
         }
     }
 
-    static class CheckGraalBuild
+    static class CheckGraal
     {
         @Test
-        void graalLink()
+        void build()
         {
-            final var options = cli();
-            final var linked = GraalBuild.Graal.link(
-                options
-                , Link::new
-                , path -> true
-            );
-            assertThat(linked.link(), is(Homes.graal()));
-        }
-
-        @Test
-        void graalOracleBuild()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            Asserts.steps(
-                GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
-                , Expect.graalOracleBuild()
-            );
-        }
-
-        @Test
-        void graalMandrelBuild()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Path.of("mandrel", "README-Mandrel.md")
-            );
-            Asserts.steps(
-                GraalBuild.Graal.build(cli(Args.mandrelTree()), fs.exec(), fs.install(), Args.roots())
-                , Expect.gitClone("graalvm/mandrel-packaging")
-                , Expect.mavenDownload()
-                , Expect.mavenExtract()
-                , Expect.graalMandrelBuild()
+            Asserts.steps2(
+                graalBuild(InMemoryFileSystem.empty())
+                , Expect.gitMxClone()
+                , Expect.gitGraalClone()
+                , Expect.graalBuild()
+                , Expect.graalLink()
             );
         }
 
         @Test
         void skipBuild()
         {
-            final var fs = InMemoryFileSystem.ofExists(Expect.graalOracleBuild().step);
-            Asserts.steps(
-                GraalBuild.Graal.build(cli(), fs.exec(), fs.install(), Args.roots())
-                , Expect.graalOracleBuild().untouched()
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitMxClone().step
+                , Expect.gitGraalClone().step
+                , Expect.graalBuild().step
+            );
+            Asserts.steps2(
+                graalBuild(fs)
+                , Expect.gitMxClone().untouched()
+                , Expect.gitGraalClone().untouched()
+                , Expect.graalBuild().untouched()
+                , Expect.graalLink()
             );
         }
 
-        @Test
-        void graalOracleLink()
+        static List<? extends Output> graalBuild(InMemoryFileSystem fs, String... extra)
         {
-            final var linked = GraalBuild.Graal.link(cli(), Link::new, path -> true);
-            assertThat(linked.link(), is(Homes.graal()));
-            assertThat(linked.target(), is(Path.of("graal", "sdk", "latest_graalvm_home")));
-        }
-
-        @Test
-        void graalMandrelLink()
-        {
-            final var linked = GraalBuild.Graal.link(cli(Args.mandrelTree()), Link::new, path -> true);
-            assertThat(linked.link(), is(Expect.graalHome()));
-            assertThat(linked.target(), is(Expect.graalHome()));
-        }
-
-        private static GraalBuild.Options cli(String... extra)
-        {
-            return GraalBuild.Options.of(
-                Cli.read(Lists.prepend("graal-build", Arrays.asList(extra)))
+            final var cli = Cli.read(Lists.prepend("graal-build", List.of(extra)));
+            return Graal.build(
+                Graal.Build.of(cli)
+                , fs.exec()
+                , fs.linking()
+                , Args.roots()
             );
         }
     }
 
+    static class CheckMandrel
+    {
+        @Test
+        void build()
+        {
+            Asserts.steps2(
+                mandrelBuild(InMemoryFileSystem.empty())
+                , Expect.gitMandrelClone()
+                , Expect.gitMxClone()
+                , Expect.gitMandrelPackagingClone()
+                , Expect.mavenDownload()
+                , Expect.mavenExtract()
+                , Expect.mandrelBuild()
+            );
+        }
+
+        @Test
+        void skipBuild()
+        {
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitMandrelClone().step
+                , Expect.gitMxClone().step
+                , Expect.gitMandrelPackagingClone().step
+                , Expect.mavenDownload().step
+                , Expect.mavenExtract().step
+                , Expect.mandrelBuild().step
+            );
+            Asserts.steps2(
+                mandrelBuild(fs)
+                , Expect.gitMandrelClone().untouched()
+                , Expect.gitMxClone().untouched()
+                , Expect.gitMandrelPackagingClone().untouched()
+                , Expect.mavenDownload().untouched()
+                , Expect.mavenExtract().untouched()
+                , Expect.mandrelBuild().untouched()
+            );
+        }
+
+        static List<? extends Output> mandrelBuild(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("mandrel-build", List.of(extra)));
+            return Mandrel.build(
+                Mandrel.Build.of(cli)
+                , fs.exec()
+                , fs.install()
+                , Args.roots()
+            );
+        }
+    }
+
+    // TODO Merge with CheckGraal
+    @Deprecated
     static class CheckGraalGet
     {
         @Test
@@ -2377,23 +2435,19 @@ final class Check
             );
         }
 
+        Steps.Linking.Effects linking(OperatingSystem.Type osType)
+        {
+            return new Steps.Linking.Effects(Link::new, () -> osType);
+        }
+
         Steps.Linking.Effects linking()
         {
-            return new Steps.Linking.Effects(Link::new);
+            return new Steps.Linking.Effects(Link::new, () -> OperatingSystem.Type.UNKNOWN);
         }
 
         static InMemoryFileSystem empty()
         {
             return new InMemoryFileSystem(Collections.emptyMap());
-        }
-
-        static InMemoryFileSystem ofExists(Path... paths)
-        {
-            final var map = Stream.of(paths)
-                .collect(
-                    Collectors.toMap(Function.identity(), marker -> true)
-                );
-            return new InMemoryFileSystem(map);
         }
 
         // TODO take Expect instead of Step
@@ -2413,21 +2467,10 @@ final class Check
     private static final class RecordingOperatingSystem
     {
         private final Queue<Object> tasks = new ArrayDeque<>();
-        private final OperatingSystem.Type type;
-
-        private RecordingOperatingSystem(OperatingSystem.Type type)
-        {
-            this.type = type;
-        }
 
         static RecordingOperatingSystem macOS()
         {
-            return new RecordingOperatingSystem(OperatingSystem.Type.MAC_OS);
-        }
-
-        public OperatingSystem.Type type()
-        {
-            return type;
+            return new RecordingOperatingSystem();
         }
 
         void record(Steps.Exec task)
@@ -2574,7 +2617,7 @@ final class Check
 
         static Expect gitOpenJdkClone()
         {
-            return gitClone("openjdk/jdk11u-dev");
+            return gitClone("openjdk/jdk11u-dev", "master");
         }
 
         static Expect gitLabsJdkClone()
@@ -2590,13 +2633,33 @@ final class Check
             ));
         }
 
-        static Expect gitClone(String repo)
+        static Expect gitMxClone()
+        {
+            return gitClone("graalvm/mx", "master");
+        }
+
+        static Expect gitGraalClone()
+        {
+            return gitClone("oracle/graal", "master");
+        }
+
+        static Expect gitMandrelClone()
+        {
+            return gitClone("graalvm/mandrel", "mandrel/20.1");
+        }
+
+        static Expect gitMandrelPackagingClone()
+        {
+            return gitClone("graalvm/mandrel-packaging", "master");
+        }
+
+        private static Expect gitClone(String repo, String branch)
         {
             return Expect.of(Steps.Exec.of(
                 "git"
                 , "clone"
                 , "-b"
-                , "master"
+                , branch
                 , "--depth"
                 , "1"
                 , String.format("https://github.com/%s", repo)
@@ -2615,7 +2678,7 @@ final class Check
                 , "--with-jvm-variants=server"
                 , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
-                , "--with-boot-jdk=/home/boot-jdk-11/Contents/Home"
+                , "--with-boot-jdk=/home/bootjdk_home"
             ));
         }
 
@@ -2643,7 +2706,7 @@ final class Check
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , "/home/boot-jdk-11/Contents/Home"
+                , "/home/bootjdk_home"
             ));
         }
 
@@ -2655,7 +2718,7 @@ final class Check
             ));
         }
 
-        static Expect graalMandrelBuild()
+        static Expect mandrelBuild()
         {
             return Expect.of(Steps.Exec.of(
                 Path.of("mandrel-packaging")
@@ -2670,7 +2733,7 @@ final class Check
             ));
         }
 
-        static Expect graalOracleBuild()
+        static Expect graalBuild()
         {
             return Expect.of(Steps.Exec.of(
                 Path.of("graal", "substratevm")
@@ -2681,9 +2744,12 @@ final class Check
             ));
         }
 
-        public static Path graalHome()
+        static Expect graalLink()
         {
-            return Path.of("graalvm_home");
+            return Expect.of(new Steps.Linking(
+                Path.of("graalvm_home")
+                , Path.of("graal", "sdk", "latest_graalvm_home")
+            ));
         }
 
         static Expect mavenBuild(String path, String... extra)
@@ -2736,9 +2802,9 @@ final class Check
             return extract("downloads/apache-maven-3.6.3-bin.tar.gz", "maven");
         }
 
-        static Expect jdkExtract()
+        static Expect bootJdkExtract()
         {
-            return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "/home/boot-jdk-11/Contents/Home");
+            return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
         }
 
         static Expect extract(String tar, String path)
@@ -2752,6 +2818,22 @@ final class Check
                 , path
                 , "--strip-components"
                 , "1"
+            ));
+        }
+
+        static Expect bootJdkLinkMacOs()
+        {
+            return Expect.of(new Steps.Linking(
+                Path.of("bootjdk_home")
+                , Path.of("boot-jdk-11/Contents/Home")
+            ));
+        }
+
+        static Expect bootJdkLink()
+        {
+            return Expect.of(new Steps.Linking(
+                Path.of("bootjdk_home")
+                , Path.of("boot-jdk-11")
             ));
         }
 
@@ -2777,14 +2859,6 @@ final class Check
 
     static final class Args
     {
-        static String[] mandrelTree()
-        {
-            return new String[]{
-                "--graal-tree"
-                , "https://github.com/graalvm/mandrel/tree/master"
-            };
-        }
-
         static String[] openJdkTree()
         {
             return new String[]{
@@ -2815,11 +2889,6 @@ final class Check
                 p -> Path.of("/", "home").resolve(p)
                 , p -> Path.of("/", "today").resolve(p)
             );
-        }
-
-        static Supplier<OperatingSystem.Type> macOs()
-        {
-            return () -> OperatingSystem.Type.MAC_OS;
         }
     }
 
