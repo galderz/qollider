@@ -2811,7 +2811,7 @@ final class Check
             return Expect.of(Steps.Exec.of(
                 Path.of("")
                 , "tar"
-                , "-xzvpf"
+                , "-xzpf"
                 , tar
                 , "-C"
                 , path
