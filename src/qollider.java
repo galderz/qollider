@@ -210,10 +210,10 @@ final class SystemJdk
         final var execToday = Steps.Exec.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
-        final var getLink = new Steps.Linking.Effects(home::symlink, osHome::type);
+        final var getLink = new Steps.Linking.Effects(home::symlink);
 
         final var build = Jdk.Build.of(cli);
-        final var buildLink = Steps.Linking.Effects.of(today::symlink);
+        final var buildLink = new Steps.Linking.Effects(today::symlink);
 
         return Lists.concat(
             Jdk.getBoot(build, installHome, getLink)
@@ -226,7 +226,7 @@ final class SystemJdk
         final var osToday = OperatingSystem.of(today);
         final var installToday = Steps.Install.Effects.of(Web.of(today), osToday);
         final var get = Jdk.Get.of(cli);
-        final var getLink = new Steps.Linking.Effects(today::symlink, osToday::type);
+        final var getLink = new Steps.Linking.Effects(today::symlink);
         return Jdk.get(get, installToday, getLink);
     }
 }
@@ -582,7 +582,7 @@ final class SystemGraal
         final var osToday = OperatingSystem.of(today);
         final var roots = new Roots(home::resolve, today::resolve);
         final var execToday = Steps.Exec.Effects.of(osToday);
-        final var linking = Steps.Linking.Effects.of(today::symlink);
+        final var linking = new Steps.Linking.Effects(today::symlink);
         return Graal.build(Graal.Build.of(cli), execToday, linking, roots);
     }
 }
@@ -1261,14 +1261,7 @@ final class Steps
             return effects.symLink.apply(linking.link, target);
         }
 
-        // TODO revert back os, already part of install
-        record Effects(BiFunction<Path, Path, Link> symLink, Supplier<OperatingSystem.Type> os)
-        {
-            static Effects of(BiFunction<Path, Path, Link> symLink)
-            {
-                return new Effects(symLink, () -> OperatingSystem.Type.UNKNOWN);
-            }
-        }
+        record Effects(BiFunction<Path, Path, Link> symLink) {}
     }
 }
 
@@ -2540,7 +2533,7 @@ final class Check
 
         Steps.Linking.Effects linking()
         {
-            return new Steps.Linking.Effects(Link::new, () -> OperatingSystem.Type.UNKNOWN);
+            return new Steps.Linking.Effects(Link::new);
         }
 
         static InMemoryFileSystem empty()
