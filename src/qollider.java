@@ -85,8 +85,8 @@ public class qollider
             {
                 case JDK_BUILD -> SystemJdk.build(cli, home, today);
                 case JDK_GET -> SystemJdk.get(cli, today);
-                case GRAAL_GET -> GraalGet.ofSystem(cli, today).call();
                 case GRAAL_BUILD -> SystemGraal.build(cli, home, today);
+                case GRAAL_GET -> SystemGraal.get(cli, today);
                 case MANDREL_BUILD -> SystemMandrel.build(cli, home, today);
                 case MAVEN_BUILD -> MavenBuild.ofSystem(cli, home, today).call();
                 case MAVEN_TEST -> MavenTest.ofSystem(cli, home, today).call();
@@ -494,96 +494,29 @@ final class Jdk
     }
 }
 
-// TODO Move to Graal
-@Deprecated
-class GraalGet implements Callable<List<?>>
-{
-    final Options options;
-    final FileSystem fs;
-
-    GraalGet(Options options, FileSystem fs) {
-        this.options = options;
-        this.fs = fs;
-    }
-
-    static GraalGet ofSystem(Cli cli, FileSystem fs)
-    {
-        return new GraalGet(Options.of(cli), fs);
-    }
-
-    @Override
-    public List<?> call()
-    {
-        final var os = OperatingSystem.of(fs);
-        final var web = Web.of(fs);
-
-        final var exec = Steps.Exec.Effects.of(os);
-        final var install = Steps.Install.Effects.of(web, os);
-
-        return Lists.flatten(
-            Graal.get(options, exec, install)
-            , Graal.link(options, fs::symlink)
-        );
-    }
-
-    static final class Graal
-    {
-        static List<Marker> get(
-            Options options
-            , Steps.Exec.Effects exec
-            , Steps.Install.Effects install
-        )
-        {
-            final var installMarkers = Steps.Install.install(
-                new Steps.Install(options.url, options.graal)
-                , install
-            );
-
-            final var orgName = Path.of(options.url.getPath()).getName(0);
-            if (!orgName.equals(Path.of("graalvm")))
-                return installMarkers;
-
-            final var nativeImageMarker = Steps.Exec.run(
-                Steps.Exec.of(
-                    Path.of("graal", "bin")
-                    , "./gu"
-                    , "install"
-                    , "native-image"
-                )
-                , exec
-            );
-
-            return Lists.append(nativeImageMarker, installMarkers);
-        }
-
-        public static Link link(Options options, BiFunction<Path, Path, Link> symLink)
-        {
-            final var link = Homes.graal();
-            return symLink.apply(link, options.graal);
-        }
-    }
-
-    record Options(URL url, Path graal)
-    {
-        static Options of(Cli cli)
-        {
-            return new Options(
-                URLs.of(cli.required("url"))
-                , Path.of("graalvm", "graal")
-            );
-        }
-    }
-}
-
 final class SystemGraal
 {
     static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
     {
         final var osToday = OperatingSystem.of(today);
         final var roots = new Roots(home::resolve, today::resolve);
+
         final var execToday = Steps.Exec.Effects.of(osToday);
         final var linking = new Steps.Linking.Effects(today::symlink);
+
         return Graal.build(Graal.Build.of(cli), execToday, linking, roots);
+    }
+
+    public static List<? extends Output> get(Cli cli, FileSystem fs)
+    {
+        final var os = OperatingSystem.of(fs);
+        final var web = Web.of(fs);
+
+        final var exec = Steps.Exec.Effects.of(os);
+        final var install = Steps.Install.Effects.of(web, os);
+        final var linking = new Steps.Linking.Effects(fs::symlink);
+
+        return Graal.get(Graal.Get.of(cli), exec, install, linking);
     }
 }
 
@@ -649,6 +582,60 @@ final class Graal
 
         return Lists.flatten(mxOut, treeOut, buildOut, linkOut);
     }
+
+    // TODO same as Jdk.Get, split it out
+    record Get(URL url, Path path)
+    {
+        static Get of(Cli cli)
+        {
+            return new Get(
+                URLs.of(cli.required("url"))
+                , Path.of("graalvm")
+            );
+        }
+    }
+
+    static List<? extends Output> get(
+        Get get
+        , Steps.Exec.Effects exec
+        , Steps.Install.Effects install
+        , Steps.Linking.Effects linking
+    )
+    {
+        final List<? extends Output> installOut = get(get, exec, install);
+        final var linkOut = linking.symLink().apply(Homes.graal(), get.path);
+        return Lists.append(linkOut, installOut);
+    }
+
+    private static List<? extends Output> get(
+        Get get
+        , Steps.Exec.Effects exec
+        , Steps.Install.Effects install
+    )
+    {
+        final var installOut = Steps.Install.install(
+            new Steps.Install(get.url, get.path)
+            , install
+        );
+
+        final var orgName = Path.of(get.url.getPath()).getName(0);
+        if (orgName.equals(Path.of("graalvm")))
+        {
+            final var guNativeImageOut = Steps.Exec.run(
+                Steps.Exec.of(
+                    Path.of("graal", "bin")
+                    , "./gu"
+                    , "install"
+                    , "native-image"
+                )
+                , exec
+            );
+
+            return Lists.append(guNativeImageOut, installOut);
+        }
+
+        return installOut;
+    }
 }
 
 final class SystemMandrel
@@ -658,8 +645,10 @@ final class SystemMandrel
         final var osToday = OperatingSystem.of(today);
         final var osHome = OperatingSystem.of(home);
         final var roots = new Roots(home::resolve, today::resolve);
+
         final var execToday = Steps.Exec.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+
         return Mandrel.build(Mandrel.Build.of(cli), execToday, installHome, roots);
     }
 }
@@ -1838,7 +1827,6 @@ final class Check
                 , selectClass(CheckJdk.class)
                 , selectClass(CheckGraal.class)
                 , selectClass(CheckMandrel.class)
-                , selectClass(CheckGraalGet.class)
                 , selectClass(CheckMavenBuild.class)
                 , selectClass(CheckMavenTest.class)
             )
@@ -2155,6 +2143,17 @@ final class Check
 
     static class CheckGraal
     {
+        static List<? extends Output> graalBuild(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("graal-build", List.of(extra)));
+            return Graal.build(
+                Graal.Build.of(cli)
+                , fs.exec()
+                , fs.linking()
+                , Args.roots()
+            );
+        }
+
         @Test
         void build()
         {
@@ -2184,15 +2183,89 @@ final class Check
             );
         }
 
-        static List<? extends Output> graalBuild(InMemoryFileSystem fs, String... extra)
+        private static Graal.Get graalGet(String... extra)
         {
-            final var cli = Cli.read(Lists.prepend("graal-build", List.of(extra)));
-            return Graal.build(
-                Graal.Build.of(cli)
-                , fs.exec()
-                , fs.linking()
-                , Args.roots()
+            return Graal.Get.of(
+                Cli.read(Lists.prepend("graal-get", Arrays.asList(extra)))
             );
+        }
+
+        @Test
+        void get()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var url = "https://doestnotexist.com/archive.tar.gz";
+
+            Asserts.steps2(
+                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                , Expect.download(url, "downloads/archive.tar.gz")
+                , Expect.extract("downloads/archive.tar.gz", "graalvm")
+                , Expect.link("graalvm_home", Path.of("graalvm"))
+            );
+        }
+
+        @Test
+        void getAndDownloadNativeImage()
+        {
+            final var fs = InMemoryFileSystem.empty();
+            final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
+
+            Asserts.steps2(
+                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
+                , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
+                , Expect.guNativeImage()
+                , Expect.link("graalvm_home", Path.of("graalvm"))
+            );
+        }
+
+        @Test
+        void skipBothDownloadAndExtract()
+        {
+            final var url = "https://skip.both/download";
+            final var downloadPath = "downloads/download";
+            final var extractPath = "graalvm";
+
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.download(url, downloadPath).step
+                , Expect.extract(downloadPath, extractPath).step
+            );
+
+            Asserts.steps2(
+                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                , Expect.download(url, downloadPath).untouched()
+                , Expect.extract(downloadPath, extractPath).untouched()
+                , Expect.link("graalvm_home", Path.of("graalvm"))
+            );
+        }
+
+        @Test
+        void skipOnlyDownload()
+        {
+            final var url = "https://skip.only/download.tar.gz";
+            final var path = "downloads/download.tar.gz";
+
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.download(url, path).step
+            );
+
+            Asserts.steps2(
+                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                , Expect.download(url, path).untouched()
+                , Expect.extract(path, "graalvm")
+                , Expect.link("graalvm_home", Path.of("graalvm"))
+            );
+        }
+
+        @Test
+        void missingURL()
+        {
+            final var exception = assertThrows(
+                IllegalArgumentException.class
+                , () -> Graal.Get.of(Cli.read(List.of()))
+            );
+
+            assertThat(exception.getMessage(), is("Not enough arguments"));
         }
     }
 
@@ -2242,92 +2315,6 @@ final class Check
                 , fs.exec()
                 , fs.install()
                 , Args.roots()
-            );
-        }
-    }
-
-    // TODO Merge with CheckGraal
-    @Deprecated
-    static class CheckGraalGet
-    {
-        @Test
-        void get()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var url = "https://doestnotexist.com/archive.tar.gz";
-
-            Asserts.steps(
-                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
-                , Expect.download(url, "downloads/archive.tar.gz")
-                , Expect.extract("downloads/archive.tar.gz", "graalvm/graal")
-            );
-        }
-
-        @Test
-        void getAndDownloadNativeImage()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
-
-            Asserts.steps(
-                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
-                , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
-                , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm/graal")
-                , Expect.guNativeImage()
-            );
-        }
-
-        @Test
-        void skipBothDownloadAndExtract()
-        {
-            final var url = "https://skip.both/download";
-            final var downloadPath = "downloads/download";
-            final var extractPath = "graalvm/graal";
-
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.download(url, downloadPath).step
-                , Expect.extract(downloadPath, extractPath).step
-            );
-
-            Asserts.steps(
-                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
-                , Expect.download(url, downloadPath).untouched()
-                , Expect.extract(downloadPath, extractPath).untouched()
-            );
-        }
-
-        @Test
-        void skipOnlyDownload()
-        {
-            final var url = "https://skip.only/download.tar.gz";
-            final var path = "downloads/download.tar.gz";
-
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.download(url, path).step
-            );
-
-            Asserts.steps(
-                GraalGet.Graal.get(cli("--url", url), fs.exec(), fs.install())
-                , Expect.download(url, path).untouched()
-                , Expect.extract(path, "graalvm/graal")
-            );
-        }
-
-        @Test
-        void missingURL()
-        {
-            final var exception = assertThrows(
-                IllegalArgumentException.class
-                , () -> GraalGet.Options.of(Cli.read(List.of()))
-            );
-
-            assertThat(exception.getMessage(), is("Not enough arguments"));
-        }
-
-        private static GraalGet.Options cli(String... extra)
-        {
-            return GraalGet.Options.of(
-                Cli.read(Lists.prepend("graal-get", Arrays.asList(extra)))
             );
         }
     }
@@ -2962,6 +2949,7 @@ final class Check
             ));
         }
 
+        // TODO remove other *link* methods, needed?
         static Expect link(String link, Path target)
         {
             return Expect.of(new Steps.Linking(
