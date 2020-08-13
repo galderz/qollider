@@ -208,14 +208,13 @@ final class SystemJdk
         final var execToday = Steps.Exec.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
-        final var get = new Jdk.Get(Jdk.JDK_11_0_7, Path.of("boot-jdk-11"));
         final var getLink = new Steps.Linking.Effects(home::symlink, osHome::type);
 
         final var build = Jdk.Build.of(cli);
         final var buildLink = Steps.Linking.Effects.of(today::symlink);
 
         return Lists.concat(
-            Jdk.get(get, installHome, getLink)
+            Jdk.get(build, installHome, getLink)
             , Jdk.build(build, execToday, buildLink, roots)
         );
     }
@@ -223,7 +222,8 @@ final class SystemJdk
 
 final class Jdk
 {
-    static final Version JDK_11_0_7 = new Version(11, 0, 7, 10);
+    static final Version JDK_11 = new Version(11, 0, 7, 10);
+    static final Version JDK_14 = new Version(14, 0, 2, 12);
 
     record Version(int major, int minor, int micro, int build)
     {
@@ -250,7 +250,7 @@ final class Jdk
         {
             final var tree = Repository.of(cli.optional(
                 "tree"
-                , "https://github.com/openjdk/jdk11u-dev"
+                , "https://github.com/openjdk/jdk11u-dev/tree/master"
             ));
 
             return new Build(tree);
@@ -263,11 +263,16 @@ final class Jdk
     }
 
     static List<? extends Output> get(
-        Get get
+        Build build
         , Steps.Install.Effects install
         , Steps.Linking.Effects linking
     )
     {
+        final var get =
+            "jdk".equals(build.tree.name())
+                ? new Jdk.Get(Jdk.JDK_14, Path.of("boot-jdk-14"))
+                : new Jdk.Get(Jdk.JDK_11, Path.of("boot-jdk-11"));
+
         final var getOut = get(get, install);
         final var linkOut = link(get, linking);
         return Lists.append(linkOut, getOut);
@@ -1978,8 +1983,8 @@ final class Check
         void skipBuildOpenJDK()
         {
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.jdkDownload().step
-                , Expect.bootJdkExtract().step
+                Expect.jdk11Download().step
+                , Expect.bootJdk11Extract().step
                 , Expect.gitOpenJdkClone().step
                 , Expect.javaOpenJdkConfigure().step
                 , Expect.javaOpenJdkMake().step
@@ -1998,8 +2003,8 @@ final class Check
         void skipBuildLabsJDK()
         {
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.jdkDownload().step
-                , Expect.bootJdkExtract().step
+                Expect.jdk11Download().step
+                , Expect.bootJdk11Extract().step
                 , Expect.gitLabsJdkClone().step
                 , Expect.javaLabsJdkBuild().step
             );
@@ -2029,10 +2034,12 @@ final class Check
             );
         }
 
-        static List<? extends Output> jdkGet(InMemoryFileSystem fs, OperatingSystem.Type osType)
+        static List<? extends Output> jdkGet(InMemoryFileSystem fs, OperatingSystem.Type osType, String... extra)
         {
+            final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
+            final var build = Jdk.Build.of(cli);
             return Jdk.get(
-                new Jdk.Get(Jdk.JDK_11_0_7, Path.of("boot-jdk-11"))
+                build
                 , fs.install()
                 , fs.linking(osType)
             );
@@ -2043,8 +2050,8 @@ final class Check
         {
             Asserts.steps2(
                 jdkGet(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS)
-                , Expect.jdkDownload()
-                , Expect.bootJdkExtract()
+                , Expect.jdk11Download()
+                , Expect.bootJdk11Extract()
                 , Expect.bootJdkLinkMacOs()
             );
         }
@@ -2054,9 +2061,25 @@ final class Check
         {
             Asserts.steps2(
                 jdkGet(InMemoryFileSystem.empty(), OperatingSystem.Type.UNKNOWN)
-                , Expect.jdkDownload()
-                , Expect.bootJdkExtract()
-                , Expect.bootJdkLink()
+                , Expect.jdk11Download()
+                , Expect.bootJdk11Extract()
+                , Expect.bootJdk11Link()
+            );
+        }
+
+        @Test
+        void getBootJdkJdk()
+        {
+            Asserts.steps2(
+                jdkGet(
+                    InMemoryFileSystem.empty()
+                    , OperatingSystem.Type.UNKNOWN
+                    , "--tree"
+                    , "https://github.com/openjdk/jdk/tree/master"
+                )
+                , Expect.jdk14Download()
+                , Expect.bootJdk14Extract()
+                , Expect.bootJdk14Link()
             );
         }
     }
@@ -2780,11 +2803,19 @@ final class Check
             );
         }
 
-        static Expect jdkDownload()
+        static Expect jdk11Download()
         {
             return download(
                 "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
                 , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+            );
+        }
+
+        static Expect jdk14Download()
+        {
+            return download(
+                "https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/download/jdk-14.0.2%2B12/OpenJDK14U-jdk_x64_mac_hotspot_14.0.2_12.tar.gz"
+                , "downloads/OpenJDK14U-jdk_x64_mac_hotspot_14.0.2_12.tar.gz"
             );
         }
 
@@ -2801,9 +2832,14 @@ final class Check
             return extract("downloads/apache-maven-3.6.3-bin.tar.gz", "maven");
         }
 
-        static Expect bootJdkExtract()
+        static Expect bootJdk11Extract()
         {
             return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
+        }
+
+        static Expect bootJdk14Extract()
+        {
+            return extract("downloads/OpenJDK14U-jdk_x64_mac_hotspot_14.0.2_12.tar.gz", "boot-jdk-14");
         }
 
         static Expect extract(String tar, String path)
@@ -2828,11 +2864,19 @@ final class Check
             ));
         }
 
-        static Expect bootJdkLink()
+        static Expect bootJdk11Link()
         {
             return Expect.of(new Steps.Linking(
                 Path.of("bootjdk_home")
                 , Path.of("boot-jdk-11")
+            ));
+        }
+
+        static Expect bootJdk14Link()
+        {
+            return Expect.of(new Steps.Linking(
+                Path.of("bootjdk_home")
+                , Path.of("boot-jdk-14")
             ));
         }
 
