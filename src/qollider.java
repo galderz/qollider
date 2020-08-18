@@ -357,18 +357,6 @@ final class Jdk
            : path;
     }
 
-//    private static Link link(Boot get, Steps.Linking.Effects effects)
-//    {
-//        final var link = Homes.bootJdk();
-//        final var target =
-//            effects.os().get().isMac()
-//                ? get.path.resolve(Path.of("Contents", "Home"))
-//                : get.path;
-//
-//        final var linking = new Steps.Linking(link, target);
-//        return Steps.Linking.link(linking, effects);
-//    }
-//
     static List<? extends Output> build(
         Build build
         , Steps.Exec.Effects exec
@@ -833,8 +821,13 @@ class MavenTest implements Callable<List<?>>
     // TODO avoid duplication with MavenBuild
     // TODO read camel-quarkus snapshot version from
     // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
-    private static final Map<Path, List<String>> EXTRA_TEST_ARGS = Map.of(
-        Path.of("quarkus-platform")
+    private static final Map<String, List<String>> EXTRA_TEST_ARGS = Map.of(
+        "quarkus"
+        , List.of(
+            "-pl"
+            , "!:quarkus-integration-test-google-cloud-functions"
+        )
+        , "quarkus-platform"
         , List.of(
             "-Dquarkus.version=999-SNAPSHOT"
             , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
@@ -893,12 +886,12 @@ class MavenTest implements Callable<List<?>>
     private static Steps.Exec toTest(Options options, Roots roots)
     {
         final var directory = MavenTest.suitePath(options.suite);
-        final var arguments = arguments(options, directory, roots).toArray(String[]::new);
+        final var arguments = arguments(options, options.suite, roots).toArray(String[]::new);
         final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
         return Steps.Exec.of(directory, envVars, arguments);
     }
 
-    private static Stream<String> arguments(Options options, Path directory, Roots roots)
+    private static Stream<String> arguments(Options options, String suite, Roots roots)
     {
         final var args = Stream.of(
             Maven.mvn(roots.home()).toString()
@@ -908,7 +901,7 @@ class MavenTest implements Callable<List<?>>
         );
 
         final var userArgs = options.additionalTestArgs;
-        final var extraArgs = EXTRA_TEST_ARGS.get(directory);
+        final var extraArgs = EXTRA_TEST_ARGS.get(suite);
         if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
         {
             return Stream
