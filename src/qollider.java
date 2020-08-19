@@ -1811,7 +1811,6 @@ final class Check
 
     static void check()
     {
-        // TODO remove summary listener, a bit too noisy
         SummaryGeneratingListener listener = new SummaryGeneratingListener();
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
@@ -1872,70 +1871,40 @@ final class Check
             assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
-        @Test
-        void gitCloneSkip()
+        private List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
         {
-            final var args = new String[]{
-                "git"
-                , "clone"
-                , "-b"
-                , "master"
-                , "--depth"
-                , "1"
-                , "https://github.com/openjdk/jdk11u-dev"
-            };
-            final var fs = InMemoryFileSystem.ofExists(Steps.Exec.of(args));
-            final var os = RecordingOperatingSystem.macOS();
-            final Repository repo = Repository.of(
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
-            );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var marker = Git.clone(repo, effects);
-            os.assertNoTask(marker);
+            return List.of(Git.clone(Repository.of(uri), fs.exec()));
         }
 
         @Test
         void gitCloneSingle()
         {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final Repository repo = Repository.of(
-                "https://github.com/openjdk/jdk11u-dev/tree/master"
+            Asserts.steps2(
+                gitClone(InMemoryFileSystem.empty(), "https://github.com/openjdk/jdk11u-dev/tree/master")
+                , Expect.gitOpenJdkClone()
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var marker = Git.clone(repo, effects);
-            final var expected = Steps.Exec.of(
-                "git"
-                , "clone"
-                , "-b"
-                , "master"
-                , "--depth"
-                , "1"
-                , "https://github.com/openjdk/jdk11u-dev"
+        }
+
+        @Test
+        void gitCloneSkip()
+        {
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitOpenJdkClone().step
             );
-            os.assertExecutedOneTask(expected, marker);
+
+            Asserts.steps2(
+                gitClone(fs, "https://github.com/openjdk/jdk11u-dev/tree/master")
+                , Expect.gitOpenJdkClone().untouched()
+            );
         }
 
         @Test
         void gitCloneLabsJDK()
         {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final Repository repo = Repository.of(
-                "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02"
+            Asserts.steps2(
+                gitClone(InMemoryFileSystem.empty(), "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
+                , Expect.gitLabsJdkClone()
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
-            final var marker = Git.clone(repo, effects);
-            final var expected = Steps.Exec.of(
-                "git"
-                , "clone"
-                , "-b"
-                , "jvmci-20.2-b02"
-                , "--depth"
-                , "20"
-                , "https://github.com/graalvm/labs-openjdk-11"
-            );
-            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
