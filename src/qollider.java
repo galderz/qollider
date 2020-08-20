@@ -55,6 +55,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -310,7 +311,7 @@ final class Jdk
 
         final var osType = install.download().osType().get();
         final var javaOsType = osType.isMac() ? "mac" : osType.toString();
-        final var arch = "x64";
+        final var arch = install.download().arch().get().toString();
 
         final var url = URLs.of(
             "%s/jdk-%s%%2B%d/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
@@ -1124,7 +1125,8 @@ final class Steps
         {
             static Effects of(Web web, OperatingSystem os)
             {
-                final var download = Download.Effects.of(web, os);
+                final var hw = new Hardware();
+                final var download = Download.Effects.of(web, os, hw);
                 final var extract = Extract.Effects.of(os);
                 return new Effects(download, extract);
             }
@@ -1226,11 +1228,12 @@ final class Steps
             , Function<Marker, Boolean> touch
             , Consumer<Download> download
             , Supplier<OperatingSystem.Type> osType
+            , Supplier<Hardware.Arch> arch
         )
         {
-            static Effects of(Web web, OperatingSystem os)
+            static Effects of(Web web, OperatingSystem os, Hardware hw)
             {
-                return new Effects(os.fs::exists, os.fs::touch, web::download, os::type);
+                return new Effects(os.fs::exists, os.fs::touch, web::download, os::type, hw::arch);
             }
         }
     }
@@ -1550,17 +1553,18 @@ class OperatingSystem
         }
     }
 
+    // TODO type() not unit tested, limit to getting the property
     Type type()
     {
-        String OS = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
+        String osName = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
 
-        if ((OS.contains("mac")) || (OS.contains("darwin")))
+        if ((osName.contains("mac")) || (osName.contains("darwin")))
             return Type.MAC_OS;
 
-        if (OS.contains("win"))
+        if (osName.contains("win"))
             return Type.WINDOWS;
 
-        if (OS.contains("nux"))
+        if (osName.contains("nux"))
             return Type.LINUX;
 
         return Type.UNKNOWN;
@@ -1586,6 +1590,46 @@ final class Hashing
         catch (NoSuchAlgorithmException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+}
+
+// Dependency
+final class Hardware
+{
+    static final Pattern X64 = Pattern.compile("^(x8664|amd64|ia32e|em64t|x64)$");
+    static final Pattern AARCH64 = Pattern.compile("^(aarch64)$");
+
+    enum Arch
+    {
+        X64
+        , AARCH64;
+
+        @Override
+        public String toString()
+        {
+            return super.toString().toLowerCase();
+        }
+    }
+
+    // TODO aarch() not unit tested, limit to getting the property
+    Arch arch()
+    {
+        String arch = System.getProperty("os.arch").toLowerCase(Locale.ENGLISH).replaceAll("[^a-z0-9]+", "");
+        if (X64.matcher(arch).matches())
+        {
+            return Arch.X64;
+        }
+        else if (AARCH64.matcher(arch).matches())
+        {
+            return Arch.AARCH64;
+        }
+        else
+        {
+            throw new IllegalArgumentException(String.format(
+                "Unsupported architecture: %s"
+                , arch
+            ));
         }
     }
 }
@@ -2029,12 +2073,12 @@ final class Check
             );
         }
 
-        static List<? extends Output> jdkGetBoot(InMemoryFileSystem fs, OperatingSystem.Type osType, String... extra)
+        static List<? extends Output> jdkGetBoot(InMemoryFileSystem fs, OperatingSystem.Type osType, Hardware.Arch arch, String... extra)
         {
             final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
             return Jdk.getBoot(
                 Jdk.Build.of(cli)
-                , fs.install(osType)
+                , fs.install(osType, arch)
                 , fs.linking()
             );
         }
@@ -2043,7 +2087,7 @@ final class Check
         void getBootJdkMacOs()
         {
             Asserts.steps2(
-                jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS)
+                jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS, Hardware.Arch.X64)
                 , Expect.jdk11DownloadMacOs()
                 , Expect.bootJdk11ExtractMacOs()
                 , Expect.bootJdkLinkMacOs()
@@ -2054,7 +2098,7 @@ final class Check
         void getBootJdk11Linux()
         {
             Asserts.steps2(
-                jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.LINUX)
+                jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64)
                 , Expect.jdk11DownloadLinux()
                 , Expect.bootJdk11ExtractLinux()
                 , Expect.bootJdk11LinkLinux()
@@ -2068,6 +2112,7 @@ final class Check
                 jdkGetBoot(
                     InMemoryFileSystem.empty()
                     , OperatingSystem.Type.LINUX
+                    , Hardware.Arch.AARCH64
                     , "--tree"
                     , "https://github.com/openjdk/jdk/tree/master"
                 )
@@ -2083,7 +2128,7 @@ final class Check
             final var fs = InMemoryFileSystem.empty();
             return Jdk.get(
                 Jdk.Get.of(cli)
-                , fs.install(OperatingSystem.Type.MAC_OS)
+                , fs.install(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64)
                 , fs.linking()
             );
         }
@@ -2467,17 +2512,17 @@ final class Check
             return new Steps.Exec.Effects(this::exists, e -> {}, this::touch);
         }
 
-        Steps.Install.Effects install(OperatingSystem.Type osType)
+        Steps.Install.Effects install(OperatingSystem.Type osType, Hardware.Arch arch)
         {
             return new Steps.Install.Effects(
-                new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> osType)
+                new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> osType, () -> arch)
                 , new Steps.Extract.Effects(exec(), p -> {})
             );
         }
 
         Steps.Install.Effects install()
         {
-            return install(OperatingSystem.Type.MAC_OS);
+            return install(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         }
 
         Steps.Linking.Effects linking()
@@ -2832,16 +2877,16 @@ final class Check
         static Expect jdk11DownloadLinux()
         {
             return download(
-                "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_linux_hotspot_11.0.7_10.tar.gz"
-                , "downloads/OpenJDK11U-jdk_x64_linux_hotspot_11.0.7_10.tar.gz"
+                "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
+                , "downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
             );
         }
 
         static Expect jdk14DownloadLinux()
         {
             return download(
-                "https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/download/jdk-14.0.2%2B12/OpenJDK14U-jdk_x64_linux_hotspot_14.0.2_12.tar.gz"
-                , "downloads/OpenJDK14U-jdk_x64_linux_hotspot_14.0.2_12.tar.gz"
+                "https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/download/jdk-14.0.2%2B12/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz"
+                , "downloads/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz"
             );
         }
 
@@ -2860,7 +2905,7 @@ final class Check
 
         static Expect bootJdk11ExtractLinux()
         {
-            return extract("downloads/OpenJDK11U-jdk_x64_linux_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
+            return extract("downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
         }
 
         static Expect bootJdk11ExtractMacOs()
@@ -2870,7 +2915,7 @@ final class Check
 
         static Expect bootJdk14Extract()
         {
-            return extract("downloads/OpenJDK14U-jdk_x64_linux_hotspot_14.0.2_12.tar.gz", "boot-jdk-14");
+            return extract("downloads/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz", "boot-jdk-14");
         }
 
         static Expect extract(String tar, String path)
