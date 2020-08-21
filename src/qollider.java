@@ -1795,7 +1795,8 @@ final class Check
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
             .selectors(
-                selectClass(CheckGit.class)
+                selectClass(CheckCommon.class)
+                , selectClass(CheckGit.class)
                 , selectClass(CheckJdk.class)
                 , selectClass(CheckGraal.class)
                 , selectClass(CheckMandrel.class)
@@ -1826,6 +1827,68 @@ final class Check
         }
     }
 
+    static class CheckCommon
+    {
+        @Test
+        void skipLazyExec()
+        {
+            // Use git clone as example of exec that can be skipped if present
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitOpenJdkClone().step
+            );
+
+            Asserts.steps(
+                CheckGit.gitClone(fs, "https://github.com/openjdk/jdk11u-dev/tree/master")
+                , Expect.gitOpenJdkClone().untouched()
+            );
+        }
+
+        @Test
+        void skipDownload()
+        {
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.jdk11DownloadLinux().step
+            );
+
+            Asserts.steps(
+                CheckJdk.jdkGetBoot(fs, OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64)
+                , Expect.jdk11DownloadLinux().untouched()
+                , Expect.bootJdk11ExtractLinux()
+                , Expect.bootJdk11LinkLinux()
+            );
+        }
+
+        @Test
+        void alwaysLink()
+        {
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitMxClone().step
+                , Expect.gitGraalClone().step
+                , Expect.graalBuild().step
+            );
+            Asserts.steps(
+                CheckGraal.graalBuild(fs)
+                , Expect.gitMxClone().untouched()
+                , Expect.gitGraalClone().untouched()
+                , Expect.graalBuild().untouched()
+                , Expect.graalLink()
+            );
+        }
+
+        @Test
+        void alwaysEagerExec()
+        {
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.mavenTest(Path.of("quarkus", "integration-tests")).step
+            );
+
+            Asserts.steps(
+                CheckMaven.mavenTest(fs, "--suite", "quarkus")
+                , Expect.mavenTest(Path.of("quarkus", "integration-tests"))
+            );
+        }
+    }
+
     static class CheckGit
     {
         @Test
@@ -1839,7 +1902,7 @@ final class Check
             assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
-        private List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
+        static List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
         {
             return List.of(Git.clone(Repository.of(uri), fs.lazyExec()));
         }
@@ -1850,19 +1913,6 @@ final class Check
             Asserts.steps(
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/openjdk/jdk11u-dev/tree/master")
                 , Expect.gitOpenJdkClone()
-            );
-        }
-
-        @Test
-        void gitCloneSkip()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitOpenJdkClone().step
-            );
-
-            Asserts.steps(
-                gitClone(fs, "https://github.com/openjdk/jdk11u-dev/tree/master")
-                , Expect.gitOpenJdkClone().untouched()
             );
         }
 
@@ -1919,44 +1969,6 @@ final class Check
                 , Expect.javaOpenJdkConfigure()
                 , Expect.javaOpenJdkMake()
                 , Expect.javaOpenJdkLink()
-            );
-        }
-
-        @Test
-        void skipBuildOpenJDK()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.jdk11DownloadLinux().step
-                , Expect.bootJdk11ExtractLinux().step
-                , Expect.gitOpenJdkClone().step
-                , Expect.javaOpenJdkConfigure().step
-                , Expect.javaOpenJdkMake().step
-            );
-
-            Asserts.steps(
-                jdkBuild(fs, Args.openJdkTree())
-                , Expect.gitOpenJdkClone().untouched()
-                , Expect.javaOpenJdkConfigure().untouched()
-                , Expect.javaOpenJdkMake().untouched()
-                , Expect.javaOpenJdkLink()
-            );
-        }
-
-        @Test
-        void skipBuildLabsJDK()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.jdk11DownloadLinux().step
-                , Expect.bootJdk11ExtractLinux().step
-                , Expect.gitLabsJdkClone().step
-                , Expect.javaLabsJdkBuild().step
-            );
-
-            Asserts.steps(
-                jdkBuild(fs, Args.labsJdkTree())
-                , Expect.gitLabsJdkClone().untouched()
-                , Expect.javaLabsJdkBuild().untouched()
-                , Expect.javaLabsJdkLink()
             );
         }
 
@@ -2077,23 +2089,6 @@ final class Check
             );
         }
 
-        @Test
-        void skipBuild()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitMxClone().step
-                , Expect.gitGraalClone().step
-                , Expect.graalBuild().step
-            );
-            Asserts.steps(
-                graalBuild(fs)
-                , Expect.gitMxClone().untouched()
-                , Expect.gitGraalClone().untouched()
-                , Expect.graalBuild().untouched()
-                , Expect.graalLink()
-            );
-        }
-
         private static Graal.Get graalGet(String... extra)
         {
             return Graal.Get.of(
@@ -2126,44 +2121,6 @@ final class Check
                 , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
                 , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
                 , Expect.guNativeImage()
-                , Expect.link("graalvm_home", Path.of("graalvm"))
-            );
-        }
-
-        @Test
-        void skipBothDownloadAndExtract()
-        {
-            final var url = "https://skip.both/download";
-            final var downloadPath = "downloads/download";
-            final var extractPath = "graalvm";
-
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.download(url, downloadPath).step
-                , Expect.extract(downloadPath, extractPath).step
-            );
-
-            Asserts.steps(
-                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
-                , Expect.download(url, downloadPath).untouched()
-                , Expect.extract(downloadPath, extractPath).untouched()
-                , Expect.link("graalvm_home", Path.of("graalvm"))
-            );
-        }
-
-        @Test
-        void skipOnlyDownload()
-        {
-            final var url = "https://skip.only/download.tar.gz";
-            final var path = "downloads/download.tar.gz";
-
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.download(url, path).step
-            );
-
-            Asserts.steps(
-                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
-                , Expect.download(url, path).untouched()
-                , Expect.extract(path, "graalvm")
                 , Expect.link("graalvm_home", Path.of("graalvm"))
             );
         }
@@ -2206,28 +2163,6 @@ final class Check
                 , Expect.mandrelBuild()
             );
         }
-
-        @Test
-        void skipBuild()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitMandrelClone().step
-                , Expect.gitMxClone().step
-                , Expect.gitMandrelPackagingClone().step
-                , Expect.mavenDownload().step
-                , Expect.mavenExtract().step
-                , Expect.mandrelBuild().step
-            );
-            Asserts.steps(
-                mandrelBuild(fs)
-                , Expect.gitMandrelClone().untouched()
-                , Expect.gitMxClone().untouched()
-                , Expect.gitMandrelPackagingClone().untouched()
-                , Expect.mavenDownload().untouched()
-                , Expect.mavenExtract().untouched()
-                , Expect.mandrelBuild().untouched()
-            );
-        }
     }
 
     static class CheckMaven
@@ -2252,24 +2187,6 @@ final class Check
                 , Expect.mavenDownload()
                 , Expect.mavenExtract()
                 , Expect.mavenBuild("quarkus")
-            );
-        }
-
-        @Test
-        void skipBuildQuarkus()
-        {
-            final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitClone("quarkusio/quarkus", "master").step
-                , Expect.mavenDownload().step
-                , Expect.mavenExtract().step
-                , Expect.mavenBuild("quarkus").step
-            );
-            Asserts.steps(
-                mavenBuild(fs, "--tree", "https://github.com/quarkusio/quarkus/tree/master")
-                , Expect.gitClone("quarkusio/quarkus", "master").untouched()
-                , Expect.mavenDownload().untouched()
-                , Expect.mavenExtract().untouched()
-                , Expect.mavenBuild("quarkus").untouched()
             );
         }
 
