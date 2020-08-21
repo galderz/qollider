@@ -89,7 +89,7 @@ public class qollider
                 case GRAAL_BUILD -> SystemGraal.build(cli, home, today);
                 case GRAAL_GET -> SystemGraal.get(cli, today);
                 case MANDREL_BUILD -> SystemMandrel.build(cli, home, today);
-                case MAVEN_BUILD -> MavenBuild.ofSystem(cli, home, today).call();
+                case MAVEN_BUILD -> SystemMaven.build(cli, home, today);
                 case MAVEN_TEST -> MavenTest.ofSystem(cli, home, today).call();
             };
 
@@ -711,110 +711,6 @@ final class Mandrel
     }
 }
 
-class MavenBuild implements Callable<List<?>>
-{
-    // TODO if -Dnative, add additional args for -J-ea and -J-esa
-
-    // TODO avoid duplication with MavenTest
-    // TODO read camel-quarkus snapshot version from pom.xml
-    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
-    private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
-        "camel-quarkus"
-        , List.of("-Dquarkus.version=999-SNAPSHOT")
-        , "quarkus-platform"
-        , List.of(
-            "-Dquarkus.version=999-SNAPSHOT"
-            , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
-        )
-    );
-
-    final Options options;
-    final FileSystem home;
-    final FileSystem today;
-
-    MavenBuild(Options options, FileSystem home, FileSystem today) {
-        this.options = options;
-        this.home = home;
-        this.today = today;
-    }
-
-    static MavenBuild ofSystem(Cli cli, FileSystem home, FileSystem today)
-    {
-        return new MavenBuild(Options.of(cli), home, today);
-    }
-
-    @Override
-    public List<?> call()
-    {
-        final var osToday = OperatingSystem.of(today);
-        final var osHome = OperatingSystem.of(home);
-        final var roots = new Roots(home::resolve, today::resolve);
-
-        final var execToday = Steps.Exec.Effects.of(osToday);
-        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
-
-        return Lists.flatten(
-            Git.clone(options.tree, execToday)
-            , Maven.install(installHome)
-            , MavenBuild.build(options, execToday, roots)
-        );
-    }
-
-    record Options(Repository tree, List<String> additionalBuildArgs)
-    {
-        Path project()
-        {
-            return Path.of(tree.name());
-        }
-
-        static Options of(Cli cli)
-        {
-            return new Options(
-                Repository.of(cli.required("tree"))
-                , cli.multi("additional-build-args")
-            );
-        }
-    }
-
-    static Marker build(Options options, Steps.Exec.Effects effects, Roots roots)
-    {
-        final var project = options.project();
-        final var arguments =
-            arguments(options, project.toString(), roots)
-                .toArray(String[]::new);
-
-        // Use a java home that already points to the jdk + graal.
-        // Enables maven build to be used to build for sample Quarkus apps with native bits.
-        // This is not strictly necessary for say building Quarkus.
-        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
-        return Steps.Exec.run(
-            Steps.Exec.of(project, envVars, arguments)
-            , effects
-        );
-    }
-
-    private static Stream<String> arguments(Options options, String directory, Roots roots)
-    {
-        // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
-        final var arguments = Stream.concat(
-            Stream.of(
-                Maven.mvn(roots.home()).toString()
-                , "install"
-                , "-DskipTests"
-                , "-DskipITs"
-                , "-Denforcer.skip"
-                , "-Dformat.skip"
-            )
-            , options.additionalBuildArgs.stream()
-        );
-
-        final var extra = EXTRA_BUILD_ARGS.get(directory);
-        return Objects.isNull(extra)
-            ? arguments
-            : Stream.concat(arguments, extra.stream());
-    }
-}
-
 class MavenTest implements Callable<List<?>>
 {
     // TODO if -Dnative, add additional args for -J-ea and -J-esa
@@ -931,8 +827,106 @@ class MavenTest implements Callable<List<?>>
     }
 }
 
+final class SystemMaven
+{
+    public static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
+    {
+        final var osToday = OperatingSystem.of(today);
+        final var osHome = OperatingSystem.of(home);
+        final var roots = new Roots(home::resolve, today::resolve);
+
+        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+
+        return Maven.build(Maven.Build.of(cli), execToday, installHome, roots);
+    }
+}
+
 final class Maven
 {
+    // TODO if -Dnative, add additional args for -J-ea and -J-esa
+
+    // TODO avoid duplication with MavenTest
+    // TODO read camel-quarkus snapshot version from pom.xml
+    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
+    private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
+        "camel-quarkus"
+        , List.of("-Dquarkus.version=999-SNAPSHOT")
+        , "quarkus-platform"
+        , List.of(
+            "-Dquarkus.version=999-SNAPSHOT"
+            , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
+        )
+    );
+
+    record Build(Repository tree, List<String> additionalBuildArgs)
+    {
+        Path project()
+        {
+            return Path.of(tree.name());
+        }
+
+        static Build of(Cli cli)
+        {
+            return new Build(
+                Repository.of(cli.required("tree"))
+                , cli.multi("additional-build-args")
+            );
+        }
+    }
+
+    public static List<? extends Output> build(
+        Build build
+        , Steps.Exec.Effects exec
+        , Steps.Install.Effects install
+        , Roots roots
+    )
+    {
+        final var cloneOut = Git.clone(build.tree, exec);
+        final var installOut = Maven.install(install);
+
+        final var project = build.project();
+        final var arguments =
+            buildArguments(build, project.toString(), roots)
+                .toArray(String[]::new);
+
+        // Use a java home that already points to the jdk + graal.
+        // Enables maven build to be used to build for sample Quarkus apps with native bits.
+        // This is not strictly necessary for say building Quarkus.
+        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
+        final var buildOut = Steps.Exec.run(
+            Steps.Exec.of(project, envVars, arguments)
+            , exec
+        );
+
+        return Lists.merge(
+            cloneOut
+            , installOut
+            , buildOut
+        );
+    }
+
+    private static Stream<String> buildArguments(Build build, String directory, Roots roots)
+    {
+        // TODO would adding -Dmaven.test.skip=true work? it skips compiling tests...
+        final var arguments = Stream.concat(
+            Stream.of(
+                Maven.mvn(roots.home()).toString()
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+            )
+            , build.additionalBuildArgs.stream()
+        );
+
+        final var extra = EXTRA_BUILD_ARGS.get(directory);
+        return Objects.isNull(extra)
+            ? arguments
+            : Stream.concat(arguments, extra.stream());
+    }
+
     static List<Marker> install(Steps.Install.Effects install)
     {
         final var version = "3.6.3";
@@ -1807,6 +1801,15 @@ final class Lists
             .collect(Collectors.toList());
     }
 
+    static <E> List<E> merge(E first, List<E> list, E last)
+    {
+        final var result = new ArrayList<E>(list.size() + 1);
+        result.add(first);
+        result.addAll(list);
+        result.add(last);
+        return Collections.unmodifiableList(result);
+    }
+
     // TODO make it typesafe
     static <E> List<E> flatten(Object... elements)
     {
@@ -1863,7 +1866,7 @@ final class Check
                 , selectClass(CheckJdk.class)
                 , selectClass(CheckGraal.class)
                 , selectClass(CheckMandrel.class)
-                , selectClass(CheckMavenBuild.class)
+                , selectClass(CheckMaven.class)
                 , selectClass(CheckMavenTest.class)
             )
             .build();
@@ -2278,6 +2281,17 @@ final class Check
 
     static class CheckMandrel
     {
+        static List<? extends Output> mandrelBuild(InMemoryFileSystem fs, String... extra)
+        {
+            final var cli = Cli.read(Lists.prepend("mandrel-build", List.of(extra)));
+            return Mandrel.build(
+                Mandrel.Build.of(cli)
+                , fs.exec()
+                , fs.install()
+                , Args.roots()
+            );
+        }
+
         @Test
         void build()
         {
@@ -2313,28 +2327,29 @@ final class Check
                 , Expect.mandrelBuild().untouched()
             );
         }
+    }
 
-        static List<? extends Output> mandrelBuild(InMemoryFileSystem fs, String... extra)
+    static class CheckMaven
+    {
+        static List<? extends Output> mavenBuild(InMemoryFileSystem fs, String... extra)
         {
-            final var cli = Cli.read(Lists.prepend("mandrel-build", List.of(extra)));
-            return Mandrel.build(
-                Mandrel.Build.of(cli)
+            final var cli = Cli.read(Lists.prepend("maven-build", List.of(extra)));
+            return Maven.build(
+                Maven.Build.of(cli)
                 , fs.exec()
                 , fs.install()
                 , Args.roots()
             );
         }
-    }
 
-    static class CheckMavenBuild
-    {
         @Test
         void quarkus()
         {
-            final var fs = InMemoryFileSystem.empty();
-            final var tree = "https://github.com/quarkusio/quarkus/tree/master";
-            Asserts.step(
-                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
+            Asserts.steps2(
+                mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/quarkusio/quarkus/tree/master")
+                , Expect.gitClone("quarkusio/quarkus", "master")
+                , Expect.mavenDownload()
+                , Expect.mavenExtract()
                 , Expect.mavenBuild("quarkus")
             );
         }
@@ -2342,10 +2357,17 @@ final class Check
         @Test
         void skipQuarkus()
         {
-            final var fs = InMemoryFileSystem.ofExists(Expect.mavenBuild("quarkus").step);
-            final var tree = "https://github.com/quarkusio/quarkus/tree/master";
-            Asserts.step(
-                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
+            final var fs = InMemoryFileSystem.ofExists(
+                Expect.gitClone("quarkusio/quarkus", "master").step
+                , Expect.mavenDownload().step
+                , Expect.mavenExtract().step
+                , Expect.mavenBuild("quarkus").step
+            );
+            Asserts.steps2(
+                mavenBuild(fs, "--tree", "https://github.com/quarkusio/quarkus/tree/master")
+                , Expect.gitClone("quarkusio/quarkus", "master").untouched()
+                , Expect.mavenDownload().untouched()
+                , Expect.mavenExtract().untouched()
                 , Expect.mavenBuild("quarkus").untouched()
             );
         }
@@ -2353,10 +2375,11 @@ final class Check
         @Test
         void camelQuarkus()
         {
-            final var fs = InMemoryFileSystem.empty();
-            final var tree = "https://github.com/apache/camel-quarkus/tree/master";
-            Asserts.step(
-                MavenBuild.build(cli("--tree", tree), fs.exec(), Args.roots())
+            Asserts.steps2(
+                mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/apache/camel-quarkus/tree/master")
+                , Expect.gitClone("apache/camel-quarkus", "master")
+                , Expect.mavenDownload()
+                , Expect.mavenExtract()
                 , Expect.mavenBuild("camel-quarkus", "-Dquarkus.version=999-SNAPSHOT")
             );
         }
@@ -2364,28 +2387,23 @@ final class Check
         @Test
         void camel()
         {
-            final var fs = InMemoryFileSystem.empty();
-            final var options = cli(
-                "--tree"
-                , "https://github.com/apache/camel/tree/master"
-                , "--additional-build-args"
-                , "-Pfastinstall"
-                , "-Pdoesnotexist"
-            );
-            Asserts.step(
-                MavenBuild.build(options, fs.exec(), Args.roots())
+            Asserts.steps2(
+                mavenBuild(
+                    InMemoryFileSystem.empty()
+                    , "--tree"
+                    , "https://github.com/apache/camel/tree/master"
+                    , "--additional-build-args"
+                    , "-Pfastinstall"
+                    , "-Pdoesnotexist"
+                )
+                , Expect.gitClone("apache/camel", "master")
+                , Expect.mavenDownload()
+                , Expect.mavenExtract()
                 , Expect.mavenBuild(
                     "camel"
                     , "-Pfastinstall"
                     , "-Pdoesnotexist"
                 )
-            );
-        }
-
-        private static MavenBuild.Options cli(String... extra)
-        {
-            return MavenBuild.Options.of(
-                Cli.read(Lists.prepend("maven-build", Arrays.asList(extra)))
             );
         }
     }
@@ -2587,13 +2605,6 @@ final class Check
                 , is(Path.of(format("%s.marker", Hashing.sha1(expected.toString()))))
             );
             forward();
-        }
-
-        void assertNoTask(Marker result)
-        {
-            assertNumberOfTasks(0);
-            assertThat(result.exists(), is(true));
-            assertThat(result.touched(), is(false));
         }
 
         void assertNumberOfTasks(int size)
