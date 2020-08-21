@@ -1847,7 +1847,7 @@ final class Check
         @Test
         void gitCloneSingle()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/openjdk/jdk11u-dev/tree/master")
                 , Expect.gitOpenJdkClone()
             );
@@ -1860,7 +1860,7 @@ final class Check
                 Expect.gitOpenJdkClone().step
             );
 
-            Asserts.steps2(
+            Asserts.steps(
                 gitClone(fs, "https://github.com/openjdk/jdk11u-dev/tree/master")
                 , Expect.gitOpenJdkClone().untouched()
             );
@@ -1869,7 +1869,7 @@ final class Check
         @Test
         void gitCloneLabsJDK()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
                 , Expect.gitLabsJdkClone()
             );
@@ -1902,7 +1902,7 @@ final class Check
         @Test
         void buildLabsJdk()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkBuild(InMemoryFileSystem.empty(), Args.labsJdkTree())
                 , Expect.gitLabsJdkClone()
                 , Expect.javaLabsJdkBuild()
@@ -1913,7 +1913,7 @@ final class Check
         @Test
         void buildOpenJDK()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkBuild(InMemoryFileSystem.empty(), Args.openJdkTree())
                 , Expect.gitOpenJdkClone()
                 , Expect.javaOpenJdkConfigure()
@@ -1933,7 +1933,7 @@ final class Check
                 , Expect.javaOpenJdkMake().step
             );
 
-            Asserts.steps2(
+            Asserts.steps(
                 jdkBuild(fs, Args.openJdkTree())
                 , Expect.gitOpenJdkClone().untouched()
                 , Expect.javaOpenJdkConfigure().untouched()
@@ -1952,7 +1952,7 @@ final class Check
                 , Expect.javaLabsJdkBuild().step
             );
 
-            Asserts.steps2(
+            Asserts.steps(
                 jdkBuild(fs, Args.labsJdkTree())
                 , Expect.gitLabsJdkClone().untouched()
                 , Expect.javaLabsJdkBuild().untouched()
@@ -1971,7 +1971,7 @@ final class Check
         @Test
         void cloneMercurial()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkClone(InMemoryFileSystem.empty(), Args.mercurialTree())
                 , Expect.mercurialOpenJdkClone()
             );
@@ -1990,7 +1990,7 @@ final class Check
         @Test
         void getBootJdkMacOs()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS, Hardware.Arch.X64)
                 , Expect.jdk11DownloadMacOs()
                 , Expect.bootJdk11ExtractMacOs()
@@ -2001,7 +2001,7 @@ final class Check
         @Test
         void getBootJdk11Linux()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64)
                 , Expect.jdk11DownloadLinux()
                 , Expect.bootJdk11ExtractLinux()
@@ -2012,7 +2012,7 @@ final class Check
         @Test
         void getBootJdkJdkLinux()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 jdkGetBoot(
                     InMemoryFileSystem.empty()
                     , OperatingSystem.Type.LINUX
@@ -2043,7 +2043,7 @@ final class Check
             final var url =
                 "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz";
 
-            Asserts.steps2(
+            Asserts.steps(
                 jdkGet("--url", url)
                 , Expect.download(url, "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz")
                 , Expect.extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz", "jdk")
@@ -2068,7 +2068,7 @@ final class Check
         @Test
         void build()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 graalBuild(InMemoryFileSystem.empty())
                 , Expect.gitMxClone()
                 , Expect.gitGraalClone()
@@ -2085,7 +2085,7 @@ final class Check
                 , Expect.gitGraalClone().step
                 , Expect.graalBuild().step
             );
-            Asserts.steps2(
+            Asserts.steps(
                 graalBuild(fs)
                 , Expect.gitMxClone().untouched()
                 , Expect.gitGraalClone().untouched()
@@ -2107,7 +2107,7 @@ final class Check
             final var fs = InMemoryFileSystem.empty();
             final var url = "https://doestnotexist.com/archive.tar.gz";
 
-            Asserts.steps2(
+            Asserts.steps(
                 Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, "downloads/archive.tar.gz")
                 , Expect.extract("downloads/archive.tar.gz", "graalvm")
@@ -2121,7 +2121,7 @@ final class Check
             final var fs = InMemoryFileSystem.empty();
             final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
 
-            Asserts.steps2(
+            Asserts.steps(
                 Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
                 , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
@@ -2142,7 +2142,7 @@ final class Check
                 , Expect.extract(downloadPath, extractPath).step
             );
 
-            Asserts.steps2(
+            Asserts.steps(
                 Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, downloadPath).untouched()
                 , Expect.extract(downloadPath, extractPath).untouched()
@@ -2160,7 +2160,7 @@ final class Check
                 Expect.download(url, path).step
             );
 
-            Asserts.steps2(
+            Asserts.steps(
                 Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, path).untouched()
                 , Expect.extract(path, "graalvm")
@@ -2196,7 +2196,7 @@ final class Check
         @Test
         void build()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mandrelBuild(InMemoryFileSystem.empty())
                 , Expect.gitMandrelClone()
                 , Expect.gitMxClone()
@@ -2218,7 +2218,7 @@ final class Check
                 , Expect.mavenExtract().step
                 , Expect.mandrelBuild().step
             );
-            Asserts.steps2(
+            Asserts.steps(
                 mandrelBuild(fs)
                 , Expect.gitMandrelClone().untouched()
                 , Expect.gitMxClone().untouched()
@@ -2246,7 +2246,7 @@ final class Check
         @Test
         void buildQuarkus()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/quarkusio/quarkus/tree/master")
                 , Expect.gitClone("quarkusio/quarkus", "master")
                 , Expect.mavenDownload()
@@ -2264,7 +2264,7 @@ final class Check
                 , Expect.mavenExtract().step
                 , Expect.mavenBuild("quarkus").step
             );
-            Asserts.steps2(
+            Asserts.steps(
                 mavenBuild(fs, "--tree", "https://github.com/quarkusio/quarkus/tree/master")
                 , Expect.gitClone("quarkusio/quarkus", "master").untouched()
                 , Expect.mavenDownload().untouched()
@@ -2276,7 +2276,7 @@ final class Check
         @Test
         void buildCamelQuarkus()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/apache/camel-quarkus/tree/master")
                 , Expect.gitClone("apache/camel-quarkus", "master")
                 , Expect.mavenDownload()
@@ -2288,7 +2288,7 @@ final class Check
         @Test
         void buildCamel()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenBuild(
                     InMemoryFileSystem.empty()
                     , "--tree"
@@ -2321,7 +2321,7 @@ final class Check
         @Test
         void testExtraArguments()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenTest(
                     InMemoryFileSystem.empty()
                     , "--suite", "suite-a"
@@ -2334,7 +2334,7 @@ final class Check
         @Test
         void testQuarkus()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenTest(
                     InMemoryFileSystem.empty()
                     , "--suite", "quarkus"
@@ -2346,7 +2346,7 @@ final class Check
         @Test
         void testQuarkusPlatform()
         {
-            Asserts.steps2(
+            Asserts.steps(
                 mavenTest(
                     InMemoryFileSystem.empty()
                     , "--suite", "quarkus-platform"
@@ -2453,17 +2453,7 @@ final class Check
             assertThat(actual.exec(), is(expected.step));
         }
 
-        @Deprecated // use steps2
-        static void steps(List<Marker> markers, Expect... expects)
-        {
-            assertThat(markers.toString(), markers.size(), is(expects.length));
-            for (int i = 0; i < expects.length; i++)
-            {
-                step(markers.get(i), expects[i]);
-            }
-        }
-
-        static void steps2(List<? extends Output> outputs, Expect... expects)
+        static void steps(List<? extends Output> outputs, Expect... expects)
         {
             assertThat(outputs.toString(), outputs.size(), is(expects.length));
             for (int i = 0; i < expects.length; i++)
