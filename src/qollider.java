@@ -47,9 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Queue;
-import java.util.concurrent.Callable;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -63,7 +61,6 @@ import static java.lang.String.format;
 import static java.lang.System.Logger.Level.INFO;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
@@ -90,7 +87,7 @@ public class qollider
                 case GRAAL_GET -> SystemGraal.get(cli, today);
                 case MANDREL_BUILD -> SystemMandrel.build(cli, home, today);
                 case MAVEN_BUILD -> SystemMaven.build(cli, home, today);
-                case MAVEN_TEST -> MavenTest.ofSystem(cli, home, today).call();
+                case MAVEN_TEST -> SystemMaven.test(cli, home, today);
             };
 
         log.log(INFO, "Execution summary:");
@@ -208,7 +205,7 @@ final class SystemJdk
         final var osToday = OperatingSystem.of(today);
         final var osHome = OperatingSystem.of(home);
 
-        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
         final var getLink = new Steps.Linking.Effects(home::symlink);
@@ -360,7 +357,7 @@ final class Jdk
 
     static List<? extends Output> build(
         Build build
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Linking.Effects linking
         , Roots roots
     )
@@ -377,7 +374,7 @@ final class Jdk
         };
 
         final var buildOut = buildSteps
-            .map(t -> Steps.Exec.run(t, exec))
+            .map(t -> Steps.Exec.Lazy.run(t, exec))
             .collect(Collectors.toList());
 
         // TODO Remove List.of when rest of calls have migrated
@@ -389,7 +386,7 @@ final class Jdk
         return Lists.flatten(cloneOut, buildOut, linkOut);
     }
 
-    static Marker clone(Repository tree, Steps.Exec.Effects effects)
+    static Marker clone(Repository tree, Steps.Exec.Lazy.Effects effects)
     {
         return switch (tree.type())
         {
@@ -490,7 +487,7 @@ final class SystemGraal
         final var osToday = OperatingSystem.of(today);
         final var roots = new Roots(home::resolve, today::resolve);
 
-        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
         final var linking = new Steps.Linking.Effects(today::symlink);
 
         return Graal.build(Graal.Build.of(cli), execToday, linking, roots);
@@ -501,7 +498,7 @@ final class SystemGraal
         final var os = OperatingSystem.of(fs);
         final var web = Web.of(fs);
 
-        final var exec = Steps.Exec.Effects.of(os);
+        final var exec = Steps.Exec.Lazy.Effects.of(os);
         final var install = Steps.Install.Effects.of(web, os);
         final var linking = new Steps.Linking.Effects(fs::symlink);
 
@@ -537,7 +534,7 @@ final class Graal
 
     static List<? extends Output> build(
         Build build
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Linking.Effects linking
         , Roots roots
     )
@@ -547,7 +544,7 @@ final class Graal
         var treeOut = Git.clone(build.tree, exec);
 
         final var svm = Path.of(build.tree.name(), "substratevm");
-        var buildOut = Steps.Exec.run(
+        var buildOut = Steps.Exec.Lazy.run(
             Steps.Exec.of(
                 svm
                 , roots.today().apply(Path.of(build.mx.name(), "mx")).toString()
@@ -586,7 +583,7 @@ final class Graal
 
     static List<? extends Output> get(
         Get get
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Install.Effects install
         , Steps.Linking.Effects linking
     )
@@ -598,7 +595,7 @@ final class Graal
 
     private static List<? extends Output> get(
         Get get
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Install.Effects install
     )
     {
@@ -610,7 +607,7 @@ final class Graal
         final var orgName = Path.of(get.url.getPath()).getName(0);
         if (orgName.equals(Path.of("graalvm")))
         {
-            final var guNativeImageOut = Steps.Exec.run(
+            final var guNativeImageOut = Steps.Exec.Lazy.run(
                 Steps.Exec.of(
                     Path.of("graal", "bin")
                     , "./gu"
@@ -635,7 +632,7 @@ final class SystemMandrel
         final var osHome = OperatingSystem.of(home);
         final var roots = new Roots(home::resolve, today::resolve);
 
-        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
         return Mandrel.build(Mandrel.Build.of(cli), execToday, installHome, roots);
@@ -676,7 +673,7 @@ final class Mandrel
 
     static List<? extends Output> build(
         Build build
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Install.Effects install
         , Roots roots
     )
@@ -688,7 +685,7 @@ final class Mandrel
         final var mavenOut = Maven.install(install);
 
         final var today = roots.today();
-        final var buildOut = Steps.Exec.run(
+        final var buildOut = Steps.Exec.Lazy.run(
             Steps.Exec.of(
                 Path.of("mandrel-packaging")
                 , List.of(
@@ -711,122 +708,6 @@ final class Mandrel
     }
 }
 
-class MavenTest implements Callable<List<?>>
-{
-    // TODO if -Dnative, add additional args for -J-ea and -J-esa
-
-    // TODO avoid duplication with MavenBuild
-    // TODO read camel-quarkus snapshot version from
-    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
-    private static final Map<String, List<String>> EXTRA_TEST_ARGS = Map.of(
-        "quarkus"
-        , List.of(
-            "-pl"
-            , "!:quarkus-integration-test-google-cloud-functions"
-        )
-        , "quarkus-platform"
-        , List.of(
-            "-Dquarkus.version=999-SNAPSHOT"
-            , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
-        )
-    );
-
-    final Options options;
-    final FileSystem home;
-    final FileSystem today;
-
-    MavenTest(Options options, FileSystem home, FileSystem today) {
-        this.options = options;
-        this.home = home;
-        this.today = today;
-    }
-
-    static MavenTest ofSystem(Cli cli, FileSystem home, FileSystem today)
-    {
-        return new MavenTest(Options.of(cli), home, today);
-    }
-
-    @Override
-    public List<?> call()
-    {
-        final var os = OperatingSystem.of(today);
-        MavenTest.test(options, os::exec, new Roots(home::resolve, today::resolve));
-        // TODO make it return markers so that it can be tested just like other commands
-        return List.of();
-    }
-
-    record Options(String suite, List<String> additionalTestArgs)
-    {
-        static Options of(Cli cli)
-        {
-            return new Options(
-                cli.required("suite")
-                , cli.multi("additional-test-args")
-            );
-        }
-    }
-
-    static void test(Options options, Consumer<Steps.Exec> exec, Roots roots)
-    {
-        final var task = MavenTest.toTest(options, roots);
-        MavenTest.doTest(task, exec);
-    }
-
-    private static void doTest(
-        Steps.Exec task
-        , Consumer<Steps.Exec> exec
-    )
-    {
-        exec.accept(task);
-    }
-
-    private static Steps.Exec toTest(Options options, Roots roots)
-    {
-        final var directory = MavenTest.suitePath(options.suite);
-        final var arguments = arguments(options, options.suite, roots).toArray(String[]::new);
-        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
-        return Steps.Exec.of(directory, envVars, arguments);
-    }
-
-    private static Stream<String> arguments(Options options, String suite, Roots roots)
-    {
-        final var args = Stream.of(
-            Maven.mvn(roots.home()).toString()
-            , "install"
-            , "-Dnative"
-            , "-Dformat.skip"
-        );
-
-        final var userArgs = options.additionalTestArgs;
-        final var extraArgs = EXTRA_TEST_ARGS.get(suite);
-        if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
-        {
-            return Stream
-                .of(args, extraArgs.stream(), userArgs.stream())
-                .flatMap(Function.identity());
-        }
-
-        if (Objects.nonNull(extraArgs))
-        {
-            return Stream.concat(args, extraArgs.stream());
-        }
-
-        if (Objects.nonNull(userArgs))
-        {
-            return Stream.concat(args, userArgs.stream());
-        }
-
-        return args;
-    }
-
-    private static Path suitePath(String suite)
-    {
-        return suite.equals("quarkus")
-            ? Path.of("quarkus", "integration-tests")
-            : Path.of(suite);
-    }
-}
-
 final class SystemMaven
 {
     public static List<? extends Output> build(Cli cli, FileSystem home, FileSystem today)
@@ -835,10 +716,18 @@ final class SystemMaven
         final var osHome = OperatingSystem.of(home);
         final var roots = new Roots(home::resolve, today::resolve);
 
-        final var execToday = Steps.Exec.Effects.of(osToday);
+        final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
         final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
 
         return Maven.build(Maven.Build.of(cli), execToday, installHome, roots);
+    }
+
+    public static List<? extends Output> test(Cli cli, FileSystem home, FileSystem today)
+    {
+        final var os = OperatingSystem.of(today);
+        final var roots = new Roots(home::resolve, today::resolve);
+        final var execToday = Steps.Exec.Eager.Effects.of(os);
+        return Maven.test(Maven.Test.of(cli), execToday, roots);
     }
 }
 
@@ -846,10 +735,9 @@ final class Maven
 {
     // TODO if -Dnative, add additional args for -J-ea and -J-esa
 
-    // TODO avoid duplication with MavenTest
     // TODO read camel-quarkus snapshot version from pom.xml
-    // TODO make it not stating (can't use Stream because of unit tests), convert into defaults record instead
-    private static final Map<String, List<String>> EXTRA_BUILD_ARGS = Map.of(
+    // TODO make it not static (can't use Stream because of unit tests), convert into defaults record instead
+    private static final Map<String, List<String>> EXTRA_ARGS = Map.of(
         "camel-quarkus"
         , List.of("-Dquarkus.version=999-SNAPSHOT")
         , "quarkus-platform"
@@ -877,7 +765,7 @@ final class Maven
 
     public static List<? extends Output> build(
         Build build
-        , Steps.Exec.Effects exec
+        , Steps.Exec.Lazy.Effects exec
         , Steps.Install.Effects install
         , Roots roots
     )
@@ -894,7 +782,7 @@ final class Maven
         // Enables maven build to be used to build for sample Quarkus apps with native bits.
         // This is not strictly necessary for say building Quarkus.
         final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
-        final var buildOut = Steps.Exec.run(
+        final var buildOut = Steps.Exec.Lazy.run(
             Steps.Exec.of(project, envVars, arguments)
             , exec
         );
@@ -921,7 +809,7 @@ final class Maven
             , build.additionalBuildArgs.stream()
         );
 
-        final var extra = EXTRA_BUILD_ARGS.get(directory);
+        final var extra = EXTRA_ARGS.get(directory);
         return Objects.isNull(extra)
             ? arguments
             : Stream.concat(arguments, extra.stream());
@@ -946,6 +834,63 @@ final class Maven
     static Path mvn(Function<Path, Path> resolve)
     {
         return home(resolve).resolve(Path.of("bin", "mvn"));
+    }
+
+    record Test(String suite, List<String> additionalTestArgs)
+    {
+        static Test of(Cli cli)
+        {
+            return new Test(
+                cli.required("suite")
+                , cli.multi("additional-test-args")
+            );
+        }
+    }
+
+    static List<? extends Output> test(Test test, Steps.Exec.Eager.Effects exec, Roots roots)
+    {
+        final var directory = suitePath(test.suite);
+        final var arguments = testArguments(test, roots).toArray(String[]::new);
+        final var envVars = List.of(EnvVar.javaHome(roots.today().apply(Homes.graal())));
+        return List.of(Steps.Exec.Eager.run(Steps.Exec.of(directory, envVars, arguments), exec));
+    }
+
+    private static Path suitePath(String suite)
+    {
+        return suite.equals("quarkus")
+            ? Path.of("quarkus", "integration-tests")
+            : Path.of(suite);
+    }
+
+    private static Stream<String> testArguments(Test test, Roots roots)
+    {
+        final var args = Stream.of(
+            Maven.mvn(roots.home()).toString()
+            , "install"
+            , "-Dnative"
+            , "-Dformat.skip"
+        );
+
+        final var userArgs = test.additionalTestArgs;
+        final var extraArgs = EXTRA_ARGS.get(test.suite);
+        if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
+        {
+            return Stream
+                .of(args, extraArgs.stream(), userArgs.stream())
+                .flatMap(Function.identity());
+        }
+
+        if (Objects.nonNull(extraArgs))
+        {
+            return Stream.concat(args, extraArgs.stream());
+        }
+
+        if (Objects.nonNull(userArgs))
+        {
+            return Stream.concat(args, userArgs.stream());
+        }
+
+        return args;
     }
 }
 
@@ -1054,9 +999,9 @@ record Repository(
 
 class Mercurial
 {
-    static Marker clone(Repository repository, Steps.Exec.Effects effects)
+    static Marker clone(Repository repository, Steps.Exec.Lazy.Effects effects)
     {
-        return Steps.Exec.run(
+        return Steps.Exec.Lazy.run(
             Steps.Exec.of(
                 "hg"
                 , "clone"
@@ -1133,7 +1078,7 @@ final class Steps
         {
             effects.mkdirs.accept(extract.path); // cheap so do it regardless, no marker
 
-            return Exec.run(
+            return Exec.Lazy.run(
                 Exec.of(
                     "tar"
                     , "-xzpf"
@@ -1148,13 +1093,13 @@ final class Steps
         }
 
         record Effects(
-            Exec.Effects exec
+            Exec.Lazy.Effects exec
             , Consumer<Path> mkdirs
         )
         {
             static Effects of(OperatingSystem os)
             {
-                final var exec = Exec.Effects.of(os);
+                final var exec = Exec.Lazy.Effects.of(os);
                 return new Effects(exec, os.fs::mkdirs);
             }
         }
@@ -1182,25 +1127,45 @@ final class Steps
             return new Exec(Arrays.asList(args), Path.of(""), emptyList());
         }
 
-        static Marker run(Exec exec, Effects effects)
+        final static class Lazy
         {
-            final var marker = Marker.of(exec).query(effects.exists);
-            if (marker.exists())
-                return marker;
+            static Marker run(Exec exec, Effects effects)
+            {
+                final var marker = Marker.of(exec).query(effects.exists);
+                if (marker.exists())
+                    return marker;
 
-            effects.exec().accept(exec);
-            return marker.touch(effects.touch);
+                effects.exec().accept(exec);
+                return marker.touch(effects.touch);
+            }
+
+            record Effects(
+                Predicate<Path> exists
+                , Consumer<Exec> exec
+                , Function<Marker, Boolean> touch
+            )
+            {
+                static Effects of(OperatingSystem os)
+                {
+                    return new Effects(os.fs::exists, os::exec, os.fs::touch);
+                }
+            }
         }
 
-        record Effects(
-            Predicate<Path> exists
-            , Consumer<Exec> exec
-            , Function<Marker, Boolean> touch
-        )
+        record Eager(Steps.Exec exec) implements Output
         {
-            static Effects of(OperatingSystem os)
+            static Eager run(Exec exec, Effects effects)
             {
-                return new Effects(os.fs::exists, os::exec, os.fs::touch);
+                effects.exec().accept(exec);
+                return new Eager(exec);
+            }
+
+            record Effects(Consumer<Exec> exec)
+            {
+                static Effects of(OperatingSystem os)
+                {
+                    return new Effects(os::exec);
+                }
             }
         }
     }
@@ -1247,9 +1212,9 @@ final class Steps
 // TODO if the marker is gone (e.g. it doesn't exist) remove any existing folder and clone again (saves a step on user)
 class Git
 {
-    static Marker clone(Repository repo, Steps.Exec.Effects effects)
+    static Marker clone(Repository repo, Steps.Exec.Lazy.Effects effects)
     {
-        return Steps.Exec.run(
+        return Steps.Exec.Lazy.run(
             Steps.Exec.of(toClone(repo))
             , effects
         );
@@ -1867,7 +1832,6 @@ final class Check
                 , selectClass(CheckGraal.class)
                 , selectClass(CheckMandrel.class)
                 , selectClass(CheckMaven.class)
-                , selectClass(CheckMavenTest.class)
             )
             .build();
         Launcher launcher = LauncherFactory.create();
@@ -1920,7 +1884,7 @@ final class Check
 
         private List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
         {
-            return List.of(Git.clone(Repository.of(uri), fs.exec()));
+            return List.of(Git.clone(Repository.of(uri), fs.lazyExec()));
         }
 
         @Test
@@ -1954,6 +1918,7 @@ final class Check
             );
         }
 
+        // TODO remove - switch to force instead of depth
         @Test
         void gitCloneFull()
         {
@@ -1962,7 +1927,7 @@ final class Check
             final Repository repo = Repository.of(
                 "https://github.com/openjdk/jdk11u-dev/tree/master?depth=0"
             );
-            final var effects = new Steps.Exec.Effects(fs::exists, os::record, fs::touch);
+            final var effects = new Steps.Exec.Lazy.Effects(fs::exists, os::record, fs::touch);
             final var marker = Git.clone(repo, effects);
             final var expected = Steps.Exec.of(
                 "git"
@@ -1992,7 +1957,7 @@ final class Check
             final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
             return Jdk.build(
                 Jdk.Build.of(cli)
-                , fs.exec()
+                , fs.lazyExec()
                 , fs.linking()
                 , Args.roots()
             );
@@ -2064,7 +2029,7 @@ final class Check
             final var cli = Cli.read(Lists.prepend("jdk-build", List.of(extra)));
             final var build = Jdk.Build.of(cli);
             // TODO Remove List.of when all return List
-            return List.of(Jdk.clone(build.tree(), fs.exec()));
+            return List.of(Jdk.clone(build.tree(), fs.lazyExec()));
         }
 
         @Test
@@ -2158,7 +2123,7 @@ final class Check
             final var cli = Cli.read(Lists.prepend("graal-build", List.of(extra)));
             return Graal.build(
                 Graal.Build.of(cli)
-                , fs.exec()
+                , fs.lazyExec()
                 , fs.linking()
                 , Args.roots()
             );
@@ -2207,7 +2172,7 @@ final class Check
             final var url = "https://doestnotexist.com/archive.tar.gz";
 
             Asserts.steps2(
-                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, "downloads/archive.tar.gz")
                 , Expect.extract("downloads/archive.tar.gz", "graalvm")
                 , Expect.link("graalvm_home", Path.of("graalvm"))
@@ -2221,7 +2186,7 @@ final class Check
             final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
 
             Asserts.steps2(
-                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
                 , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
                 , Expect.guNativeImage()
@@ -2242,7 +2207,7 @@ final class Check
             );
 
             Asserts.steps2(
-                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, downloadPath).untouched()
                 , Expect.extract(downloadPath, extractPath).untouched()
                 , Expect.link("graalvm_home", Path.of("graalvm"))
@@ -2260,7 +2225,7 @@ final class Check
             );
 
             Asserts.steps2(
-                Graal.get(graalGet("--url", url), fs.exec(), fs.install(), fs.linking())
+                Graal.get(graalGet("--url", url), fs.lazyExec(), fs.install(), fs.linking())
                 , Expect.download(url, path).untouched()
                 , Expect.extract(path, "graalvm")
                 , Expect.link("graalvm_home", Path.of("graalvm"))
@@ -2286,7 +2251,7 @@ final class Check
             final var cli = Cli.read(Lists.prepend("mandrel-build", List.of(extra)));
             return Mandrel.build(
                 Mandrel.Build.of(cli)
-                , fs.exec()
+                , fs.lazyExec()
                 , fs.install()
                 , Args.roots()
             );
@@ -2336,14 +2301,14 @@ final class Check
             final var cli = Cli.read(Lists.prepend("maven-build", List.of(extra)));
             return Maven.build(
                 Maven.Build.of(cli)
-                , fs.exec()
+                , fs.lazyExec()
                 , fs.install()
                 , Args.roots()
             );
         }
 
         @Test
-        void quarkus()
+        void buildQuarkus()
         {
             Asserts.steps2(
                 mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/quarkusio/quarkus/tree/master")
@@ -2355,7 +2320,7 @@ final class Check
         }
 
         @Test
-        void skipQuarkus()
+        void skipBuildQuarkus()
         {
             final var fs = InMemoryFileSystem.ofExists(
                 Expect.gitClone("quarkusio/quarkus", "master").step
@@ -2373,7 +2338,7 @@ final class Check
         }
 
         @Test
-        void camelQuarkus()
+        void buildCamelQuarkus()
         {
             Asserts.steps2(
                 mavenBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/apache/camel-quarkus/tree/master")
@@ -2385,7 +2350,7 @@ final class Check
         }
 
         @Test
-        void camel()
+        void buildCamel()
         {
             Asserts.steps2(
                 mavenBuild(
@@ -2406,100 +2371,55 @@ final class Check
                 )
             );
         }
-    }
 
-    static class CheckMavenTest
-    {
-        @Test
-        void cliAdditionalTestArgsOptions()
+        static List<? extends Output> mavenTest(InMemoryFileSystem fs, String... extra)
         {
-            assertThat(
-                cli(
-                    "--suite", "ignore"
-                    , "--additional-test-args", "b", ":c", "-y", "-Dx=w"
-                ).additionalTestArgs()
-                , is(equalTo(
-                    List.of(
-                        "b", ":c", "-y", "-Dx=w"
-                    )
-                ))
+            final var cli = Cli.read(Lists.prepend("maven-test", List.of(extra)));
+            return Maven.test(
+                Maven.Test.of(cli)
+                , fs.eagerExec()
+                , Args.roots()
             );
         }
 
         @Test
-        void extraArguments()
+        void testExtraArguments()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli(
-                "--suite", "suite-a"
-                , "--additional-test-args", "p1", ":p2", ":p3", "-p4"
-            );
-            MavenTest.test(options, os::record, Args.roots());
-
-            os.assertNumberOfTasks(1);
-            os.assertTask(t ->
-                assertThat(
-                    String.join(" ", t.args())
-                    , is(equalTo("/home/maven/bin/mvn install -Dnative -Dformat.skip p1 :p2 :p3 -p4"))
+            Asserts.steps2(
+                mavenTest(
+                    InMemoryFileSystem.empty()
+                    , "--suite", "suite-a"
+                    , "--additional-test-args", "p1", ":p2", ":p3", "-p4"
                 )
+                , Expect.mavenTest(Path.of("suite-a"), "p1", ":p2", ":p3", "-p4")
             );
         }
 
         @Test
-        void suite()
+        void testQuarkus()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli("--suite", "suite-a");
-            MavenTest.test(options, os::record, Args.roots());
-
-            os.assertNumberOfTasks(1);
-            os.assertAllTasks(t -> assertThat(t.args().stream().findFirst(), is(Optional.of("/home/maven/bin/mvn"))));
-            os.assertTask(t -> assertThat(t.directory(), is(Path.of("suite-a"))));
+            Asserts.steps2(
+                mavenTest(
+                    InMemoryFileSystem.empty()
+                    , "--suite", "quarkus"
+                )
+                , Expect.mavenTest(Path.of("quarkus", "integration-tests"))
+            );
         }
 
         @Test
-        void quarkus()
+        void testQuarkusPlatform()
         {
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli("--suite", "quarkus");
-            MavenTest.test(options, os::record, Args.roots());
-
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.args().stream().findFirst(), is(Optional.of("/home/maven/bin/mvn")));
-                assertThat(task.directory(), is(Path.of("quarkus/integration-tests")));
-            });
-        }
-
-        @Test
-        void quarkusPlatform()
-        {
-            final var os = RecordingOperatingSystem.macOS();
-            final var options = cli("--suite", "quarkus-platform");
-            MavenTest.test(options, os::record, Args.roots());
-
-            os.assertNumberOfTasks(1);
-            os.assertTask(task ->
-            {
-                assertThat(task.directory(), is(Path.of("quarkus-platform")));
-                final var arguments = new ArrayList<>(task.args());
-                assertThat(arguments.stream().findFirst(), is(Optional.of("/home/maven/bin/mvn")));
-                assertThat(
-                    arguments.stream().filter(e -> e.equals("-Dquarkus.version=999-SNAPSHOT")).findFirst()
-                    , is(Optional.of("-Dquarkus.version=999-SNAPSHOT"))
-                );
-                assertThat(
-                    arguments.stream().filter(e -> e.equals("-Dcamel-quarkus.version=1.1.0-SNAPSHOT")).findFirst()
-                    , is(Optional.of("-Dcamel-quarkus.version=1.1.0-SNAPSHOT"))
-                );
-            });
-        }
-
-        private static MavenTest.Options cli(String... extra)
-        {
-            return MavenTest.Options.of(
-                Cli.read(Lists.prepend("maven-test", Arrays.asList(extra)))
+            Asserts.steps2(
+                mavenTest(
+                    InMemoryFileSystem.empty()
+                    , "--suite", "quarkus-platform"
+                )
+                , Expect.mavenTest(
+                    Path.of("quarkus-platform")
+                    , "-Dquarkus.version=999-SNAPSHOT"
+                    , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
+                )
             );
         }
     }
@@ -2525,16 +2445,21 @@ final class Check
             return true;
         }
 
-        Steps.Exec.Effects exec()
+        Steps.Exec.Lazy.Effects lazyExec()
         {
-            return new Steps.Exec.Effects(this::exists, e -> {}, this::touch);
+            return new Steps.Exec.Lazy.Effects(this::exists, e -> {}, this::touch);
+        }
+
+        Steps.Exec.Eager.Effects eagerExec()
+        {
+            return new Steps.Exec.Eager.Effects(e -> {});
         }
 
         Steps.Install.Effects install(OperatingSystem.Type osType, Hardware.Arch arch)
         {
             return new Steps.Install.Effects(
                 new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> osType, () -> arch)
-                , new Steps.Extract.Effects(exec(), p -> {})
+                , new Steps.Extract.Effects(lazyExec(), p -> {})
             );
         }
 
@@ -2664,6 +2589,11 @@ final class Check
             assertThat(actual.target(), is(linking.target()));
         }
 
+        static void step(Steps.Exec.Eager actual, Expect expected)
+        {
+            assertThat(actual.exec(), is(expected.step));
+        }
+
         @Deprecated // use steps2
         static void steps(List<Marker> markers, Expect... expects)
         {
@@ -2687,6 +2617,10 @@ final class Check
                 else if (output instanceof Link link)
                 {
                     step(link, expects[i]);
+                }
+                else if (output instanceof Steps.Exec.Eager eager)
+                {
+                    step(eager, expects[i]);
                 }
                 else
                 {
@@ -2875,6 +2809,25 @@ final class Check
                 "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"
                 , "downloads/apache-maven-3.6.3-bin.tar.gz"
             );
+        }
+
+        static Expect mavenTest(Path path, String... extra)
+        {
+            final var args = Stream.concat(
+                Stream.of(
+                    "/home/maven/bin/mvn"
+                    , "install"
+                    , "-Dnative"
+                    , "-Dformat.skip"
+                )
+                , Stream.of(extra)
+            );
+
+            return Expect.of(Steps.Exec.of(
+                path
+                , List.of(new EnvVar("JAVA_HOME", Path.of("/", "today", "graalvm_home")))
+                , args.toArray(String[]::new)
+            ));
         }
 
         static Expect jdk11DownloadMacOs()
