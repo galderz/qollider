@@ -22,7 +22,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
@@ -36,7 +35,6 @@ import java.text.CharacterIterator;
 import java.text.StringCharacterIterator;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -47,7 +45,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -194,6 +191,7 @@ final class Cli
     }
 }
 
+// TODO Create Outputs that encompasses List<? extends Output>
 interface Output {}
 
 final class SystemJdk
@@ -894,7 +892,7 @@ final class Maven
     }
 }
 
-// TODO depth might not be needed once --force is implemented (forces git clone + rebuild)
+// TODO implement --force
 record Repository(
     String organization
     , String name
@@ -918,7 +916,7 @@ record Repository(
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
             final var branch = extractBranch(path).toString();
-            final var depth = extractDepth(uri, name);
+            final var depth = getDepth(name);
             final var cloneUri = gitCloneUri(organization, name);
             return new Repository(organization, name, Type.GIT, branch, depth, cloneUri);
         }
@@ -931,15 +929,8 @@ record Repository(
         throw Illegal.value(host);
     }
 
-    private static int extractDepth(URI uri, String repoName)
+    private static int getDepth(String repoName)
     {
-        final var params = URIs.splitQuery(uri);
-        final var value = params.get("depth");
-        if (Objects.nonNull(value))
-        {
-            return Integer.parseInt(value);
-        }
-
         return repoName.equals("labs-openjdk-11")
             ? 20
             : 1;
@@ -1229,11 +1220,8 @@ class Git
             , repo.branch()
         );
 
-        if (repo.depth() > 0)
-        {
-            result.add("--depth");
-            result.add(String.valueOf(repo.depth()));
-        }
+        result.add("--depth");
+        result.add(String.valueOf(repo.depth()));
 
         result.add(repo.cloneUri().toString());
 
@@ -1722,26 +1710,6 @@ final class URLs
     }
 }
 
-final class URIs
-{
-    public static Map<String, String> splitQuery(URI uri)
-    {
-        if (uri.getRawQuery() == null || uri.getRawQuery().isEmpty())
-        {
-            return Collections.emptyMap();
-        }
-
-        return Stream.of(uri.getRawQuery().split("&"))
-            .map(e -> e.split("="))
-            .collect(
-                Collectors.toMap(
-                    e -> URLDecoder.decode(e[0], StandardCharsets.UTF_8)
-                    , e -> URLDecoder.decode(e[1], StandardCharsets.UTF_8)
-                )
-            );
-    }
-}
-
 final class Lists
 {
     static <E> List<E> append(E element, List<? extends E> list)
@@ -1871,17 +1839,6 @@ final class Check
             assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
-        @Test
-        void uriWithDepth()
-        {
-            final var repo = Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master?depth=0");
-            assertThat(repo.organization(), is("openjdk"));
-            assertThat(repo.name(), is("jdk11u-dev"));
-            assertThat(repo.branch(), is("master"));
-            assertThat(repo.depth(), is(0));
-            assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
-        }
-
         private List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
         {
             return List.of(Git.clone(Repository.of(uri), fs.lazyExec()));
@@ -1916,27 +1873,6 @@ final class Check
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
                 , Expect.gitLabsJdkClone()
             );
-        }
-
-        // TODO remove - switch to force instead of depth
-        @Test
-        void gitCloneFull()
-        {
-            final var fs = InMemoryFileSystem.empty();
-            final var os = RecordingOperatingSystem.macOS();
-            final Repository repo = Repository.of(
-                "https://github.com/openjdk/jdk11u-dev/tree/master?depth=0"
-            );
-            final var effects = new Steps.Exec.Lazy.Effects(fs::exists, os::record, fs::touch);
-            final var marker = Git.clone(repo, effects);
-            final var expected = Steps.Exec.of(
-                "git"
-                , "clone"
-                , "-b"
-                , "master"
-                , "https://github.com/openjdk/jdk11u-dev"
-            );
-            os.assertExecutedOneTask(expected, marker);
         }
 
         @Test
@@ -2488,83 +2424,6 @@ final class Check
                     Collectors.toMap(Function.identity(), marker -> true)
                 );
             return new InMemoryFileSystem(map);
-        }
-    }
-
-    // TODO remove and rely solely on returned markers
-    private static final class RecordingOperatingSystem
-    {
-        private final Queue<Object> tasks = new ArrayDeque<>();
-
-        static RecordingOperatingSystem macOS()
-        {
-            return new RecordingOperatingSystem();
-        }
-
-        void record(Steps.Exec task)
-        {
-            offer(task);
-        }
-
-        private void offer(Object task)
-        {
-            final var success = tasks.offer(task);
-            assertThat(success, is(true));
-        }
-
-        // TODO rename to assertOneTask
-        void assertExecutedOneTask(Object expected, Marker result)
-        {
-            assertNumberOfTasks(1);
-            assertExecutedTask(expected, result);
-        }
-
-        // TODO rename to assertTask
-        void assertExecutedTask(Object expected, Marker result)
-        {
-            final var actual = peekTask();
-            assertThat(actual, is(expected));
-            assertThat(result.touched(), is(true));
-            assertThat(
-                result.path()
-                , is(Path.of(format("%s.marker", Hashing.sha1(expected.toString()))))
-            );
-            forward();
-        }
-
-        void assertNumberOfTasks(int size)
-        {
-            assertThat(tasks.toString(), tasks.size(), is(size));
-        }
-
-        @Deprecated
-        void assertTask(Consumer<Steps.Exec> asserts)
-        {
-            final Steps.Exec head = peekTask();
-            asserts.accept(head);
-        }
-
-        @Deprecated
-        void assertAllTasks(Consumer<Steps.Exec> asserts)
-        {
-            for (Object object : tasks)
-            {
-                if (object instanceof Steps.Exec task)
-                {
-                    asserts.accept(task);
-                }
-            }
-        }
-
-        void forward()
-        {
-            tasks.poll();
-        }
-
-        @SuppressWarnings("unchecked")
-        private <T> T peekTask()
-        {
-            return (T) tasks.peek();
         }
     }
 
