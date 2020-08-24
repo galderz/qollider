@@ -1956,7 +1956,7 @@ final class Check
                 jdkBuild(InMemoryFileSystem.empty(), Args.labsJdkTree())
                 , Expect.gitLabsJdkClone()
                 , Expect.javaLabsJdkBuild()
-                , Expect.javaLabsJdkLink()
+                , Expect.link("java_home", Path.of("labs-openjdk-11", "java_home"))
             );
         }
 
@@ -2006,7 +2006,7 @@ final class Check
                 jdkGetBoot(InMemoryFileSystem.empty(), OperatingSystem.Type.MAC_OS, Hardware.Arch.X64)
                 , Expect.jdk11DownloadMacOs()
                 , Expect.bootJdk11ExtractMacOs()
-                , Expect.bootJdkLinkMacOs()
+                , Expect.link("bootjdk_home", Path.of("boot-jdk-11", "Contents", "Home"))
             );
         }
 
@@ -2034,7 +2034,7 @@ final class Check
                 )
                 , Expect.jdk14DownloadLinux()
                 , Expect.bootJdk14Extract()
-                , Expect.bootJdk14LinkLinux()
+                , Expect.link("bootjdk_home", Path.of("boot-jdk-14"))
             );
         }
 
@@ -2506,14 +2506,6 @@ final class Check
             ));
         }
 
-        static Expect javaLabsJdkLink()
-        {
-            return Expect.of(new Steps.Linking(
-                Path.of("java_home")
-                , Path.of("labs-openjdk-11/java_home")
-            ));
-        }
-
         static Expect mandrelBuild()
         {
             return Expect.of(Steps.Exec.of(
@@ -2662,14 +2654,6 @@ final class Check
             ));
         }
 
-        static Expect bootJdkLinkMacOs()
-        {
-            return Expect.of(new Steps.Linking(
-                Path.of("bootjdk_home")
-                , Path.of("boot-jdk-11/Contents/Home")
-            ));
-        }
-
         static Expect bootJdk11LinkLinux()
         {
             return Expect.of(new Steps.Linking(
@@ -2678,15 +2662,6 @@ final class Check
             ));
         }
 
-        static Expect bootJdk14LinkLinux()
-        {
-            return Expect.of(new Steps.Linking(
-                Path.of("bootjdk_home")
-                , Path.of("boot-jdk-14")
-            ));
-        }
-
-        // TODO remove other *link* methods, needed?
         static Expect link(String link, Path target)
         {
             return Expect.of(new Steps.Linking(
