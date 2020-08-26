@@ -22,6 +22,7 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
@@ -102,6 +103,8 @@ public class qollider
         );
     }
 }
+
+record Options(boolean fullHistory) {}
 
 // Use same command when parameters are same
 enum Command
@@ -916,7 +919,7 @@ record Repository(
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
             final var branch = extractBranch(path).toString();
-            final var depth = getDepth(name);
+            final var depth = extractDepth(uri, name);
             final var cloneUri = gitCloneUri(organization, name);
             return new Repository(organization, name, Type.GIT, branch, depth, cloneUri);
         }
@@ -929,8 +932,15 @@ record Repository(
         throw Illegal.value(host);
     }
 
-    private static int getDepth(String repoName)
+    private static int extractDepth(URI uri, String repoName)
     {
+        final var params = URIs.splitQuery(uri);
+        final var value = params.get("depth");
+        if (Objects.nonNull(value))
+        {
+            return Integer.parseInt(value);
+        }
+
         return repoName.equals("labs-openjdk-11")
             ? 20
             : 1;
@@ -1220,8 +1230,11 @@ class Git
             , repo.branch()
         );
 
-        result.add("--depth");
-        result.add(String.valueOf(repo.depth()));
+        if (repo.depth() > 0)
+        {
+            result.add("--depth");
+            result.add(String.valueOf(repo.depth()));
+        }
 
         result.add(repo.cloneUri().toString());
 
@@ -1248,6 +1261,7 @@ final class Homes
     }
 }
 
+// TODO make path latest rather than day (makes the build transferrable across days)
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path, String cause) implements Output
 {
@@ -1710,6 +1724,26 @@ final class URLs
     }
 }
 
+final class URIs
+{
+    public static Map<String, String> splitQuery(URI uri)
+    {
+        if (uri.getRawQuery() == null || uri.getRawQuery().isEmpty())
+        {
+            return Collections.emptyMap();
+        }
+
+        return Stream.of(uri.getRawQuery().split("&"))
+            .map(e -> e.split("="))
+            .collect(
+                Collectors.toMap(
+                    e -> URLDecoder.decode(e[0], StandardCharsets.UTF_8)
+                    , e -> URLDecoder.decode(e[1], StandardCharsets.UTF_8)
+                )
+            );
+    }
+}
+
 final class Lists
 {
     static <E> List<E> append(E element, List<? extends E> list)
@@ -1902,13 +1936,24 @@ final class Check
             assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
         }
 
+        @Test
+        void uriWithDepth()
+        {
+            final var repo = Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master?depth=0");
+            assertThat(repo.organization(), is("openjdk"));
+            assertThat(repo.name(), is("jdk11u-dev"));
+            assertThat(repo.branch(), is("master"));
+            assertThat(repo.depth(), is(0));
+            assertThat(repo.cloneUri(), is(URI.create("https://github.com/openjdk/jdk11u-dev")));
+        }
+
         static List<? extends Output> gitClone(InMemoryFileSystem fs, String uri)
         {
             return List.of(Git.clone(Repository.of(uri), fs.lazyExec()));
         }
 
         @Test
-        void gitCloneSingle()
+        void cloneSingle()
         {
             Asserts.steps(
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/openjdk/jdk11u-dev/tree/master")
@@ -1917,11 +1962,20 @@ final class Check
         }
 
         @Test
-        void gitCloneLabsJDK()
+        void cloneLabsJDK()
         {
             Asserts.steps(
                 gitClone(InMemoryFileSystem.empty(), "https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
                 , Expect.gitLabsJdkClone()
+            );
+        }
+
+        @Test
+        void gitCloneFull()
+        {
+            Asserts.steps(
+                gitClone(InMemoryFileSystem.empty(), "https://github.com/openjdk/jdk11u-dev/tree/master?depth=0")
+                , Expect.gitCloneFull("openjdk/jdk11u-dev", "master")
             );
         }
 
@@ -2458,6 +2512,17 @@ final class Check
                 , branch
                 , "--depth"
                 , "1"
+                , String.format("https://github.com/%s", repo)
+            ));
+        }
+
+        private static Expect gitCloneFull(String repo, String branch)
+        {
+            return Expect.of(Steps.Exec.of(
+                "git"
+                , "clone"
+                , "-b"
+                , branch
                 , String.format("https://github.com/%s", repo)
             ));
         }
