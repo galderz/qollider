@@ -104,8 +104,6 @@ public class qollider
     }
 }
 
-record Options(boolean fullHistory) {}
-
 // Use same command when parameters are same
 enum Command
 {
@@ -522,6 +520,12 @@ final class Graal
                     , "https://github.com/oracle/graal/tree/master"
                 )
             );
+
+            if ("mandrel".equals(tree.name()))
+            {
+                throw new IllegalArgumentException("Mandrel repos should be built with mandrel-build");
+            }
+
             var mx = Repository.of(
                 cli.optional(
                     "mx-tree"
@@ -1261,7 +1265,7 @@ final class Homes
     }
 }
 
-// TODO make path latest rather than day (makes the build transferrable across days)
+// TODO make path latest rather than day (makes the build transferable across days)
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path, String cause) implements Output
 {
@@ -2143,6 +2147,17 @@ final class Check
             );
         }
 
+        @Test
+        void failIfMandrel()
+        {
+            final var exception = assertThrows(
+                IllegalArgumentException.class
+                , () -> graalBuild(InMemoryFileSystem.empty(), "--tree", "https://github.com/graalvm/mandrel/tree/mandrel/20.2")
+            );
+
+            assertThat(exception.getMessage(), is("Mandrel repos should be built with mandrel-build"));
+        }
+
         private static Graal.Get graalGet(String... extra)
         {
             return Graal.Get.of(
@@ -2331,6 +2346,7 @@ final class Check
         }
     }
 
+    // TODO rename to Sandbox
     private static final class InMemoryFileSystem
     {
         final Map<Path, Boolean> exists;
