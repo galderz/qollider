@@ -1872,7 +1872,7 @@ final class Check
         {
             // Use git clone as example of exec that can be skipped if present
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitOpenJdkClone().step
+                Expect.gitOpenJdkClone()
             );
 
             Asserts.steps(
@@ -1885,7 +1885,7 @@ final class Check
         void skipDownload()
         {
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.jdk11DownloadLinux().step
+                Expect.jdk11DownloadLinux()
             );
 
             Asserts.steps(
@@ -1900,9 +1900,9 @@ final class Check
         void alwaysLink()
         {
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.gitMxClone().step
-                , Expect.gitGraalClone().step
-                , Expect.graalBuild().step
+                Expect.gitMxClone()
+                , Expect.gitGraalClone()
+                , Expect.graalBuild()
             );
             Asserts.steps(
                 CheckGraal.graalBuild(fs)
@@ -1917,7 +1917,7 @@ final class Check
         void alwaysEagerExec()
         {
             final var fs = InMemoryFileSystem.ofExists(
-                Expect.mavenTest(Path.of("quarkus", "integration-tests")).step
+                Expect.mavenTest(Path.of("quarkus", "integration-tests"))
             );
 
             Asserts.steps(
@@ -2401,10 +2401,10 @@ final class Check
             return new InMemoryFileSystem(Collections.emptyMap());
         }
 
-        // TODO take Expect instead of Step
-        static InMemoryFileSystem ofExists(Step... steps)
+        static InMemoryFileSystem ofExists(Expect... expects)
         {
-            final var map = Stream.of(steps)
+            final var map = Stream.of(expects)
+                .map(Expect::step)
                 .map(Marker::of)
                 .map(Marker::path)
                 .collect(
