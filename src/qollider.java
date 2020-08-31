@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -57,6 +58,7 @@ import java.util.stream.Stream;
 
 import static java.lang.String.format;
 import static java.lang.System.Logger.Level.INFO;
+import static java.util.Collections.disjoint;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -738,8 +740,6 @@ final class SystemMaven
 
 final class Maven
 {
-    // TODO if -Dnative, add additional args for -J-ea and -J-esa
-
     // TODO read camel-quarkus snapshot version from pom.xml
     // TODO make it not static (can't use Stream because of unit tests), convert into defaults record instead
     private static final Map<String, List<String>> EXTRA_ARGS = Map.of(
@@ -876,7 +876,7 @@ final class Maven
             , "-Dformat.skip"
         );
 
-        final var userArgs = test.additionalTestArgs;
+        final var userArgs = additionalTestArgs(test);
         final var extraArgs = EXTRA_ARGS.get(test.suite);
         if (Objects.nonNull(userArgs) && Objects.nonNull(extraArgs))
         {
@@ -896,6 +896,40 @@ final class Maven
         }
 
         return args;
+    }
+
+    private static List<String> additionalTestArgs(Test test)
+    {
+        final var hasNativeBuildArgs = test.additionalTestArgs.stream()
+            .filter(Maven::isNativeBuildArgs)
+            .findFirst();
+
+        if (hasNativeBuildArgs.isEmpty())
+        {
+            return Lists.append(
+                "-Dquarkus.native.additional-build-args=-J-ea,-J-esa"
+                , test.additionalTestArgs
+            );
+        }
+
+        return test.additionalTestArgs.stream()
+            .map(Maven::enhanceNativeBuildArgs)
+            .collect(Collectors.toList());
+    }
+
+    private static String enhanceNativeBuildArgs(String arg)
+    {
+        if (isNativeBuildArgs(arg))
+        {
+            return String.format("%s,-J-ea,-J-esa", arg);
+        }
+
+        return arg;
+    }
+
+    private static boolean isNativeBuildArgs(String arg)
+    {
+        return arg.startsWith("-Dquarkus.native.additional-build-args");
     }
 }
 
@@ -1922,7 +1956,7 @@ final class Check
 
             Asserts.steps(
                 CheckMaven.mavenTest(fs, "--suite", "quarkus")
-                , Expect.mavenTest(Path.of("quarkus", "integration-tests"))
+                , Expect.quarkusTest()
             );
         }
     }
@@ -2313,7 +2347,30 @@ final class Check
                     , "--suite", "suite-a"
                     , "--additional-test-args", "p1", ":p2", ":p3", "-p4"
                 )
-                , Expect.mavenTest(Path.of("suite-a"), "p1", ":p2", ":p3", "-p4")
+                , Expect.mavenTest(
+                    Path.of("suite-a")
+                    , "p1", ":p2", ":p3", "-p4"
+                    , "-Dquarkus.native.additional-build-args=-J-ea,-J-esa"
+                )
+            );
+        }
+
+        @Test
+        void testAppendToNativeBuildArgs()
+        {
+            Asserts.steps(
+                mavenTest(
+                    InMemoryFileSystem.empty()
+                    , "--suite", "suite-b"
+                    , "--additional-test-args"
+                    , "p5"
+                    , "-Dquarkus.native.additional-build-args=-H:+PrintAnalysisCallTree"
+                )
+                , Expect.mavenTest(
+                    Path.of("suite-b")
+                    , "p5"
+                    , "-Dquarkus.native.additional-build-args=-H:+PrintAnalysisCallTree,-J-ea,-J-esa"
+                )
             );
         }
 
@@ -2325,7 +2382,7 @@ final class Check
                     InMemoryFileSystem.empty()
                     , "--suite", "quarkus"
                 )
-                , Expect.mavenTest(Path.of("quarkus", "integration-tests"))
+                , Expect.quarkusTest()
             );
         }
 
@@ -2341,6 +2398,7 @@ final class Check
                     Path.of("quarkus-platform")
                     , "-Dquarkus.version=999-SNAPSHOT"
                     , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
+                    , "-Dquarkus.native.additional-build-args=-J-ea,-J-esa"
                 )
             );
         }
@@ -2647,6 +2705,14 @@ final class Check
             return download(
                 "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"
                 , "downloads/apache-maven-3.6.3-bin.tar.gz"
+            );
+        }
+
+        static Expect quarkusTest()
+        {
+            return mavenTest(
+                Path.of("quarkus", "integration-tests"),
+                "-Dquarkus.native.additional-build-args=-J-ea,-J-esa"
             );
         }
 
