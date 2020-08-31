@@ -741,7 +741,7 @@ final class SystemMaven
 final class Maven
 {
     // TODO read camel-quarkus snapshot version from pom.xml
-    // TODO make it not static (can't use Stream because of unit tests), convert into defaults record instead
+    // TODO make it non static (can't use Stream because of unit tests), convert into defaults record instead
     private static final Map<String, List<String>> EXTRA_ARGS = Map.of(
         "camel-quarkus"
         , List.of("-Dquarkus.version=999-SNAPSHOT")
@@ -751,6 +751,8 @@ final class Maven
             , "-Dcamel-quarkus.version=1.1.0-SNAPSHOT"
         )
     );
+
+    // TODO add build specific args and skip !:quarkus-documentation
 
     record Build(Repository tree, List<String> additionalBuildArgs)
     {
