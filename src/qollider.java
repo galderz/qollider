@@ -1330,6 +1330,10 @@ record Marker(boolean exists, boolean touched, Path path, String cause) implemen
         return new Marker(false, false, path, cause);
     }
 
+    // TODO don't take all the info for the step
+    // for git -> git clone + repo name (ignore branch, depth...etc)
+    // for maven build -> ignore additional params
+    // for maven test -> ignore additional params
     static Marker of(Step step)
     {
         final var producer = step.toString();
@@ -1357,12 +1361,11 @@ class FileSystem
         var baseDir = home.root.resolve("cache");
         final var path = baseDir.resolve(today);
         final var isNewDay = !path.toFile().exists();
-        var fs = FileSystem.of(path);
         if (isNewDay)
         {
             home.symlink(Path.of("cache", "latest"), Path.of(today));
         }
-        return fs;
+        return FileSystem.of(baseDir.resolve("latest"));
     }
 
     static FileSystem ofHome()
