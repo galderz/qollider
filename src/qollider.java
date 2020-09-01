@@ -1367,10 +1367,7 @@ class FileSystem
         {
             home.symlink(Path.of("cache", "latest"), Path.of(today));
         }
-        else
-        {
-            idempotentMkDirs(baseToday);
-        }
+        idempotentMkDirs(baseToday);
         return new FileSystem(baseDir.resolve("latest"));
     }
 
