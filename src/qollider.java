@@ -1361,24 +1361,23 @@ class FileSystem
         var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
         var baseDir = home.root.resolve("cache");
-        final var path = baseDir.resolve(today);
-        final var isNewDay = !path.toFile().exists();
+        final var baseToday = baseDir.resolve(today);
+        final var isNewDay = !baseToday.toFile().exists();
         if (isNewDay)
         {
             home.symlink(Path.of("cache", "latest"), Path.of(today));
         }
-        return FileSystem.of(baseDir.resolve("latest"));
+        else
+        {
+            idempotentMkDirs(baseToday);
+        }
+        return new FileSystem(baseDir.resolve("latest"));
     }
 
     static FileSystem ofHome()
     {
         var home = Path.of(System.getProperty("user.home"), ".qollider");
-        return FileSystem.of(home);
-    }
-
-    private static FileSystem of(Path path)
-    {
-        return new FileSystem(idempotentMkDirs(path));
+        return new FileSystem(idempotentMkDirs(home));
     }
 
     private static Path idempotentMkDirs(Path directory)
