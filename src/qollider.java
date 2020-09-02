@@ -46,7 +46,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -58,7 +57,6 @@ import java.util.stream.Stream;
 
 import static java.lang.String.format;
 import static java.lang.System.Logger.Level.INFO;
-import static java.util.Collections.disjoint;
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -207,7 +205,7 @@ final class SystemJdk
         final var osHome = OperatingSystem.of(home);
 
         final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
-        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+        final var installHome = Job.Install.Effects.of(Web.of(home), osHome);
 
         final var getLink = new Steps.Linking.Effects(home::symlink);
 
@@ -223,7 +221,7 @@ final class SystemJdk
     static List<? extends Output> get(Cli cli, FileSystem today)
     {
         final var osToday = OperatingSystem.of(today);
-        final var installToday = Steps.Install.Effects.of(Web.of(today), osToday);
+        final var installToday = Job.Install.Effects.of(Web.of(today), osToday);
         final var get = Jdk.Get.of(cli);
         final var getLink = new Steps.Linking.Effects(today::symlink);
         return Jdk.get(get, installToday, getLink);
@@ -262,12 +260,12 @@ final class Jdk
 
     static List<? extends Output> get(
         Get get
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
         , Steps.Linking.Effects linking
     )
     {
         final var installOut =
-            Steps.Install.install(new Steps.Install(get.url, get.path), install);
+            Job.Install.install(new Job.Install(get.url, get.path), install);
 
         final var linkOut = Steps.Linking.link(
             new Steps.Linking(Homes.java(), installJdkHome(get.path, install))
@@ -281,7 +279,7 @@ final class Jdk
 
     static List<? extends Output> getBoot(
         Build build
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
         , Steps.Linking.Effects linking
     )
     {
@@ -300,7 +298,7 @@ final class Jdk
         return Lists.append(linkOut, installOut);
     }
 
-    private static List<? extends Output> installBoot(Boot boot, Steps.Install.Effects install)
+    private static List<? extends Output> installBoot(Boot boot, Job.Install.Effects install)
     {
         final var javaBaseUrl = format(
             "https://github.com/AdoptOpenJDK/openjdk%d-binaries/releases/download"
@@ -323,7 +321,7 @@ final class Jdk
             , boot.version().build()
         );
 
-        return Steps.Install.install(new Steps.Install(url, boot.path), install);
+        return Job.Install.install(new Job.Install(url, boot.path), install);
     }
 
     record Build(Repository tree)
@@ -349,7 +347,7 @@ final class Jdk
         }
     }
 
-    private static Path installJdkHome(Path path, Steps.Install.Effects effects)
+    private static Path installJdkHome(Path path, Job.Install.Effects effects)
     {
        return effects.download().osType().get().isMac()
            ? path.resolve(Path.of("Contents", "Home"))
@@ -500,7 +498,7 @@ final class SystemGraal
         final var web = Web.of(fs);
 
         final var exec = Steps.Exec.Lazy.Effects.of(os);
-        final var install = Steps.Install.Effects.of(web, os);
+        final var install = Job.Install.Effects.of(web, os);
         final var linking = new Steps.Linking.Effects(fs::symlink);
 
         return Graal.get(Graal.Get.of(cli), exec, install, linking);
@@ -591,7 +589,7 @@ final class Graal
     static List<? extends Output> get(
         Get get
         , Steps.Exec.Lazy.Effects exec
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
         , Steps.Linking.Effects linking
     )
     {
@@ -603,11 +601,11 @@ final class Graal
     private static List<? extends Output> get(
         Get get
         , Steps.Exec.Lazy.Effects exec
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
     )
     {
-        final var installOut = Steps.Install.install(
-            new Steps.Install(get.url, get.path)
+        final var installOut = Job.Install.install(
+            new Job.Install(get.url, get.path)
             , install
         );
 
@@ -640,7 +638,7 @@ final class SystemMandrel
         final var roots = new Roots(home::resolve, today::resolve);
 
         final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
-        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+        final var installHome = Job.Install.Effects.of(Web.of(home), osHome);
 
         return Mandrel.build(Mandrel.Build.of(cli), execToday, installHome, roots);
     }
@@ -681,7 +679,7 @@ final class Mandrel
     static List<? extends Output> build(
         Build build
         , Steps.Exec.Lazy.Effects exec
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
         , Roots roots
     )
     {
@@ -724,7 +722,7 @@ final class SystemMaven
         final var roots = new Roots(home::resolve, today::resolve);
 
         final var execToday = Steps.Exec.Lazy.Effects.of(osToday);
-        final var installHome = Steps.Install.Effects.of(Web.of(home), osHome);
+        final var installHome = Job.Install.Effects.of(Web.of(home), osHome);
 
         return Maven.build(Maven.Build.of(cli), execToday, installHome, roots);
     }
@@ -773,7 +771,7 @@ final class Maven
     public static List<? extends Output> build(
         Build build
         , Steps.Exec.Lazy.Effects exec
-        , Steps.Install.Effects install
+        , Job.Install.Effects install
         , Roots roots
     )
     {
@@ -822,7 +820,7 @@ final class Maven
             : Stream.concat(arguments, extra.stream());
     }
 
-    static List<Marker> install(Steps.Install.Effects install)
+    static List<Marker> install(Job.Install.Effects install)
     {
         final var version = "3.6.3";
         final var url = URLs.of(
@@ -830,7 +828,7 @@ final class Maven
             , version
         );
 
-        return Steps.Install.install(new Steps.Install(url, Path.of("maven")), install);
+        return Job.Install.install(new Job.Install(url, Path.of("maven")), install);
     }
 
     static Path home(Function<Path, Path> resolve)
@@ -1078,40 +1076,6 @@ interface Step {}
 // TODO remove steps and just use Step (eventually sealed types in Java 15)
 final class Steps
 {
-    // Install = Download + Extract
-    record Install(URL url, Path path) implements Step
-    {
-        static List<Marker> install(Install install, Install.Effects effects)
-        {
-            final var url = install.url;
-            final var fileName = Path.of(url.getFile()).getFileName();
-            final var directory = Path.of("downloads");
-            final var tarPath = directory.resolve(fileName);
-
-            final var downloadMarker = Download.lazy(
-                new Download(url, tarPath)
-                , effects.download
-            );
-
-            final var extractMarker = Extract.extract(
-                new Extract(tarPath, install.path)
-                , effects.extract
-            );
-
-            return List.of(downloadMarker, extractMarker);
-        }
-
-        record Effects(Download.Effects download, Extract.Effects extract)
-        {
-            static Effects of(Web web, OperatingSystem os)
-            {
-                final var hw = new Hardware();
-                final var download = Download.Effects.of(web, os, hw);
-                final var extract = Extract.Effects.of(os);
-                return new Effects(download, extract);
-            }
-        }
-    }
 
     record Extract(Path tar, Path path) implements Step
     {
@@ -1247,6 +1211,44 @@ final class Steps
         }
 
         record Effects(BiFunction<Path, Path, Link> symLink) {}
+    }
+}
+
+interface Job
+{
+    // Download + Extract
+    record Install(URL url, Path path)
+    {
+        static List<Marker> install(Install install, Install.Effects effects)
+        {
+            final var url = install.url;
+            final var fileName = Path.of(url.getFile()).getFileName();
+            final var directory = Path.of("downloads");
+            final var tarPath = directory.resolve(fileName);
+
+            final var downloadMarker = Steps.Download.lazy(
+                new Steps.Download(url, tarPath)
+                , effects.download
+            );
+
+            final var extractMarker = Steps.Extract.extract(
+                new Steps.Extract(tarPath, install.path)
+                , effects.extract
+            );
+
+            return List.of(downloadMarker, extractMarker);
+        }
+
+        record Effects(Steps.Download.Effects download, Steps.Extract.Effects extract)
+        {
+            static Effects of(Web web, OperatingSystem os)
+            {
+                final var hw = new Hardware();
+                final var download = Steps.Download.Effects.of(web, os, hw);
+                final var extract = Steps.Extract.Effects.of(os);
+                return new Effects(download, extract);
+            }
+        }
     }
 }
 
@@ -2437,15 +2439,15 @@ final class Check
             return new Steps.Exec.Eager.Effects(e -> {});
         }
 
-        Steps.Install.Effects install(OperatingSystem.Type osType, Hardware.Arch arch)
+        Job.Install.Effects install(OperatingSystem.Type osType, Hardware.Arch arch)
         {
-            return new Steps.Install.Effects(
+            return new Job.Install.Effects(
                 new Steps.Download.Effects(this::exists, this::touch, d -> {}, () -> osType, () -> arch)
                 , new Steps.Extract.Effects(lazyExec(), p -> {})
             );
         }
 
-        Steps.Install.Effects install()
+        Job.Install.Effects install()
         {
             return install(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         }
