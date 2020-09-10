@@ -2,21 +2,18 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 
-import static org.mendrugo.qollider.Step.*;
-import static org.mendrugo.qollider.Step.Exec.*;
-
 final class Git
 {
-    final Lazy.Effects lazy;
+    final Effect.Exec.Lazy lazy;
 
-    Git(Lazy.Effects lazy)
+    Git(Effect.Exec.Lazy lazy)
     {
         this.lazy = lazy;
     }
 
-    Action<Exec, Lazy.Effects> clone(Repository repo)
+    Action<Step.Exec, Effect.Exec.Lazy> clone(Repository repo)
     {
-        return new Action<>(Exec.of(toClone(repo)), lazy, Lazy.action());
+        return new Action<>(Step.Exec.of(toClone(repo)), lazy, Step.Exec.Lazy.action());
     }
 
     static String[] toClone(Repository repo)
