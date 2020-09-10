@@ -68,39 +68,17 @@ interface Step
 
         final static class Lazy
         {
-            static Marker run(Exec exec, Effects effects)
-            {
-                final var marker = Marker.of(exec).query(effects.exists);
-                if (marker.exists())
-                    return marker;
-
-                effects.exec().accept(exec);
-                return marker.touch(effects.touch);
-            }
-
-            static BiFunction<Exec, Effects, ? extends Output> action()
+            static BiFunction<Exec, Effect.Exec.Lazy, ? extends Output> action()
             {
                 return (exec, effects) ->
                 {
-                    final var marker = Marker.of(exec).query(effects.exists);
+                    final var marker = Marker.of(exec).query(effects.exists());
                     if (marker.exists())
                         return marker;
 
                     effects.exec().accept(exec);
-                    return marker.touch(effects.touch);
+                    return marker.touch(effects.touch());
                 };
-            }
-
-            record Effects(
-                Predicate<Path> exists
-                , Consumer<Exec> exec
-                , Function<Marker, Boolean> touch
-            )
-            {
-                static Effects of(OperatingSystem os)
-                {
-                    return new Effects(os.fs::exists, os::exec, os.fs::touch);
-                }
             }
         }
 

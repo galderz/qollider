@@ -2,13 +2,11 @@ package org.mendrugo.qollider;
 
 import java.nio.file.Path;
 
-import static org.mendrugo.qollider.Step.*;
-
 final class Sandbox
 {
-    Exec.Lazy.Effects lazyExec()
+    Effect.Exec.Lazy lazyExec()
     {
-        return new Exec.Lazy.Effects(this::exists, e -> {}, this::touch);
+        return new Effect.Exec.Lazy(this::exists, e -> {}, this::touch);
     }
 
     boolean exists(Path path)
