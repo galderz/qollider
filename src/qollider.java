@@ -614,7 +614,7 @@ final class Graal
         {
             final var guNativeImageOut = Steps.Exec.Lazy.run(
                 Steps.Exec.of(
-                    Path.of("graal", "bin")
+                    Path.of("graalvm", "bin")
                     , "./gu"
                     , "install"
                     , "native-image"
@@ -2823,7 +2823,7 @@ final class Check
         static Expect guNativeImage()
         {
             return Expect.of(Steps.Exec.of(
-                Path.of("graal/bin")
+                Path.of("graalvm/bin")
                 , "./gu"
                 , "install"
                 , "native-image"
