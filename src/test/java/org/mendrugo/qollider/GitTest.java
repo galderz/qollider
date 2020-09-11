@@ -16,8 +16,20 @@ public class GitTest
                     Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
                 )
             )
-            , Expect.gitOpenJdkClone()
+            , Expect.gitClone("openjdk/jdk11u-dev", "master")
         );
+    }
 
+    @Test
+    void cloneFullRepository()
+    {
+        Asserts.plan(
+            qollider().plan(
+                git().clone(
+                    Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02?depth=0")
+                )
+            )
+            , Expect.gitCloneFull("graalvm/labs-openjdk-11", "jvmci-20.2-b02")
+        );
     }
 }
