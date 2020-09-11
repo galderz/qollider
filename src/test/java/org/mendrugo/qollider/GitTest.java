@@ -32,4 +32,17 @@ public class GitTest
             , Expect.gitCloneFull("graalvm/labs-openjdk-11", "jvmci-20.2-b02")
         );
     }
+
+    @Test
+    void cloneBranchWithPath()
+    {
+        Asserts.plan(
+            qollider().plan(
+                git().clone(
+                    Repository.of("https://github.com/olpaw/graal/tree/paw/2367")
+                )
+            )
+            , Expect.gitClone("olpaw/graal", "paw/2367")
+        );
+    }
 }
