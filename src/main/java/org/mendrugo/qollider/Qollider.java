@@ -1,45 +1,30 @@
 package org.mendrugo.qollider;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.function.BiFunction;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public final class Qollider
 {
-    Plan plan(Action<? extends Step, ? extends Effect> action)
+    Plan plan(Action... actions)
     {
         return () ->
         {
-            final Output result = action.action().apply((Step) action.step, (Effect) action.effects);
-            return new Result(List.of(result));
+            final List<Output> result = Arrays.stream(actions)
+                .flatMap(action -> action.items().stream())
+                .map(Supplier::get)
+                .collect(Collectors.toList());
+            return new Result(result);
         };
     }
 
-//    Plan plan(Action<Step, Effect>... actions)
-//    {
-//        return () ->
-//        {
-//            final var result = new ArrayList<Output>(actions.length);
-//            for (Action<Step, Effect> action : actions)
-//            {
-//                final var output =
-//                    (Output) action.action().apply(action.step, action.effects);
-//                result.add(output);
-//            }
-//            return new Result(result);
-//        };
-//    }
-//
-    record Action<S extends Step, E extends Effect>(
-        S step
-        , E effects
-        , BiFunction<? super S, ? super E, ? extends Output> action
-    ) {}
+    record Action(List<Supplier<Output>> items) {}
 
     interface Output {}
 
-    record Result(List<? extends Output> items) {}
+    record Result(List<Output> items) {}
 
     interface Plan
     {
