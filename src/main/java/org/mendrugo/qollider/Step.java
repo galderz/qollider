@@ -10,6 +10,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.emptyList;
@@ -68,9 +69,9 @@ interface Step
 
         final static class Lazy
         {
-            static BiFunction<Exec, Effect.Exec.Lazy, ? extends Output> action()
+            static Supplier<Output> action(Step.Exec exec, Effect.Exec.Lazy effects)
             {
-                return (exec, effects) ->
+                return () ->
                 {
                     final var marker = Marker.of(exec).query(effects.exists());
                     if (marker.exists())
