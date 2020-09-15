@@ -2,6 +2,7 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Output;
 
+import java.net.URL;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
@@ -17,6 +18,22 @@ import static java.util.Collections.emptyList;
 
 interface Step
 {
+    record Download(URL url, Path path) implements Step
+    {
+        static Supplier<Output> action(Step.Download download, Effect.Download effects)
+        {
+            return () ->
+            {
+                final var marker = Marker.of(download).query(effects.exists());
+                if (marker.exists())
+                    return marker;
+
+                effects.download().accept(download);
+                return marker.touch(effects.touch());
+            };
+        }
+    }
+
     record Exec(
         List<String> args
         , Path directory
@@ -101,75 +118,39 @@ interface Step
         }
     }
 
-//    record Extract(Path tar, Path path) implements Step
-//    {
-//        static Marker extract(Extract extract, Extract.Effects effects)
-//        {
-//            effects.mkdirs.accept(extract.path); // cheap so do it regardless, no marker
-//
-//            return Exec.Lazy.run(
-//                Exec.of(
-//                    "tar"
-//                    , "-xzpf"
-//                    , extract.tar.toString()
-//                    , "-C"
-//                    , extract.path.toString()
-//                    , "--strip-components"
-//                    , "1"
-//                )
-//                , effects.exec
-//            );
-//        }
-//        record Effects(
-//            Exec.Lazy.Effects exec
-//            , Consumer<Path> mkdirs
-//        )
-//        {
-//            static Effects of(OperatingSystem os)
-//            {
-//                final var exec = Exec.Lazy.Effects.of(os);
-//                return new Effects(exec, os.fs::mkdirs);
-//            }
-//
-//        }
-//
-//    }
+    record Extract(Path tar, Path path) implements Step
+    {
+        static Supplier<Output> action(Step.Extract extract, Effect.Extract effects)
+        {
+            return () ->
+            {
+                effects.mkdirs().accept(extract.path); // cheap so do it regardless, no marker
 
-//    record Download(URL url, Path path) implements Step
-//    {
-//        static Marker lazy(Download task, Effects effects)
-//        {
-//            final var marker = Marker.of(task).query(effects.exists);
-//            if (marker.exists())
-//                return marker;
-//
-//            effects.download.accept(task);
-//            return marker.touch(effects.touch);
-//        }
-//        record Effects(
-//            Predicate<Path> exists
-//            , Function<Marker, Boolean> touch
-//            , Consumer<Download> download
-//            , Supplier<OperatingSystem.Type> osType
-//            , Supplier<Hardware.Arch> arch
-//        )
-//        {
-//            static Effects of(Web web, OperatingSystem os, Hardware hw)
-//            {
-//                return new Effects(os.fs::exists, os.fs::touch, web::download, os::type, hw::arch);
-//            }
-//        }
-//
-//    }
+                return Exec.Lazy.action(
+                    Exec.of(
+                        "tar"
+                        , "-xzpf"
+                        , extract.tar.toString()
+                        , "-C"
+                        , extract.path.toString()
+                        , "--strip-components"
+                        , "1"
+                    )
+                    , effects.lazy()
+                ).get();
+            };
+        }
+    }
 
-//    record Linking(Path link, Path target) implements Step
-//    {
-//        static Link link(Linking linking, Effects effects)
-//        {
-//            final var target = linking.target;
-//            return effects.symLink.apply(linking.link, target);
-//        }
-//
-//        record Effects(BiFunction<Path, Path, Link> symLink) {}
-//    }
+    record Linking(Path link, Path target) implements Step
+    {
+        static Supplier<Output> link(Step.Linking linking, Effect.Linking effects)
+        {
+            return () ->
+            {
+                final var target = linking.target;
+                return effects.symLink().apply(linking.link, target);
+            };
+        }
+    }
 }

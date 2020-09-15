@@ -43,24 +43,24 @@ final class FileTree
 //        return new FileTree(idempotentMkDirs(home));
 //    }
 
-//    private static Path idempotentMkDirs(Path directory)
-//    {
-//        final var directoryFile = directory.toFile();
-//        if (!directoryFile.exists() && !directoryFile.mkdirs())
-//        {
-//            throw new RuntimeException(format(
-//                "Unable to create directory: %s"
-//                , directory)
-//            );
-//        }
-//
-//        return directory;
-//    }
-//
-//    void mkdirs(Path directory)
-//    {
-//        FileTree.idempotentMkDirs(root.resolve(directory));
-//    }
+    private static Path idempotentMkDirs(Path directory)
+    {
+        final var directoryFile = directory.toFile();
+        if (!directoryFile.exists() && !directoryFile.mkdirs())
+        {
+            throw new RuntimeException(format(
+                "Unable to create directory: %s"
+                , directory)
+            );
+        }
+
+        return directory;
+    }
+
+    void mkdirs(Path directory)
+    {
+        FileTree.idempotentMkDirs(root.resolve(directory));
+    }
 
     boolean exists(Path path)
     {
