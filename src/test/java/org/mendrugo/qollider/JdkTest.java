@@ -28,6 +28,23 @@ public class JdkTest
     }
 
     @Test
+    void getBootJdkJdk()
+    {
+        Asserts.plan(
+            qollider().plan(
+                jdk(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64).getBoot(
+                    new Jdk.Build(Repository.of(
+                        "https://github.com/openjdk/jdk/tree/master"
+                    ))
+                )
+            )
+            , Expect.jdk14DownloadLinux()
+            , Expect.bootJdk14Extract()
+            , Expect.link("bootjdk_home", "boot-jdk-14")
+        );
+    }
+
+    @Test
     void getBootJdk11Linux()
     {
         Asserts.plan(
