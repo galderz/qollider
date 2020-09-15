@@ -4,6 +4,11 @@ import java.nio.file.Path;
 
 record Expect(Step step, boolean touched)
 {
+    static Expect bootJdk11ExtractMacOs()
+    {
+        return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
+    }
+
     static Expect extract(String tar, String path)
     {
         return Expect.of(Step.Exec.of(
@@ -48,6 +53,14 @@ record Expect(Step step, boolean touched)
             , branch
             , String.format("https://github.com/%s", repo)
         ));
+    }
+
+    static Expect jdk11DownloadMacOs()
+    {
+        return download(
+            "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+            , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+        );
     }
 
     static Expect link(String link, String target)

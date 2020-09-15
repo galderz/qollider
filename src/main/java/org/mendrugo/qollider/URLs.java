@@ -17,8 +17,8 @@ final class URLs
         }
     }
 
-//    static URL of(String format, Object... args)
-//    {
-//        return URLs.of(String.format(format, args));
-//    }
+    static URL of(String format, Object... args)
+    {
+        return URLs.of(String.format(format, args));
+    }
 }

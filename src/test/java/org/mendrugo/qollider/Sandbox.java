@@ -43,11 +43,11 @@ final class Sandbox
         return new Git(Sandbox.empty().execLazy());
     }
 
-    static Jdk jdk()
+    static Jdk jdk(OperatingSystem.Type osType, Hardware.Arch arch)
     {
         final var sandbox = Sandbox.empty();
         return new Jdk(
-            sandbox.install(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64)
+            sandbox.install(osType, arch)
             , sandbox.linking()
         );
     }
