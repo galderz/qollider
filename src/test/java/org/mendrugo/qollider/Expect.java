@@ -14,6 +14,11 @@ record Expect(Step step, boolean touched)
         return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
     }
 
+    static Expect bootJdk14Extract()
+    {
+        return extract("downloads/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz", "boot-jdk-14");
+    }
+
     static Expect bootJdk11LinkLinux()
     {
         return Expect.of(new Step.Linking(
@@ -81,6 +86,14 @@ record Expect(Step step, boolean touched)
         return download(
             "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
             , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+        );
+    }
+
+    static Expect jdk14DownloadLinux()
+    {
+        return download(
+            "https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/download/jdk-14.0.2%2B12/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz"
+            , "downloads/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz"
         );
     }
 
