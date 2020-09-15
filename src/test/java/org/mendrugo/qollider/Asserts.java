@@ -21,10 +21,10 @@ final class Asserts
             {
                 step(marker, expects[i]);
             }
-//            else if (output instanceof Link link)
-//            {
-//                step(link, expects[i]);
-//            }
+            else if (output instanceof Link link)
+            {
+                step(link, expects[i]);
+            }
 //            else if (output instanceof Step.Exec.Eager eager)
 //            {
 //                step(eager, expects[i]);
@@ -50,14 +50,14 @@ final class Asserts
         );
     }
 
-//    static void step(Link actual, Expect expected)
-//    {
-//        // TODO avoid cast? the only step that can produce a Link is Linking...
-//        final var linking = (Step.Linking) expected.step;
-//        assertThat(actual.link(), is(linking.link()));
-//        assertThat(actual.target(), is(linking.target()));
-//    }
-//
+    static void step(Link actual, Expect expected)
+    {
+        // TODO avoid cast? the only step that can produce a Link is Linking...
+        final var linking = (Step.Linking) expected.step();
+        assertThat(actual.link(), is(linking.link()));
+        assertThat(actual.target(), is(linking.target()));
+    }
+
 //    static void step(Steps.Exec.Eager actual, Expect expected)
 //    {
 //        assertThat(actual.exec(), is(expected.step));
