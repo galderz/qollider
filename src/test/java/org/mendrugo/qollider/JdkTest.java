@@ -28,7 +28,24 @@ public class JdkTest
     }
 
     @Test
-    void getBootJdkMacOs()
+    void getBootJdk11Linux()
+    {
+        Asserts.plan(
+            qollider().plan(
+                jdk(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64).getBoot(
+                    new Jdk.Build(Repository.of(
+                        "https://github.com/openjdk/jdk11u-dev/tree/master"
+                    ))
+                )
+            )
+            , Expect.jdk11DownloadLinux()
+            , Expect.bootJdk11ExtractLinux()
+            , Expect.bootJdk11LinkLinux()
+        );
+    }
+
+    @Test
+    void getBootJdk11MacOs()
     {
         Asserts.plan(
             qollider().plan(

@@ -4,9 +4,22 @@ import java.nio.file.Path;
 
 record Expect(Step step, boolean touched)
 {
+    static Expect bootJdk11ExtractLinux()
+    {
+        return extract("downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
+    }
+
     static Expect bootJdk11ExtractMacOs()
     {
         return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
+    }
+
+    static Expect bootJdk11LinkLinux()
+    {
+        return Expect.of(new Step.Linking(
+            Path.of("bootjdk_home")
+            , Path.of("boot-jdk-11")
+        ));
     }
 
     static Expect extract(String tar, String path)
@@ -53,6 +66,14 @@ record Expect(Step step, boolean touched)
             , branch
             , String.format("https://github.com/%s", repo)
         ));
+    }
+
+    static Expect jdk11DownloadLinux()
+    {
+        return download(
+            "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
+            , "downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
+        );
     }
 
     static Expect jdk11DownloadMacOs()
