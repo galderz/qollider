@@ -10,6 +10,23 @@ import static org.mendrugo.qollider.Sandbox.qollider;
 public class JdkTest
 {
     @Test
+    void buildLabsJdk()
+    {
+        Asserts.plan(
+            qollider().plan(
+                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                    new Jdk.Build(
+                        Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
+                    )
+                )
+            )
+            , Expect.gitClone("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
+            , Expect.javaLabsJdkBuild()
+            , Expect.link("java_home", "labs-openjdk-11/java_home")
+        );
+    }
+
+    @Test
     void get()
     {
         final var url =

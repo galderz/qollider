@@ -49,7 +49,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect gitClone(String repo, String branch)
+    static Expect gitClone(String repo, String branch, int depth)
     {
         return Expect.of(Step.Exec.of(
             "git"
@@ -57,7 +57,7 @@ record Expect(Step step, boolean touched)
             , "-b"
             , branch
             , "--depth"
-            , "1"
+            , String.valueOf(depth)
             , String.format("https://github.com/%s", repo)
         ));
     }
@@ -70,6 +70,17 @@ record Expect(Step step, boolean touched)
             , "-b"
             , branch
             , String.format("https://github.com/%s", repo)
+        ));
+    }
+
+    static Expect javaLabsJdkBuild()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("labs-openjdk-11")
+            , "python"
+            , "build_labsjdk.py"
+            , "--boot-jdk"
+            , "/home/bootjdk_home"
         ));
     }
 

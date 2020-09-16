@@ -16,7 +16,7 @@ public class GitTest
                     Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
                 )
             )
-            , Expect.gitClone("openjdk/jdk11u-dev", "master")
+            , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
         );
     }
 
@@ -42,7 +42,7 @@ public class GitTest
                     Repository.of("https://github.com/olpaw/graal/tree/paw/2367")
                 )
             )
-            , Expect.gitClone("olpaw/graal", "paw/2367")
+            , Expect.gitClone("olpaw/graal", "paw/2367", 1)
         );
     }
 }

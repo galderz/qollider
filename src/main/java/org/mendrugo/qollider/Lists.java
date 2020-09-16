@@ -40,23 +40,23 @@ final class Lists
         return Collections.unmodifiableList(result);
     }
 
-    // TODO make it typesafe
-    static <E> List<E> flatten(Object... elements)
-    {
-        final var result = new ArrayList<E>();
-        for (Object element : elements)
-        {
-            if (element instanceof List<?> l)
-            {
-                result.addAll(Unchecked.cast(l));
-            }
-            else
-            {
-                result.add(Unchecked.cast(element));
-            }
-        }
-        return result;
-    }
+//    // TODO make it typesafe
+//    static <E> List<E> flatten(Object... elements)
+//    {
+//        final var result = new ArrayList<E>();
+//        for (Object element : elements)
+//        {
+//            if (element instanceof List<?> l)
+//            {
+//                result.addAll(Unchecked.cast(l));
+//            }
+//            else
+//            {
+//                result.add(Unchecked.cast(element));
+//            }
+//        }
+//        return result;
+//    }
 
     @SafeVarargs
     static <E> List<E> mutable(E... a)

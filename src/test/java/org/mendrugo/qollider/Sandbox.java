@@ -1,10 +1,12 @@
 package org.mendrugo.qollider;
 
+import org.mendrugo.qollider.Qollider.Roots;
+
 import java.nio.file.Path;
 
 final class Sandbox
 {
-    Effect.Exec.Lazy execLazy()
+    Effect.Exec.Lazy lazy()
     {
         return new Effect.Exec.Lazy(this::exists, e -> {}, this::touch);
     }
@@ -19,7 +21,7 @@ final class Sandbox
     {
         return new Effect.Install(
             new Effect.Download(this::exists, this::touch, d -> {}, () -> osType, () -> arch)
-            , new Effect.Extract(execLazy(), p -> {})
+            , new Effect.Extract(lazy(), p -> {})
         );
     }
 
@@ -40,20 +42,30 @@ final class Sandbox
 
     static Git git()
     {
-        return new Git(Sandbox.empty().execLazy());
+        return new Git(Sandbox.empty().lazy());
     }
 
     static Jdk jdk(OperatingSystem.Type osType, Hardware.Arch arch)
     {
         final var sandbox = Sandbox.empty();
         return new Jdk(
-            sandbox.install(osType, arch)
+            sandbox.lazy()
+            , sandbox.install(osType, arch)
             , sandbox.linking()
+            , roots()
         );
     }
 
     static Qollider qollider()
     {
         return new Qollider();
+    }
+
+    private static Roots roots()
+    {
+        return new Roots(
+            p -> Path.of("/", "home").resolve(p)
+            , p -> Path.of("/", "today").resolve(p)
+        );
     }
 }
