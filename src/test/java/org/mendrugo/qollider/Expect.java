@@ -84,6 +84,39 @@ record Expect(Step step, boolean touched)
         ));
     }
 
+    static Expect javaOpenJdkConfigure()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("jdk11u-dev")
+            , "bash"
+            , "configure"
+            , "--with-conf-name=graal-server-release"
+            , "--disable-warnings-as-errors"
+            , "--with-jvm-features=graal"
+            , "--with-jvm-variants=server"
+            , "--with-extra-cflags=-fcommon"
+            , "--enable-aot=no"
+            , "--with-boot-jdk=/home/bootjdk_home"
+        ));
+    }
+
+    static Expect javaOpenJdkMake()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("jdk11u-dev")
+            , "make"
+            , "graal-builder-image"
+        ));
+    }
+
+    static Expect javaOpenJdkLink()
+    {
+        return Expect.of(new Step.Linking(
+            Path.of("java_home")
+            , Path.of("jdk11u-dev/build/graal-server-release/images/graal-builder-jdk")
+        ));
+    }
+
     static Expect jdk11DownloadLinux()
     {
         return download(

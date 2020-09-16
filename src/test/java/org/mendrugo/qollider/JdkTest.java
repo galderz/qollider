@@ -2,8 +2,6 @@ package org.mendrugo.qollider;
 
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
-
 import static org.mendrugo.qollider.Sandbox.jdk;
 import static org.mendrugo.qollider.Sandbox.qollider;
 
@@ -23,6 +21,24 @@ public class JdkTest
             , Expect.gitClone("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
             , Expect.javaLabsJdkBuild()
             , Expect.link("java_home", "labs-openjdk-11/java_home")
+        );
+    }
+
+    @Test
+    void buildOpenJDK()
+    {
+        Asserts.plan(
+            qollider().plan(
+                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                    new Jdk.Build(
+                        Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
+                    )
+                )
+            )
+            , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
+            , Expect.javaOpenJdkConfigure()
+            , Expect.javaOpenJdkMake()
+            , Expect.javaOpenJdkLink()
         );
     }
 
