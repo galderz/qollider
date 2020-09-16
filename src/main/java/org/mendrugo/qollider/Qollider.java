@@ -1,10 +1,13 @@
 package org.mendrugo.qollider;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class Qollider
 {
@@ -20,7 +23,17 @@ public final class Qollider
         };
     }
 
-    record Action(List<Supplier<Output>> items) {}
+    record Action(List<Supplier<Output>> items)
+    {
+        static Action of(Action... actions)
+        {
+            return new Action(
+                Stream.of(actions)
+                    .flatMap(action -> action.items().stream())
+                    .collect(Collectors.toList())
+            );
+        }
+    }
 
     interface Output {}
 
@@ -32,4 +45,6 @@ public final class Qollider
     }
 
     record Link(Path link, Path target) implements Output {}
+
+    record Roots(Function<Path, Path> home, Function<Path, Path> today) {}
 }

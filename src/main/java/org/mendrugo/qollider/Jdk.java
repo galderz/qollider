@@ -1,9 +1,15 @@
 package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
+import org.mendrugo.qollider.Qollider.Output;
+import org.mendrugo.qollider.Qollider.Roots;
 
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.lang.String.format;
 
@@ -12,12 +18,61 @@ public final class Jdk
     static final Version JDK_11 = new Version(11, 0, 7, 10);
     static final Version JDK_14 = new Version(14, 0, 2, 12);
 
+    final Effect.Exec.Lazy lazy;
     final Effect.Install install;
     final Effect.Linking linking;
+    final Roots roots;
 
-    public Jdk(Effect.Install install, Effect.Linking linking) {
+    public Jdk(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
+        this.lazy = lazy;
         this.install = install;
         this.linking = linking;
+        this.roots = roots;
+    }
+
+    Action build(Build build)
+    {
+        final var cloneAction = clone(build.tree());
+
+        final var buildSteps = switch (build.javaType())
+        {
+            case OPENJDK -> new OpenJDK(roots).buildSteps(build);
+            case LABSJDK -> new LabsJDK(roots).buildSteps(build);
+        };
+
+        final var buildAction = new Action(
+            buildSteps.stream()
+                .map(t -> Step.Exec.Lazy.action(t, lazy))
+                .collect(Collectors.toList())
+        );
+
+        final var linkAction = link(build);
+
+        return Action.of(cloneAction, buildAction, linkAction);
+    }
+
+    private Action link(Build build)
+    {
+        final var jdkPath = Path.of(build.tree.name());
+        final var target = switch (build.javaType())
+            {
+                case OPENJDK -> OpenJDK.javaHome(jdkPath);
+                case LABSJDK -> LabsJDK.javaHome(jdkPath);
+            };
+
+        final var link = Homes.java();
+        return new Action(List.of(
+            Step.Linking.link(new Step.Linking(link, target), linking)
+        ));
+    }
+
+    private Action clone(Repository tree)
+    {
+        return switch (tree.type())
+        {
+            case GIT -> new Git(lazy).clone(tree);
+            case MERCURIAL -> new Mercurial(lazy).clone(tree);
+        };
     }
 
     Action get(Get get)
@@ -117,6 +172,90 @@ public final class Jdk
         String majorMinorMicro()
         {
             return String. format("%d.%d.%d", major, minor, micro);
+        }
+    }
+
+    private static final class OpenJDK
+    {
+        final Roots roots;
+
+        private OpenJDK(Roots roots)
+        {
+            this.roots = roots;
+        }
+
+        List<Step.Exec> buildSteps(Build build)
+        {
+            return List.of(configure(build, roots), make(build));
+        }
+
+        static Path javaHome(Path jdk)
+        {
+            return jdk.resolve(
+                Path.of(
+                    "build"
+                    , "graal-server-release"
+                    , "images"
+                    , "graal-builder-jdk"
+                )
+            );
+        }
+
+        private static Step.Exec configure(Build build, Roots roots)
+        {
+            return Step.Exec.of(
+                Path.of(build.tree.name())
+                , "bash"
+                , "configure"
+                , "--with-conf-name=graal-server-release"
+                , "--disable-warnings-as-errors"
+                , "--with-jvm-features=graal"
+                , "--with-jvm-variants=server"
+                // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
+                , "--with-extra-cflags=-fcommon"
+                , "--enable-aot=no"
+                , format("--with-boot-jdk=%s", roots.home().apply(Homes.bootJdk()))
+            );
+        }
+
+        private static Step.Exec make(Build build)
+        {
+            return Step.Exec.of(
+                Path.of(build.tree.name())
+                , "make"
+                , "graal-builder-image"
+            );
+        }
+    }
+
+    private static final class LabsJDK
+    {
+        final Roots roots;
+
+        private LabsJDK(Roots roots)
+        {
+            this.roots = roots;
+        }
+
+        List<Step.Exec> buildSteps(Build build)
+        {
+            return List.of(buildJDK(build, roots));
+        }
+
+        static Path javaHome(Path jdk)
+        {
+            return jdk.resolve("java_home");
+        }
+
+        private static Step.Exec buildJDK(Build build, Roots roots)
+        {
+            return Step.Exec.of(
+                Path.of(build.tree.name())
+                , "python"
+                , "build_labsjdk.py"
+                , "--boot-jdk"
+                , roots.home().apply(Homes.bootJdk()).toString()
+            );
         }
     }
 }
