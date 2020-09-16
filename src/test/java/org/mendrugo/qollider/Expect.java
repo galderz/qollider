@@ -149,6 +149,15 @@ record Expect(Step step, boolean touched)
         ));
     }
 
+    static Expect mercurialOpenJdkClone()
+    {
+        return Expect.of(Step.Exec.of(
+            "hg"
+            , "clone"
+            , "http://hg.openjdk.java.net/jdk-updates/jdk11u-dev"
+        ));
+    }
+
     static Expect of(Step step)
     {
         return new Expect(step, true);

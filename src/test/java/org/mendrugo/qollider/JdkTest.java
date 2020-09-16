@@ -25,7 +25,7 @@ public class JdkTest
     }
 
     @Test
-    void buildOpenJDK()
+    void buildOpenJdk()
     {
         Asserts.plan(
             qollider().plan(
@@ -36,6 +36,24 @@ public class JdkTest
                 )
             )
             , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
+            , Expect.javaOpenJdkConfigure()
+            , Expect.javaOpenJdkMake()
+            , Expect.javaOpenJdkLink()
+        );
+    }
+
+    @Test
+    void buildOpenJdkMercurial()
+    {
+        Asserts.plan(
+            qollider().plan(
+                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                    new Jdk.Build(
+                        Repository.of("http://hg.openjdk.java.net/jdk-updates/jdk11u-dev")
+                    )
+                )
+            )
+            , Expect.mercurialOpenJdkClone()
             , Expect.javaOpenJdkConfigure()
             , Expect.javaOpenJdkMake()
             , Expect.javaOpenJdkLink()
