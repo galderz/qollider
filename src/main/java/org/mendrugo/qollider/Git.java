@@ -2,8 +2,6 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 
-import java.util.List;
-
 final class Git
 {
     final Effect.Exec.Lazy lazy;
@@ -15,9 +13,7 @@ final class Git
 
     Action clone(Repository repo)
     {
-        return new Action(List.of(
-            Step.Exec.Lazy.action(Step.Exec.of(toClone(repo)), lazy)
-        ));
+        return Step.Exec.Lazy.action(Step.Exec.of(toClone(repo)), lazy);
     }
 
     static String[] toClone(Repository repo)

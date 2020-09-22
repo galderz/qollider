@@ -56,6 +56,16 @@ final class Sandbox
         );
     }
 
+    static Graal graal(OperatingSystem.Type osType, Hardware.Arch arch)
+    {
+        final var sandbox = Sandbox.empty();
+        return new Graal(
+            sandbox.lazy()
+            , sandbox.install(osType, arch)
+            , sandbox.linking()
+        );
+    }
+
     static Qollider qollider()
     {
         return new Qollider();
