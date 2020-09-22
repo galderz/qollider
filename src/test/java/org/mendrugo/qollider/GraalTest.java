@@ -22,4 +22,21 @@ public class GraalTest
             , Expect.link("graalvm_home", "graalvm")
         );
     }
+
+    @Test
+    void getAndDownloadNativeImage()
+    {
+        final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
+        Asserts.plan(
+            qollider().plan(
+                graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).get(
+                    Graal.get(url)
+                )
+            )
+            , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
+            , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
+            , Expect.guNativeImage()
+            , Expect.link("graalvm_home", "graalvm")
+        );
+    }
 }
