@@ -1,13 +1,12 @@
 package org.mendrugo.qollider;
 
+import java.net.URL;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public final class Qollider
 {
@@ -27,11 +26,26 @@ public final class Qollider
     {
         static Action of(Action... actions)
         {
+            return Action.of(List.of(actions));
+        }
+
+        static Action of(List<Action> actions)
+        {
             return new Action(
-                Stream.of(actions)
+                actions.stream()
                     .flatMap(action -> action.items().stream())
                     .collect(Collectors.toList())
             );
+        }
+
+        static Action of(Supplier<Output> item)
+        {
+            return new Action(List.of(item));
+        }
+
+        static Action of(Supplier<Output> item0, Supplier<Output> item1)
+        {
+            return new Action(List.of(item0, item1));
         }
     }
 
@@ -47,4 +61,13 @@ public final class Qollider
     record Link(Path link, Path target) implements Output {}
 
     record Roots(Function<Path, Path> home, Function<Path, Path> today) {}
+
+    record Get(URL url, Path path)
+    {
+        // TODO makes sense with static methods in Jdk...?
+        static Get of(String url, String path)
+        {
+            return new Get(URLs.of(url), Path.of(path));
+        }
+    }
 }

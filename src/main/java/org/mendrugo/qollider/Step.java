@@ -1,5 +1,6 @@
 package org.mendrugo.qollider;
 
+import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Output;
 
 import java.net.URL;
@@ -7,11 +8,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.emptyList;
@@ -20,9 +17,9 @@ interface Step
 {
     record Download(URL url, Path path) implements Step
     {
-        static Supplier<Output> action(Step.Download download, Effect.Download effects)
+        static Action action(Step.Download download, Effect.Download effects)
         {
-            return () ->
+            return Action.of(() ->
             {
                 final var marker = Marker.of(download).query(effects.exists());
                 if (marker.exists())
@@ -30,7 +27,7 @@ interface Step
 
                 effects.download().accept(download);
                 return marker.touch(effects.touch());
-            };
+            });
         }
     }
 
@@ -86,9 +83,9 @@ interface Step
 
         final static class Lazy
         {
-            static Supplier<Output> action(Step.Exec exec, Effect.Exec.Lazy effects)
+            static Action action(Step.Exec exec, Effect.Exec.Lazy effects)
             {
-                return () ->
+                return Action.of(() ->
                 {
                     final var marker = Marker.of(exec).query(effects.exists());
                     if (marker.exists())
@@ -96,7 +93,7 @@ interface Step
 
                     effects.exec().accept(exec);
                     return marker.touch(effects.touch());
-                };
+                });
             }
         }
 
@@ -120,9 +117,9 @@ interface Step
 
     record Extract(Path tar, Path path) implements Step
     {
-        static Supplier<Output> action(Step.Extract extract, Effect.Extract effects)
+        static Action action(Step.Extract extract, Effect.Extract effects)
         {
-            return () ->
+            return Action.of(() ->
             {
                 effects.mkdirs().accept(extract.path); // cheap so do it regardless, no marker
 
@@ -137,20 +134,20 @@ interface Step
                         , "1"
                     )
                     , effects.lazy()
-                ).get();
-            };
+                ).items().get(0).get();
+            });
         }
     }
 
     record Linking(Path link, Path target) implements Step
     {
-        static Supplier<Output> link(Step.Linking linking, Effect.Linking effects)
+        static Action link(Step.Linking linking, Effect.Linking effects)
         {
-            return () ->
+            return Action.of(() ->
             {
                 final var target = linking.target;
                 return effects.symLink().apply(linking.link, target);
-            };
+            });
         }
     }
 }

@@ -1,6 +1,7 @@
 package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
+import org.mendrugo.qollider.Qollider.Get;
 import org.mendrugo.qollider.Qollider.Output;
 import org.mendrugo.qollider.Qollider.Roots;
 
@@ -40,15 +41,14 @@ public final class Jdk
             case LABSJDK -> new LabsJDK(roots).buildSteps(build);
         };
 
-        final var buildAction = new Action(
+        final var buildAction =
             buildSteps.stream()
                 .map(t -> Step.Exec.Lazy.action(t, lazy))
-                .collect(Collectors.toList())
-        );
+                .collect(Collectors.toList());
 
         final var linkAction = link(build);
 
-        return Action.of(cloneAction, buildAction, linkAction);
+        return Action.of(Lists.merge(cloneAction, buildAction, linkAction));
     }
 
     private Action link(Build build)
@@ -61,9 +61,7 @@ public final class Jdk
             };
 
         final var link = Homes.java();
-        return new Action(List.of(
-            Step.Linking.link(new Step.Linking(link, target), linking)
-        ));
+        return Step.Linking.link(new Step.Linking(link, target), linking);
     }
 
     private Action clone(Repository tree)
@@ -75,17 +73,22 @@ public final class Jdk
         };
     }
 
+    static Get get(String url)
+    {
+        return Get.of(url, "jdk");
+    }
+
     Action get(Get get)
     {
-        final var installOut =
-            Job.Install.install(new Job.Install(get.url, get.path), install);
+        final var installAction =
+            Job.Install.install(new Job.Install(get.url(), get.path()), install);
 
-        final var linkOut = Step.Linking.link(
-            new Step.Linking(Homes.java(), installJdkHome(get.path, install))
+        final var linkAction = Step.Linking.link(
+            new Step.Linking(Homes.java(), installJdkHome(get.path(), install))
             , linking
         );
 
-        return new Action(Lists.append(linkOut, installOut));
+        return Action.of(installAction, linkAction);
     }
 
     Action getBoot(Build build)
@@ -95,14 +98,14 @@ public final class Jdk
                 ? new Boot(Jdk.JDK_14, Path.of("boot-jdk-14"))
                 : new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
 
-        final var installOut = installBoot(boot);
+        final var installAction = installBoot(boot);
 
-        final var linkOut = Step.Linking.link(
+        final var linkAction = Step.Linking.link(
             new Step.Linking(Homes.bootJdk(), installJdkHome(boot.path, install))
             , linking
         );
 
-        return new Action(Lists.append(linkOut, installOut.items()));
+        return Action.of(installAction, linkAction);
     }
 
     private Action installBoot(Boot boot)
@@ -128,7 +131,7 @@ public final class Jdk
             , boot.version().build()
         );
 
-        return new Action(Job.Install.install(new Job.Install(url, boot.path), install));
+        return Job.Install.install(new Job.Install(url, boot.path), install);
     }
 
     private static Path installJdkHome(Path path, Effect.Install effects)
@@ -152,14 +155,6 @@ public final class Jdk
     }
 
     record Boot(Jdk.Version version, Path path) {}
-
-    record Get(URL url, Path path)
-    {
-        static Get of(String url, String path)
-        {
-            return new Get(URLs.of(url), Path.of(path));
-        }
-    }
 
     enum Type
     {

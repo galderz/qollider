@@ -69,7 +69,7 @@ public class JdkTest
         Asserts.plan(
             qollider().plan(
                 jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).get(
-                    Jdk.Get.of(url, "jdk")
+                    Jdk.get(url)
                 )
             )
             , Expect.download(url, "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz")

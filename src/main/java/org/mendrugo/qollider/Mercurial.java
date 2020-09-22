@@ -2,9 +2,6 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 
-import java.util.List;
-import java.util.function.Supplier;
-
 final class Mercurial
 {
     final Effect.Exec.Lazy lazy;
@@ -16,15 +13,13 @@ final class Mercurial
 
     Action clone(Repository repository)
     {
-        return new Action(List.of(
-            Step.Exec.Lazy.action(
-                Step.Exec.of(
-                    "hg"
-                    , "clone"
-                    , repository.cloneUri().toString()
-                )
-                , lazy
+        return Step.Exec.Lazy.action(
+            Step.Exec.of(
+                "hg"
+                , "clone"
+                , repository.cloneUri().toString()
             )
-        ));
+            , lazy
+        );
     }
 }
