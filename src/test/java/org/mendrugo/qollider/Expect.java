@@ -73,6 +73,25 @@ record Expect(Step step, boolean touched)
         ));
     }
 
+    static Expect graalBuild()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("graal", "substratevm")
+            , "/today/mx/mx"
+            , "--java-home"
+            , "/today/java_home"
+            , "build"
+        ));
+    }
+
+    static Expect graalLink()
+    {
+        return Expect.of(new Step.Linking(
+            Path.of("graalvm_home")
+            , Path.of("graal", "sdk", "latest_graalvm_home")
+        ));
+    }
+
     static Expect guNativeImage()
     {
         return Expect.of(Step.Exec.of(

@@ -8,6 +8,22 @@ import static org.mendrugo.qollider.Sandbox.qollider;
 public class GraalTest
 {
     @Test
+    void build()
+    {
+        Asserts.plan(
+            qollider().plan(
+                graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                    Graal.build()
+                )
+            )
+            , Expect.gitClone("graalvm/mx", "master", 1)
+            , Expect.gitClone("oracle/graal", "master", 1)
+            , Expect.graalBuild()
+            , Expect.graalLink()
+        );
+    }
+
+    @Test
     void get()
     {
         final var url = "https://doestnotexist.com/archive.tar.gz";

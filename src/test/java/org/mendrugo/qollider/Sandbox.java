@@ -63,6 +63,7 @@ final class Sandbox
             sandbox.lazy()
             , sandbox.install(osType, arch)
             , sandbox.linking()
+            , roots()
         );
     }
 
