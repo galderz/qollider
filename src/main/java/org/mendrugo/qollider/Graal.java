@@ -52,7 +52,7 @@ public class Graal
                 , lazy
             );
 
-            return Action.of(guNativeImageOut, installAction);
+            return Action.of(installAction, guNativeImageOut);
         }
 
         return installAction;

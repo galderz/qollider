@@ -73,6 +73,16 @@ record Expect(Step step, boolean touched)
         ));
     }
 
+    static Expect guNativeImage()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("graalvm/bin")
+            , "./gu"
+            , "install"
+            , "native-image"
+        ));
+    }
+
     static Expect javaLabsJdkBuild()
     {
         return Expect.of(Step.Exec.of(
