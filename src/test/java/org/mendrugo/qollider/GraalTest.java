@@ -2,6 +2,9 @@ package org.mendrugo.qollider;
 
 import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mendrugo.qollider.Sandbox.graal;
 import static org.mendrugo.qollider.Sandbox.qollider;
 
@@ -21,6 +24,22 @@ public class GraalTest
             , Expect.graalBuild()
             , Expect.graalLink()
         );
+    }
+
+    @Test
+    void buildFailIfMandrel()
+    {
+        final var exception = assertThrows(
+            IllegalArgumentException.class
+            , () ->
+                qollider().plan(
+                    graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                        Graal.build("https://github.com/graalvm/mandrel/tree/mandrel/20.2")
+                    )
+                ).run()
+        );
+
+        assertThat(exception.getMessage(), is("Mandrel repos should be built with mandrel-build"));
     }
 
     @Test

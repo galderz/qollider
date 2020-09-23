@@ -20,8 +20,16 @@ public class Graal
         this.roots = roots;
     }
 
-    record Build(Repository tree, Repository mx)
+    public record Build(Repository tree, Repository mx)
     {
+        public Build
+        {
+            if ("mandrel".equals(tree.name()))
+            {
+                throw new IllegalArgumentException("Mandrel repos should be built with mandrel-build");
+            }
+        }
+
         static Build of(String treeUrl, String mxUrl)
         {
             return new Build(Repository.of(treeUrl), Repository.of(mxUrl));
