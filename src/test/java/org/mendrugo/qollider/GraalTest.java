@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mendrugo.qollider.Sandbox.graal;
 import static org.mendrugo.qollider.Sandbox.qollider;
 
 public class GraalTest
@@ -13,9 +12,10 @@ public class GraalTest
     @Test
     void build()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+            qollider.plan(
+                qollider.graal().build(
                     Graal.build()
                 )
             )
@@ -29,11 +29,12 @@ public class GraalTest
     @Test
     void buildFailIfMandrel()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         final var exception = assertThrows(
             IllegalArgumentException.class
             , () ->
-                qollider().plan(
-                    graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+                qollider.plan(
+                    qollider.graal().build(
                         Graal.build("https://github.com/graalvm/mandrel/tree/mandrel/20.2")
                     )
                 ).run()
@@ -46,9 +47,10 @@ public class GraalTest
     void get()
     {
         final var url = "https://doestnotexist.com/archive.tar.gz";
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).get(
+            qollider.plan(
+                qollider.graal().get(
                     Graal.get(url)
                 )
             )
@@ -62,9 +64,10 @@ public class GraalTest
     void getAndDownloadNativeImage()
     {
         final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                graal(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).get(
+            qollider.plan(
+                qollider.graal().get(
                     Graal.get(url)
                 )
             )
