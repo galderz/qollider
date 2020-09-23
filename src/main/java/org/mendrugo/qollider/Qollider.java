@@ -10,6 +10,13 @@ import java.util.stream.Collectors;
 
 public final class Qollider
 {
+    private final Effects effects;
+
+    Qollider(Effects effects)
+    {
+        this.effects = effects;
+    }
+
     Plan plan(Action... actions)
     {
         return () ->
@@ -20,6 +27,16 @@ public final class Qollider
                 .collect(Collectors.toList());
             return new Result(result);
         };
+    }
+
+    Jdk jdk()
+    {
+        return new Jdk(effects.lazy(), effects.install(), effects.linking(), effects.roots());
+    }
+
+    Graal graal()
+    {
+        return new Graal(effects.lazy(), effects.install(), effects.linking(), effects.roots());
     }
 
     record Action(List<Supplier<Output>> items)
@@ -60,6 +77,7 @@ public final class Qollider
 
     record Link(Path link, Path target) implements Output {}
 
+    // TODO refactor and move to Effect
     record Roots(Function<Path, Path> home, Function<Path, Path> today) {}
 
     record Get(URL url, Path path)

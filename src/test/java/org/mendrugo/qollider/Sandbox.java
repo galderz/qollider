@@ -45,31 +45,14 @@ final class Sandbox
         return new Git(Sandbox.empty().lazy());
     }
 
-    static Jdk jdk(OperatingSystem.Type osType, Hardware.Arch arch)
+    static Qollider qollider(OperatingSystem.Type osType, Hardware.Arch arch)
     {
-        final var sandbox = Sandbox.empty();
-        return new Jdk(
-            sandbox.lazy()
-            , sandbox.install(osType, arch)
-            , sandbox.linking()
-            , roots()
-        );
-    }
-
-    static Graal graal(OperatingSystem.Type osType, Hardware.Arch arch)
-    {
-        final var sandbox = Sandbox.empty();
-        return new Graal(
-            sandbox.lazy()
-            , sandbox.install(osType, arch)
-            , sandbox.linking()
-            , roots()
-        );
+        return new Qollider(effects(osType, arch));
     }
 
     static Qollider qollider()
     {
-        return new Qollider();
+        return new Qollider(effects(OperatingSystem.Type.UNKNOWN, Hardware.Arch.UNKNOWN));
     }
 
     private static Roots roots()
@@ -77,6 +60,17 @@ final class Sandbox
         return new Roots(
             p -> Path.of("/", "home").resolve(p)
             , p -> Path.of("/", "today").resolve(p)
+        );
+    }
+
+    private static Effects effects(OperatingSystem.Type osType, Hardware.Arch arch)
+    {
+        final var sandbox = new Sandbox();
+        return new Effects(
+            sandbox.lazy()
+            , sandbox.install(osType, arch)
+            , sandbox.linking()
+            , roots()
         );
     }
 }

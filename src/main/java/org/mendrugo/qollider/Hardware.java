@@ -11,7 +11,9 @@ final class Hardware
     enum Arch
     {
         X64
-        , AARCH64;
+        , AARCH64
+        , UNKNOWN
+        ;
 
         @Override
         public String toString()

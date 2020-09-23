@@ -55,6 +55,8 @@ public interface Effect
 
     record Install(Effect.Download download, Effect.Extract extract)
     {
+        // TODO avoid the need to keep you installs (today and home)
+        // Instead pass in the path (today or home) and build Web and OS based on that
         static Effect.Install of(Web web, OperatingSystem os)
         {
             final var hw = new Hardware();

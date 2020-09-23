@@ -2,17 +2,18 @@ package org.mendrugo.qollider;
 
 import org.junit.jupiter.api.Test;
 
-import static org.mendrugo.qollider.Sandbox.jdk;
 import static org.mendrugo.qollider.Sandbox.qollider;
 
+// TODO add test that does get + get boot (they should have different roots)
 public class JdkTest
 {
     @Test
     void buildLabsJdk()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+            qollider.plan(
+                qollider.jdk().build(
                     new Jdk.Build(
                         Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
                     )
@@ -27,9 +28,10 @@ public class JdkTest
     @Test
     void buildOpenJdk()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+            qollider.plan(
+                qollider.jdk().build(
                     new Jdk.Build(
                         Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
                     )
@@ -45,9 +47,10 @@ public class JdkTest
     @Test
     void buildOpenJdkMercurial()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).build(
+            qollider.plan(
+                qollider.jdk().build(
                     new Jdk.Build(
                         Repository.of("http://hg.openjdk.java.net/jdk-updates/jdk11u-dev")
                     )
@@ -66,9 +69,10 @@ public class JdkTest
         final var url =
             "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz";
 
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).get(
+            qollider.plan(
+                qollider.jdk().get(
                     Jdk.get(url)
                 )
             )
@@ -81,9 +85,10 @@ public class JdkTest
     @Test
     void getBootJdkJdk()
     {
+        final var qollider = qollider(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64).getBoot(
+            qollider.plan(
+                qollider.jdk().getBoot(
                     new Jdk.Build(Repository.of(
                         "https://github.com/openjdk/jdk/tree/master"
                     ))
@@ -98,9 +103,10 @@ public class JdkTest
     @Test
     void getBootJdk11Linux()
     {
+        final var qollider = qollider(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64).getBoot(
+            qollider.plan(
+                qollider.jdk().getBoot(
                     new Jdk.Build(Repository.of(
                         "https://github.com/openjdk/jdk11u-dev/tree/master"
                     ))
@@ -115,9 +121,10 @@ public class JdkTest
     @Test
     void getBootJdk11MacOs()
     {
+        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
         Asserts.plan(
-            qollider().plan(
-                jdk(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64).getBoot(
+            qollider.plan(
+                qollider.jdk().getBoot(
                     new Jdk.Build(Repository.of(
                         "https://github.com/openjdk/jdk11u-dev/tree/master"
                     ))

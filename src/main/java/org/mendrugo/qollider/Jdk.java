@@ -24,14 +24,14 @@ public final class Jdk
     final Effect.Linking linking;
     final Roots roots;
 
-    public Jdk(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
+    Jdk(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
         this.lazy = lazy;
         this.install = install;
         this.linking = linking;
         this.roots = roots;
     }
 
-    Action build(Build build)
+    public Action build(Build build)
     {
         final var cloneAction = clone(build.tree());
 
