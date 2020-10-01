@@ -1365,11 +1365,11 @@ class FileSystem
         var baseDir = home.root.resolve("cache");
         final var baseToday = baseDir.resolve(today);
         final var isNewDay = !baseToday.toFile().exists();
+        idempotentMkDirs(baseToday);
         if (isNewDay)
         {
             home.symlink(Path.of("cache", "latest"), Path.of(today));
         }
-        idempotentMkDirs(baseToday);
         return new FileSystem(baseDir.resolve("latest"));
     }
 
