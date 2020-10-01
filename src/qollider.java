@@ -695,12 +695,15 @@ final class Mandrel
                 Path.of("mandrel-packaging")
                 , List.of(
                     EnvVar.javaHome(today.apply(Homes.java()))
-                    , EnvVar.of("MX_HOME", today.apply(Path.of(build.mx.name())))
-                    , EnvVar.of("MANDREL_REPO", today.apply(Path.of(build.tree.name())))
-                    , EnvVar.of("MANDREL_HOME", today.apply(Homes.graal()))
-                    , EnvVar.of("MAVEN_HOME", Maven.home(roots.home()))
                 )
-                , "./buildJDK.sh"
+                , Homes.java().resolve(Path.of("bin", "java")).toString()
+                , "-ea"
+                , "--mx-home"
+                , today.apply(Path.of(build.mx.name())).toString()
+                , "--mandrel-repo"
+                , today.apply(Path.of(build.tree.name())).toString()
+                , "--maven-home"
+                , Maven.home(roots.home()).toString()
             )
             , exec
         );
@@ -2654,12 +2657,15 @@ final class Check
                 Path.of("mandrel-packaging")
                 , List.of(
                     EnvVar.of("JAVA_HOME", "/today/java_home")
-                    , EnvVar.of("MX_HOME", "/today/mx")
-                    , EnvVar.of("MANDREL_REPO", "/today/mandrel")
-                    , EnvVar.of("MANDREL_HOME", "/today/graalvm_home")
-                    , EnvVar.of("MAVEN_HOME", "/home/maven")
                 )
-                , "./buildJDK.sh"
+                , "java_home/bin/java"
+                , "-ea"
+                , "--mx-home"
+                , "/today/mx"
+                , "--mandrel-repo"
+                , "/today/mandrel"
+                , "--maven-home"
+                , "/home/maven"
             ));
         }
 
