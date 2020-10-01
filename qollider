@@ -6,7 +6,7 @@ Q_HOME="${HOME}/.qollider"
 
 JBANG_HOME="${Q_HOME}/jbang"
 JBANG_EXEC="${JBANG_HOME}/bin/jbang"
-JBANG_VERSION="0.47.1"
+JBANG_VERSION="0.48.0"
 
 installJBang() {
     local file="${JBANG_EXEC}"
