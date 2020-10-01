@@ -696,7 +696,7 @@ final class Mandrel
                 , List.of(
                     EnvVar.javaHome(today.apply(Homes.java()))
                 )
-                , Homes.java().resolve(Path.of("bin", "java")).toString()
+                , today.apply(Homes.java()).resolve(Path.of("bin", "java")).toString()
                 , "-ea"
                 , "--mx-home"
                 , today.apply(Path.of(build.mx.name())).toString()
@@ -2658,7 +2658,7 @@ final class Check
                 , List.of(
                     EnvVar.of("JAVA_HOME", "/today/java_home")
                 )
-                , "java_home/bin/java"
+                , "/today/java_home/bin/java"
                 , "-ea"
                 , "--mx-home"
                 , "/today/mx"
