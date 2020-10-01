@@ -698,6 +698,7 @@ final class Mandrel
                 )
                 , today.apply(Homes.java()).resolve(Path.of("bin", "java")).toString()
                 , "-ea"
+                , "build.java"
                 , "--mx-home"
                 , today.apply(Path.of(build.mx.name())).toString()
                 , "--mandrel-repo"
@@ -2660,6 +2661,7 @@ final class Check
                 )
                 , "/today/java_home/bin/java"
                 , "-ea"
+                , "build.java"
                 , "--mx-home"
                 , "/today/mx"
                 , "--mandrel-repo"
