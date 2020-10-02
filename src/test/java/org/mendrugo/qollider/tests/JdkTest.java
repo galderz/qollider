@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.mendrugo.qollider.Asserts;
 import org.mendrugo.qollider.Expect;
 import org.mendrugo.qollider.Jdk;
+import org.mendrugo.qollider.Repositories;
 import org.mendrugo.qollider.Repository;
 import org.mendrugo.qollider.Sandbox;
 
@@ -35,9 +36,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().build(
-                    new Jdk.Build(
-                        Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
-                    )
+                    new Jdk.Build(Repositories.JDK_11_DEV)
                 )
             )
             , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
@@ -92,9 +91,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repository.of(
-                        "https://github.com/openjdk/jdk/tree/master"
-                    ))
+                    new Jdk.Build(Repositories.JDK_JDK)
                 )
             )
             , Expect.jdk14DownloadLinux()
@@ -110,9 +107,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repository.of(
-                        "https://github.com/openjdk/jdk11u-dev/tree/master"
-                    ))
+                    new Jdk.Build(Repositories.JDK_11_DEV)
                 )
             )
             , Expect.jdk11DownloadLinux()
@@ -128,9 +123,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repository.of(
-                        "https://github.com/openjdk/jdk11u-dev/tree/master"
-                    ))
+                    new Jdk.Build(Repositories.JDK_11_DEV)
                 )
             )
             , Expect.jdk11DownloadMacOs()

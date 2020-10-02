@@ -6,7 +6,7 @@ import org.mendrugo.qollider.Qollider.Roots;
 
 import java.nio.file.Path;
 
-public class Graal
+public final class Graal
 {
     final Effect.Exec.Lazy lazy;
     final Effect.Install install;
@@ -29,26 +29,6 @@ public class Graal
                 throw new IllegalArgumentException("Mandrel repos should be built with mandrel-build");
             }
         }
-
-        static Build of(String treeUrl, String mxUrl)
-        {
-            return new Build(Repository.of(treeUrl), Repository.of(mxUrl));
-        }
-    }
-
-    public static Build build()
-    {
-        return build("https://github.com/oracle/graal/tree/master");
-    }
-
-    public static Build build(String treeUrl)
-    {
-        return build(treeUrl, "https://github.com/graalvm/mx/tree/master");
-    }
-
-    static Build build(String treeUrl, String mxUrl)
-    {
-        return Build.of(treeUrl, mxUrl);
     }
 
     public Action build(Build build)

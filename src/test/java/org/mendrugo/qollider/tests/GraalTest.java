@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.mendrugo.qollider.Asserts;
 import org.mendrugo.qollider.Expect;
 import org.mendrugo.qollider.Graal;
+import org.mendrugo.qollider.Repositories;
 import org.mendrugo.qollider.Sandbox;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -19,7 +20,7 @@ public class GraalTest
         Asserts.plan(
             qollider.plan(
                 qollider.graal().build(
-                    Graal.build()
+                    new Graal.Build(Repositories.GRAAL, Repositories.MX)
                 )
             )
             , Expect.gitClone("graalvm/mx", "master", 1)
@@ -38,7 +39,7 @@ public class GraalTest
             , () ->
                 qollider.plan(
                     qollider.graal().build(
-                        Graal.build("https://github.com/graalvm/mandrel/tree/mandrel/20.2")
+                        new Graal.Build(Repositories.MANDREL, Repositories.MX)
                     )
                 ).run()
         );
