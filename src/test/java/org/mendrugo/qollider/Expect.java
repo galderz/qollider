@@ -2,24 +2,24 @@ package org.mendrugo.qollider;
 
 import java.nio.file.Path;
 
-record Expect(Step step, boolean touched)
+public record Expect(Step step, boolean touched)
 {
-    static Expect bootJdk11ExtractLinux()
+    public static Expect bootJdk11ExtractLinux()
     {
         return extract("downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
     }
 
-    static Expect bootJdk11ExtractMacOs()
+    public static Expect bootJdk11ExtractMacOs()
     {
         return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11");
     }
 
-    static Expect bootJdk14Extract()
+    public static Expect bootJdk14Extract()
     {
         return extract("downloads/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz", "boot-jdk-14");
     }
 
-    static Expect bootJdk11LinkLinux()
+    public static Expect bootJdk11LinkLinux()
     {
         return Expect.of(new Step.Linking(
             Path.of("bootjdk_home")
@@ -27,7 +27,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect extract(String tar, String path)
+    public static Expect extract(String tar, String path)
     {
         return Expect.of(Step.Exec.of(
             Path.of("")
@@ -41,7 +41,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect download(String url, String path)
+    public static Expect download(String url, String path)
     {
         return Expect.of(new Step.Download(
             URLs.of(url)
@@ -49,7 +49,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect gitClone(String repo, String branch, int depth)
+    public static Expect gitClone(String repo, String branch, int depth)
     {
         return Expect.of(Step.Exec.of(
             "git"
@@ -62,7 +62,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect gitCloneFull(String repo, String branch)
+    public static Expect gitCloneFull(String repo, String branch)
     {
         return Expect.of(Step.Exec.of(
             "git"
@@ -73,7 +73,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect graalBuild()
+    public static Expect graalBuild()
     {
         return Expect.of(Step.Exec.of(
             Path.of("graal", "substratevm")
@@ -84,7 +84,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect graalLink()
+    public static Expect graalLink()
     {
         return Expect.of(new Step.Linking(
             Path.of("graalvm_home")
@@ -92,7 +92,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect guNativeImage()
+    public static Expect guNativeImage()
     {
         return Expect.of(Step.Exec.of(
             Path.of("graalvm/bin")
@@ -102,7 +102,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect javaLabsJdkBuild()
+    public static Expect javaLabsJdkBuild()
     {
         return Expect.of(Step.Exec.of(
             Path.of("labs-openjdk-11")
@@ -113,7 +113,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect javaOpenJdkConfigure()
+    public static Expect javaOpenJdkConfigure()
     {
         return Expect.of(Step.Exec.of(
             Path.of("jdk11u-dev")
@@ -129,7 +129,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect javaOpenJdkMake()
+    public static Expect javaOpenJdkMake()
     {
         return Expect.of(Step.Exec.of(
             Path.of("jdk11u-dev")
@@ -138,7 +138,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect javaOpenJdkLink()
+    public static Expect javaOpenJdkLink()
     {
         return Expect.of(new Step.Linking(
             Path.of("java_home")
@@ -146,7 +146,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect jdk11DownloadLinux()
+    public static Expect jdk11DownloadLinux()
     {
         return download(
             "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
@@ -154,7 +154,7 @@ record Expect(Step step, boolean touched)
         );
     }
 
-    static Expect jdk11DownloadMacOs()
+    public static Expect jdk11DownloadMacOs()
     {
         return download(
             "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
@@ -162,7 +162,7 @@ record Expect(Step step, boolean touched)
         );
     }
 
-    static Expect jdk14DownloadLinux()
+    public static Expect jdk14DownloadLinux()
     {
         return download(
             "https://github.com/AdoptOpenJDK/openjdk14-binaries/releases/download/jdk-14.0.2%2B12/OpenJDK14U-jdk_aarch64_linux_hotspot_14.0.2_12.tar.gz"
@@ -170,7 +170,7 @@ record Expect(Step step, boolean touched)
         );
     }
 
-    static Expect link(String link, String target)
+    public static Expect link(String link, String target)
     {
         return Expect.of(new Step.Linking(
             Path.of(link)
@@ -178,7 +178,7 @@ record Expect(Step step, boolean touched)
         ));
     }
 
-    static Expect mercurialOpenJdkClone()
+    public static Expect mercurialOpenJdkClone()
     {
         return Expect.of(Step.Exec.of(
             "hg"

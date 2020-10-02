@@ -17,7 +17,7 @@ public final class Qollider
         this.effects = effects;
     }
 
-    Plan plan(Action... actions)
+    public Plan plan(Action... actions)
     {
         return () ->
         {
@@ -29,17 +29,17 @@ public final class Qollider
         };
     }
 
-    Jdk jdk()
+    public Jdk jdk()
     {
         return new Jdk(effects.lazy(), effects.install(), effects.linking(), effects.roots());
     }
 
-    Graal graal()
+    public Graal graal()
     {
         return new Graal(effects.lazy(), effects.install(), effects.linking(), effects.roots());
     }
 
-    record Action(List<Supplier<Output>> items)
+    public record Action(List<Supplier<Output>> items)
     {
         static Action of(Action... actions)
         {
@@ -70,7 +70,7 @@ public final class Qollider
 
     record Result(List<Output> items) {}
 
-    interface Plan
+    public interface Plan
     {
         Result run();
     }

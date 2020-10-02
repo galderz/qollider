@@ -8,9 +8,9 @@ import static java.lang.String.format;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-final class Asserts
+public final class Asserts
 {
-    static void plan(Plan plan, Expect... expects)
+    public static void plan(Plan plan, Expect... expects)
     {
         final var result = plan.run();
         assertThat(result.items().toString(), result.items().size(), is(expects.length));

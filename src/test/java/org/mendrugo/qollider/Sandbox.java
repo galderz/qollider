@@ -4,7 +4,7 @@ import org.mendrugo.qollider.Qollider.Roots;
 
 import java.nio.file.Path;
 
-final class Sandbox
+public final class Sandbox
 {
     Effect.Exec.Lazy lazy()
     {
@@ -40,17 +40,22 @@ final class Sandbox
         return new Sandbox();
     }
 
-    static Git git()
+    public static Git git()
     {
         return new Git(Sandbox.empty().lazy());
     }
 
-    static Qollider qollider(OperatingSystem.Type osType, Hardware.Arch arch)
+    public static Qollider qolliderMacOs()
     {
-        return new Qollider(effects(osType, arch));
+        return new Qollider(effects(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64));
     }
 
-    static Qollider qollider()
+    public static Qollider qolliderLinux()
+    {
+        return new Qollider(effects(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64));
+    }
+
+    public static Qollider qolliderUnknown()
     {
         return new Qollider(effects(OperatingSystem.Type.UNKNOWN, Hardware.Arch.UNKNOWN));
     }

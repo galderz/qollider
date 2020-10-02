@@ -36,12 +36,12 @@ public class Graal
         }
     }
 
-    static Build build()
+    public static Build build()
     {
         return build("https://github.com/oracle/graal/tree/master");
     }
 
-    static Build build(String treeUrl)
+    public static Build build(String treeUrl)
     {
         return build(treeUrl, "https://github.com/graalvm/mx/tree/master");
     }
@@ -51,7 +51,7 @@ public class Graal
         return Build.of(treeUrl, mxUrl);
     }
 
-    Action build(Build build)
+    public Action build(Build build)
     {
         final var git = new Git(lazy);
         final var mxAction = git.clone(build.mx);
@@ -83,12 +83,12 @@ public class Graal
         return Action.of(mxAction, treeAction, buildAction, linkAction);
     }
 
-    static Get get(String url)
+    public static Get get(String url)
     {
         return Get.of(url, "graalvm");
     }
 
-    Action get(Get get)
+    public Action get(Get get)
     {
         final var installAction = install(get);
         final var linkAction = Step.Linking.link(

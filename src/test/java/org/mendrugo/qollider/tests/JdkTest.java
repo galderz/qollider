@@ -1,8 +1,11 @@
-package org.mendrugo.qollider;
+package org.mendrugo.qollider.tests;
 
 import org.junit.jupiter.api.Test;
-
-import static org.mendrugo.qollider.Sandbox.qollider;
+import org.mendrugo.qollider.Asserts;
+import org.mendrugo.qollider.Expect;
+import org.mendrugo.qollider.Jdk;
+import org.mendrugo.qollider.Repository;
+import org.mendrugo.qollider.Sandbox;
 
 // TODO add test that does get + get boot (they should have different roots)
 public class JdkTest
@@ -10,7 +13,7 @@ public class JdkTest
     @Test
     void buildLabsJdk()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().build(
@@ -28,7 +31,7 @@ public class JdkTest
     @Test
     void buildOpenJdk()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().build(
@@ -47,7 +50,7 @@ public class JdkTest
     @Test
     void buildOpenJdkMercurial()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().build(
@@ -69,7 +72,7 @@ public class JdkTest
         final var url =
             "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz";
 
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().get(
@@ -85,7 +88,7 @@ public class JdkTest
     @Test
     void getBootJdkJdk()
     {
-        final var qollider = qollider(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64);
+        final var qollider = Sandbox.qolliderLinux();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
@@ -103,7 +106,7 @@ public class JdkTest
     @Test
     void getBootJdk11Linux()
     {
-        final var qollider = qollider(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64);
+        final var qollider = Sandbox.qolliderLinux();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
@@ -121,7 +124,7 @@ public class JdkTest
     @Test
     void getBootJdk11MacOs()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
