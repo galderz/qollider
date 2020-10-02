@@ -6,7 +6,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 // TODO implement --force
-record Repository(
+public record Repository(
     String organization
     , String name
     , Repository.Type type
@@ -15,7 +15,7 @@ record Repository(
     , URI cloneUri
 )
 {
-    static Repository of(String uri)
+    public static Repository of(String uri)
     {
         return Repository.of(URI.create(uri));
     }

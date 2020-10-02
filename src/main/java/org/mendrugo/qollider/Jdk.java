@@ -73,12 +73,12 @@ public final class Jdk
         };
     }
 
-    static Get get(String url)
+    public static Get get(String url)
     {
         return Get.of(url, "jdk");
     }
 
-    Action get(Get get)
+    public Action get(Get get)
     {
         final var installAction =
             Job.Install.install(new Job.Install(get.url(), get.path()), install);
@@ -91,7 +91,7 @@ public final class Jdk
         return Action.of(installAction, linkAction);
     }
 
-    Action getBoot(Build build)
+    public Action getBoot(Build build)
     {
         final var boot =
             "jdk".equals(build.tree.name())
@@ -141,7 +141,7 @@ public final class Jdk
             : path;
     }
 
-    record Build(Repository tree)
+    public record Build(Repository tree)
     {
         Type javaType()
         {

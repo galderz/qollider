@@ -2,7 +2,7 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 
-final class Git
+public final class Git
 {
     final Effect.Exec.Lazy lazy;
 
@@ -11,7 +11,7 @@ final class Git
         this.lazy = lazy;
     }
 
-    Action clone(Repository repo)
+    public Action clone(Repository repo)
     {
         return Step.Exec.Lazy.action(Step.Exec.of(toClone(repo)), lazy);
     }

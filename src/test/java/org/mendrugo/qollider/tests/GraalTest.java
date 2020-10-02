@@ -1,18 +1,21 @@
-package org.mendrugo.qollider;
+package org.mendrugo.qollider.tests;
 
 import org.junit.jupiter.api.Test;
+import org.mendrugo.qollider.Asserts;
+import org.mendrugo.qollider.Expect;
+import org.mendrugo.qollider.Graal;
+import org.mendrugo.qollider.Sandbox;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mendrugo.qollider.Sandbox.qollider;
 
 public class GraalTest
 {
     @Test
     void build()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.graal().build(
@@ -29,7 +32,7 @@ public class GraalTest
     @Test
     void buildFailIfMandrel()
     {
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         final var exception = assertThrows(
             IllegalArgumentException.class
             , () ->
@@ -47,7 +50,7 @@ public class GraalTest
     void get()
     {
         final var url = "https://doestnotexist.com/archive.tar.gz";
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.graal().get(
@@ -64,7 +67,7 @@ public class GraalTest
     void getAndDownloadNativeImage()
     {
         final var url = "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-19.3.0/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz";
-        final var qollider = qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
+        final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.graal().get(
