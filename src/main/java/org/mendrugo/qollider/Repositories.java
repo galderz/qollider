@@ -8,6 +8,9 @@ public final class Repositories
     public static final Repository GRAAL = Repository.of("https://github.com/oracle/graal/tree/master");
     public static final Repository MX = Repository.of("https://github.com/graalvm/mx/tree/master");
 
+    public static final Repository MANDREL_20_1 = Repository.of("https://github.com/graalvm/mandrel/tree/mandrel/20.1");
     public static final Repository MANDREL_20_2 = Repository.of("https://github.com/graalvm/mandrel/tree/mandrel/20.2");
     public static final Repository MANDREL = MANDREL_20_2;
+
+    public static final Repository MANDREL_PACKAGING = Repository.of("https://github.com/graalvm/mandrel-packaging/tree/master");
 }

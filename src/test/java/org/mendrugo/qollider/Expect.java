@@ -1,6 +1,9 @@
 package org.mendrugo.qollider;
 
+import org.mendrugo.qollider.OperatingSystem.EnvVar;
+
 import java.nio.file.Path;
+import java.util.List;
 
 public record Expect(Step step, boolean touched)
 {
@@ -175,6 +178,31 @@ public record Expect(Step step, boolean touched)
         return Expect.of(new Step.Linking(
             Path.of(link)
             , Path.of(target)
+        ));
+    }
+
+    public static Expect mandrelBuild()
+    {
+        return Expect.of(Step.Exec.of(
+            Path.of("mandrel-packaging")
+            , List.of(
+                EnvVar.of("JAVA_HOME", "/today/java_home")
+            )
+            , "/today/java_home/bin/java"
+            , "-ea"
+            , "build.java"
+            , "--mx-home"
+            , "/today/mx"
+            , "--mandrel-repo"
+            , "/today/mandrel"
+        ));
+    }
+
+    public static Expect mandrelLink()
+    {
+        return Expect.of(new Step.Linking(
+            Path.of("graalvm_home")
+            , Path.of("mandrel-packaging", "mandrel-11-dev")
         ));
     }
 

@@ -39,6 +39,11 @@ public final class Qollider
         return new Graal(effects.lazy(), effects.install(), effects.linking(), effects.roots());
     }
 
+    public Mandrel mandrel()
+    {
+        return new Mandrel(effects.lazy(), effects.linking(), effects.roots());
+    }
+
     public record Action(List<Supplier<Output>> items)
     {
         static Action of(Action... actions)
