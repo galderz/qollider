@@ -80,6 +80,7 @@ public final class Qollider
         Result run();
     }
 
+    // TODO make private
     record Link(Path link, Path target) implements Output {}
 
     // TODO refactor and move to Effect

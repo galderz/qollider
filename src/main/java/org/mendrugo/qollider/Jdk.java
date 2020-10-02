@@ -2,15 +2,11 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Get;
-import org.mendrugo.qollider.Qollider.Output;
 import org.mendrugo.qollider.Qollider.Roots;
 
-import java.net.URL;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.lang.String.format;
 

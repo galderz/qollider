@@ -2,7 +2,7 @@ package org.mendrugo.qollider;
 
 import java.nio.file.Path;
 
-public class Homes
+final class Homes
 {
     static Path java()
     {
@@ -18,4 +18,6 @@ public class Homes
     {
         return Path.of("graalvm_home");
     }
+
+    private Homes() {}
 }

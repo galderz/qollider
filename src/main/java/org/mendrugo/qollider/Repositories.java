@@ -13,4 +13,6 @@ public final class Repositories
     public static final Repository MANDREL = MANDREL_20_2;
 
     public static final Repository MANDREL_PACKAGING = Repository.of("https://github.com/graalvm/mandrel-packaging/tree/master");
+
+    private Repositories() {}
 }

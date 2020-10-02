@@ -10,7 +10,7 @@ import static java.lang.String.format;
 // TODO move to Marker (or Id when refactored?)
 final class Hashing
 {
-    public static final MessageDigest SHA1 = getSha1();
+    static final MessageDigest SHA1 = getSha1();
 
     static String sha1(String s)
     {

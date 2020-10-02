@@ -5,7 +5,7 @@ import org.mendrugo.qollider.Qollider.Action;
 import java.net.URL;
 import java.nio.file.Path;
 
-public interface Job
+interface Job
 {
     // Download + Extract
     record Install(URL url, Path path) implements Job

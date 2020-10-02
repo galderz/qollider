@@ -13,7 +13,7 @@ public final class Graal
     final Effect.Linking linking;
     final Roots roots;
 
-    public Graal(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
+    Graal(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
         this.lazy = lazy;
         this.install = install;
         this.linking = linking;

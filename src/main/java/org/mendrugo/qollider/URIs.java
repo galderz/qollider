@@ -8,9 +8,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class URIs
+final class URIs
 {
-    public static Map<String, String> splitQuery(URI uri)
+    static Map<String, String> splitQuery(URI uri)
     {
         if (uri.getRawQuery() == null || uri.getRawQuery().isEmpty())
         {
