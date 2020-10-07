@@ -2,7 +2,6 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Get;
-import org.mendrugo.qollider.Qollider.Roots;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -15,16 +14,12 @@ public final class Jdk
     static final Version JDK_11 = new Version(11, 0, 7, 10);
     static final Version JDK_14 = new Version(14, 0, 2, 12);
 
-    final Effect.Exec.Lazy lazy;
-    final Effect.Install install;
-    final Effect.Linking linking;
-    final Roots roots;
+    final Effects home;
+    final Effects today;
 
-    Jdk(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
-        this.lazy = lazy;
-        this.install = install;
-        this.linking = linking;
-        this.roots = roots;
+    public Jdk(Effects home, Effects today) {
+        this.home = home;
+        this.today = today;
     }
 
     public Action build(Build build)
@@ -33,13 +28,13 @@ public final class Jdk
 
         final var buildSteps = switch (build.javaType())
         {
-            case OPENJDK -> new OpenJDK(roots).buildSteps(build);
-            case LABSJDK -> new LabsJDK(roots).buildSteps(build);
+            case OPENJDK -> OpenJDK.buildSteps(build, home.root());
+            case LABSJDK -> LabsJDK.buildSteps(build, home.root());
         };
 
         final var buildAction =
             buildSteps.stream()
-                .map(t -> Step.Exec.Lazy.action(t, lazy))
+                .map(t -> Step.Exec.Lazy.action(t, today.lazy()))
                 .collect(Collectors.toList());
 
         final var linkAction = link(build);
@@ -57,15 +52,15 @@ public final class Jdk
             };
 
         final var link = Homes.java();
-        return Step.Linking.link(new Step.Linking(link, target), linking);
+        return Step.Linking.link(new Step.Linking(link, target), today.linking());
     }
 
     private Action clone(Repository tree)
     {
         return switch (tree.type())
         {
-            case GIT -> new Git(lazy).clone(tree);
-            case MERCURIAL -> new Mercurial(lazy).clone(tree);
+            case GIT -> new Git(today.lazy()).clone(tree);
+            case MERCURIAL -> new Mercurial(today.lazy()).clone(tree);
         };
     }
 
@@ -77,11 +72,11 @@ public final class Jdk
     public Action get(Get get)
     {
         final var installAction =
-            Job.Install.install(new Job.Install(get.url(), get.path()), install);
+            Job.Install.install(new Job.Install(get.url(), get.path()), today.install());
 
         final var linkAction = Step.Linking.link(
-            new Step.Linking(Homes.java(), installJdkHome(get.path(), install))
-            , linking
+            new Step.Linking(Homes.java(), installJdkHome(get.path(), today.install()))
+            , today.linking()
         );
 
         return Action.of(installAction, linkAction);
@@ -97,8 +92,8 @@ public final class Jdk
         final var installAction = installBoot(boot);
 
         final var linkAction = Step.Linking.link(
-            new Step.Linking(Homes.bootJdk(), installJdkHome(boot.path, install))
-            , linking
+            new Step.Linking(Homes.bootJdk(), installJdkHome(boot.path, home.install()))
+            , home.linking()
         );
 
         return Action.of(installAction, linkAction);
@@ -111,9 +106,9 @@ public final class Jdk
             , boot.version().major()
         );
 
-        final var osType = install.download().osType().get();
+        final var osType = home.install().download().osType().get();
         final var javaOsType = osType.isMac() ? "mac" : osType.toString();
-        final var arch = install.download().arch().get().toString();
+        final var arch = home.install().download().arch().get().toString();
 
         final var url = URLs.of(
             "%s/jdk-%s%%2B%d/OpenJDK%sU-jdk_%s_%s_hotspot_%s_%s.tar.gz"
@@ -127,7 +122,7 @@ public final class Jdk
             , boot.version().build()
         );
 
-        return Job.Install.install(new Job.Install(url, boot.path), install);
+        return Job.Install.install(new Job.Install(url, boot.path), home.install());
     }
 
     private static Path installJdkHome(Path path, Effect.Install effects)
@@ -168,16 +163,9 @@ public final class Jdk
 
     private static final class OpenJDK
     {
-        final Roots roots;
-
-        private OpenJDK(Roots roots)
+        static List<Step.Exec> buildSteps(Build build, Path homeRoot)
         {
-            this.roots = roots;
-        }
-
-        List<Step.Exec> buildSteps(Build build)
-        {
-            return List.of(configure(build, roots), make(build));
+            return List.of(configure(build, homeRoot), make(build));
         }
 
         static Path javaHome(Path jdk)
@@ -192,7 +180,7 @@ public final class Jdk
             );
         }
 
-        private static Step.Exec configure(Build build, Roots roots)
+        private static Step.Exec configure(Build build, Path home)
         {
             return Step.Exec.of(
                 Path.of(build.tree.name())
@@ -205,7 +193,7 @@ public final class Jdk
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
-                , format("--with-boot-jdk=%s", roots.home().apply(Homes.bootJdk()))
+                , format("--with-boot-jdk=%s", home.resolve(Homes.bootJdk()))
             );
         }
 
@@ -221,16 +209,9 @@ public final class Jdk
 
     private static final class LabsJDK
     {
-        final Roots roots;
-
-        private LabsJDK(Roots roots)
+        static List<Step.Exec> buildSteps(Build build, Path home)
         {
-            this.roots = roots;
-        }
-
-        List<Step.Exec> buildSteps(Build build)
-        {
-            return List.of(buildJDK(build, roots));
+            return List.of(buildJDK(build, home));
         }
 
         static Path javaHome(Path jdk)
@@ -238,14 +219,14 @@ public final class Jdk
             return jdk.resolve("java_home");
         }
 
-        private static Step.Exec buildJDK(Build build, Roots roots)
+        private static Step.Exec buildJDK(Build build, Path home)
         {
             return Step.Exec.of(
                 Path.of(build.tree.name())
                 , "python"
                 , "build_labsjdk.py"
                 , "--boot-jdk"
-                , roots.home().apply(Homes.bootJdk()).toString()
+                , home.resolve(Homes.bootJdk()).toString()
             );
         }
     }

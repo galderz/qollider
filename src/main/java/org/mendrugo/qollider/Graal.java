@@ -2,22 +2,16 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Get;
-import org.mendrugo.qollider.Qollider.Roots;
 
 import java.nio.file.Path;
 
 public final class Graal
 {
-    final Effect.Exec.Lazy lazy;
-    final Effect.Install install;
-    final Effect.Linking linking;
-    final Roots roots;
+    final Effects today;
 
-    Graal(Effect.Exec.Lazy lazy, Effect.Install install, Effect.Linking linking, Roots roots) {
-        this.lazy = lazy;
-        this.install = install;
-        this.linking = linking;
-        this.roots = roots;
+    public Graal(Effects today)
+    {
+        this.today = today;
     }
 
     public record Build(Repository tree, Repository mx)
@@ -33,7 +27,7 @@ public final class Graal
 
     public Action build(Build build)
     {
-        final var git = new Git(lazy);
+        final var git = new Git(today.lazy());
         final var mxAction = git.clone(build.mx);
         final var treeAction = git.clone(build.tree);
 
@@ -41,12 +35,12 @@ public final class Graal
         var buildAction = Step.Exec.Lazy.action(
             Step.Exec.of(
                 svm
-                , roots.today().apply(Path.of(build.mx.name(), "mx")).toString()
+                , today.root().resolve(Path.of(build.mx.name(), "mx")).toString()
                 , "--java-home"
-                , roots.today().apply(Homes.java()).toString()
+                , today.root().resolve(Homes.java()).toString()
                 , "build"
             )
-            , lazy
+            , today.lazy()
         );
 
         final var target = Path.of(
@@ -57,7 +51,7 @@ public final class Graal
 
         final var linkAction = Step.Linking.link(
             new Step.Linking(Homes.graal(), target)
-            , linking
+            , today.linking()
         );
 
         return Action.of(mxAction, treeAction, buildAction, linkAction);
@@ -73,7 +67,7 @@ public final class Graal
         final var installAction = install(get);
         final var linkAction = Step.Linking.link(
             new Step.Linking(Homes.graal(), get.path())
-            , linking
+            , today.linking()
         );
         return Action.of(installAction, linkAction);
     }
@@ -82,7 +76,7 @@ public final class Graal
     {
         final var installAction = Job.Install.install(
             new Job.Install(get.url(), get.path())
-            , install
+            , today.install()
         );
 
         final var orgName = Path.of(get.url().getPath()).getName(0);
@@ -95,7 +89,7 @@ public final class Graal
                     , "install"
                     , "native-image"
                 )
-                , lazy
+                , today.lazy()
             );
 
             return Action.of(installAction, guNativeImageOut);

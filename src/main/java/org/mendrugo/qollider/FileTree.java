@@ -21,27 +21,27 @@ final class FileTree
 
     final Path root;
 
-//    static FileTree ofToday(FileTree home)
-//    {
-//        var date = LocalDate.now();
-//        var formatter = DateTimeFormatter.ofPattern("ddMM");
-//        var today = date.format(formatter);
-//        var baseDir = home.root.resolve("cache");
-//        final var baseToday = baseDir.resolve(today);
-//        final var isNewDay = !baseToday.toFile().exists();
-//        if (isNewDay)
-//        {
-//            home.symlink(Path.of("cache", "latest"), Path.of(today));
-//        }
-//        idempotentMkDirs(baseToday);
-//        return new FileTree(baseDir.resolve("latest"));
-//    }
-//
-//    static FileTree ofHome()
-//    {
-//        var home = Path.of(System.getProperty("user.home"), ".qollider");
-//        return new FileTree(idempotentMkDirs(home));
-//    }
+    static FileTree ofToday(FileTree home)
+    {
+        var date = LocalDate.now();
+        var formatter = DateTimeFormatter.ofPattern("ddMM");
+        var today = date.format(formatter);
+        var baseDir = home.root.resolve("cache");
+        final var baseToday = baseDir.resolve(today);
+        final var isNewDay = !baseToday.toFile().exists();
+        idempotentMkDirs(baseToday);
+        if (isNewDay)
+        {
+            home.symlink(Path.of("cache", "latest"), Path.of(today));
+        }
+        return new FileTree(baseDir.resolve("latest"));
+    }
+
+    static FileTree ofHome()
+    {
+        var home = Path.of(System.getProperty("user.home"), ".qollider");
+        return new FileTree(idempotentMkDirs(home));
+    }
 
     private static Path idempotentMkDirs(Path directory)
     {
@@ -81,24 +81,24 @@ final class FileTree
         }
     }
 
-//    Link symlink(Path relativeLink, Path relativeTarget)
-//    {
-//        final var link = root.resolve(relativeLink);
-//        try
-//        {
-//            if (Files.exists(link, LinkOption.NOFOLLOW_LINKS))
-//            {
-//                Files.delete(link);
-//            }
-//
-//            final var symbolicLink = Files.createSymbolicLink(link, relativeTarget);
-//            return new Link(symbolicLink, relativeTarget);
-//        }
-//        catch (IOException e)
-//        {
-//            throw new RuntimeException(e);
-//        }
-//    }
+    Link symlink(Path relativeLink, Path relativeTarget)
+    {
+        final var link = root.resolve(relativeLink);
+        try
+        {
+            if (Files.exists(link, LinkOption.NOFOLLOW_LINKS))
+            {
+                Files.delete(link);
+            }
+
+            final var symbolicLink = Files.createSymbolicLink(link, relativeTarget);
+            return new Link(symbolicLink, relativeTarget);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
 
 //    Path resolve(Path other)
 //    {

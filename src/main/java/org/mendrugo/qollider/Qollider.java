@@ -4,17 +4,24 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public final class Qollider
 {
-    private final Effects effects;
+    private final Effects home;
+    private final Effects today;
 
-    Qollider(Effects effects)
+    public Qollider(Effects home, Effects today) {
+        this.home = home;
+        this.today = today;
+    }
+
+    public static Qollider of()
     {
-        this.effects = effects;
+        final var home = FileTree.ofHome();
+        final var today = FileTree.ofToday(home);
+        return new Qollider(Effects.of(home), Effects.of(today));
     }
 
     public Plan plan(Action... actions)
@@ -31,17 +38,17 @@ public final class Qollider
 
     public Jdk jdk()
     {
-        return new Jdk(effects.lazy(), effects.install(), effects.linking(), effects.roots());
+        return new Jdk(home, today);
     }
 
     public Graal graal()
     {
-        return new Graal(effects.lazy(), effects.install(), effects.linking(), effects.roots());
+        return new Graal(today);
     }
 
     public Mandrel mandrel()
     {
-        return new Mandrel(effects.lazy(), effects.linking(), effects.roots());
+        return new Mandrel(today);
     }
 
     public record Action(List<Supplier<Output>> items)
@@ -82,9 +89,6 @@ public final class Qollider
 
     // TODO make private
     record Link(Path link, Path target) implements Output {}
-
-    // TODO refactor and move to Effect
-    record Roots(Function<Path, Path> home, Function<Path, Path> today) {}
 
     record Get(URL url, Path path)
     {

@@ -2,48 +2,44 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.OperatingSystem.EnvVar;
 import org.mendrugo.qollider.Qollider.Action;
-import org.mendrugo.qollider.Qollider.Roots;
 
 import java.nio.file.Path;
 import java.util.List;
 
 public final class Mandrel
 {
-    final Effect.Exec.Lazy lazy;
-    final Effect.Linking linking;
-    final Roots roots;
+    final Effects today;
 
-    Mandrel(Effect.Exec.Lazy lazy, Effect.Linking linking, Roots roots) {
-        this.lazy = lazy;
-        this.linking = linking;
-        this.roots = roots;
+    public Mandrel(Effects today)
+    {
+        this.today = today;
     }
 
     public record Build(Repository tree, Repository mx, Repository packaging) {}
 
     public Action build(Build build)
     {
-        final var git = new Git(lazy);
+        final var git = new Git(today.lazy());
         final var mxAction = git.clone(build.mx);
         final var packagingAction = git.clone(build.packaging);
         final var treeAction = git.clone(build.tree);
 
-        final var today = roots.today();
+        final var todayRoot = today.root();
         final var buildAction = Step.Exec.Lazy.action(
             Step.Exec.of(
                 Path.of("mandrel-packaging")
                 , List.of(
-                    EnvVar.javaHome(today.apply(Homes.java()))
+                    EnvVar.javaHome(todayRoot.resolve(Homes.java()))
                 )
-                , today.apply(Homes.java()).resolve(Path.of("bin", "java")).toString()
+                , todayRoot.resolve(Homes.java()).resolve(Path.of("bin", "java")).toString()
                 , "-ea"
                 , "build.java"
                 , "--mx-home"
-                , today.apply(Path.of(build.mx.name())).toString()
+                , todayRoot.resolve(Path.of(build.mx.name())).toString()
                 , "--mandrel-repo"
-                , today.apply(Path.of(build.tree.name())).toString()
+                , todayRoot.resolve(Path.of(build.tree.name())).toString()
             )
-            , lazy
+            , today.lazy()
         );
 
         final var target = Path.of(
@@ -53,7 +49,7 @@ public final class Mandrel
 
         final var linkAction = Step.Linking.link(
             new Step.Linking(Homes.graal(), target)
-            , linking
+            , today.linking()
         );
 
         return Action.of(mxAction, packagingAction, treeAction, buildAction, linkAction);

@@ -1,7 +1,5 @@
 package org.mendrugo.qollider;
 
-import org.mendrugo.qollider.Qollider.Roots;
-
 import java.nio.file.Path;
 
 public final class Sandbox
@@ -47,35 +45,34 @@ public final class Sandbox
 
     public static Qollider qolliderMacOs()
     {
-        return new Qollider(effects(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64));
+        return qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);
     }
 
     public static Qollider qolliderLinux()
     {
-        return new Qollider(effects(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64));
+        return qollider(OperatingSystem.Type.LINUX, Hardware.Arch.AARCH64);
     }
 
     public static Qollider qolliderUnknown()
     {
-        return new Qollider(effects(OperatingSystem.Type.UNKNOWN, Hardware.Arch.UNKNOWN));
+        return qollider(OperatingSystem.Type.UNKNOWN, Hardware.Arch.UNKNOWN);
     }
 
-    private static Roots roots()
+    private static Qollider qollider(OperatingSystem.Type osType, Hardware.Arch arch)
     {
-        return new Roots(
-            p -> Path.of("/", "home").resolve(p)
-            , p -> Path.of("/", "today").resolve(p)
-        );
+        final var home = Path.of("/", "home");
+        final var today = Path.of("/", "today");
+        return new Qollider(effects(home, osType, arch), effects(today, osType, arch));
     }
 
-    private static Effects effects(OperatingSystem.Type osType, Hardware.Arch arch)
+    private static Effects effects(Path root, OperatingSystem.Type osType, Hardware.Arch arch)
     {
         final var sandbox = new Sandbox();
         return new Effects(
             sandbox.lazy()
             , sandbox.install(osType, arch)
             , sandbox.linking()
-            , roots()
+            , root
         );
     }
 }
