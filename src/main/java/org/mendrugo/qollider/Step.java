@@ -1,21 +1,21 @@
 package org.mendrugo.qollider;
 
+import org.mendrugo.qollider.OperatingSystem.EnvVar;
 import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Output;
 
 import java.net.URL;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static java.util.Collections.emptyList;
-
 interface Step
 {
-    record Download(URL url, Path path) implements Step
+    Path root();
+
+    record Download(URL url, Path path, Path root) implements Step
     {
         static Action action(Step.Download download, Effect.Download effects)
         {
@@ -31,11 +31,7 @@ interface Step
         }
     }
 
-    record Exec(
-        List<String> args
-        , Path directory
-        , List<OperatingSystem.EnvVar> envVars
-    ) implements Step
+    record Exec(List<String> args, Path directory, List<EnvVar> envVars, Path root) implements Step
     {
         @Override
         public String toString()
@@ -43,14 +39,16 @@ interface Step
             if (Path.of("").equals(directory) && envVars.isEmpty())
             {
                 return String.format(
-                    "$ %s"
+                    "%s $ %s"
+                    , root
                     , String.join(" ", args)
                 );
             }
             else if (envVars.isEmpty())
             {
                 return String.format(
-                    "%s $ %s"
+                    "%s/%s $ %s"
+                    , root
                     , directory
                     , String.join(" ", args)
                 );
@@ -58,7 +56,8 @@ interface Step
             else
             {
                 return String.format(
-                    "%s $ %s %s"
+                    "%s/%s $ %s %s"
+                    , root
                     , directory
                     , envVars.stream().map(Objects::toString).collect(Collectors.joining(" "))
                     , String.join(" ", args)
@@ -66,19 +65,19 @@ interface Step
             }
         }
 
-        static Exec of(Path path, List<OperatingSystem.EnvVar> envVars, String... args)
+        static Exec of(Path root, Path path, List<EnvVar> envVars, String... args)
         {
-            return new Exec(List.of(args), path, envVars);
+            return new Exec(List.of(args), path, envVars, root);
         }
 
-        static Exec of(Path path, String... args)
+        static Exec of(Path root, Path path, String... args)
         {
-            return new Exec(List.of(args), path, List.of());
+            return of(root, path, List.of());
         }
 
-        static Exec of(String... args)
+        static Exec of(Path root, String... args)
         {
-            return new Exec(Arrays.asList(args), Path.of(""), emptyList());
+            return of(root, Path.of(""));
         }
 
         final static class Lazy
@@ -107,15 +106,15 @@ interface Step
 
             record Effects(Consumer<Exec> exec)
             {
-                static Effects of(OperatingSystem os)
+                static Effects of()
                 {
-                    return new Effects(os::exec);
+                    return new Effects(OperatingSystem::exec);
                 }
             }
         }
     }
 
-    record Extract(Path tar, Path path) implements Step
+    record Extract(Path tar, Path path, Path root) implements Step
     {
         static Action action(Step.Extract extract, Effect.Extract effects)
         {
@@ -125,7 +124,8 @@ interface Step
 
                 return Exec.Lazy.action(
                     Exec.of(
-                        "tar"
+                        extract.root
+                        , "tar"
                         , "-xzpf"
                         , extract.tar.toString()
                         , "-C"
@@ -139,14 +139,14 @@ interface Step
         }
     }
 
-    record Linking(Path link, Path target) implements Step
+    record Linking(Path link, Path target, Path root) implements Step
     {
         static Action link(Step.Linking linking, Effect.Linking effects)
         {
             return Action.of(() ->
             {
-                final var target = linking.target;
-                return effects.symLink().apply(linking.link, target);
+                final var link = linking.root.resolve(linking.link);
+                return effects.symLink().apply(link, linking.target);
             });
         }
     }

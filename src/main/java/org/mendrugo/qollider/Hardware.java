@@ -23,7 +23,7 @@ final class Hardware
     }
 
     // TODO aarch() not unit tested, limit to getting the property
-    Arch arch()
+    static Arch arch()
     {
         String arch = System.getProperty("os.arch").toLowerCase(Locale.ENGLISH).replaceAll("[^a-z0-9]+", "");
         if (X64.matcher(arch).matches())

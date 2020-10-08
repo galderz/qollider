@@ -25,7 +25,7 @@ public class JdkTest
             )
             , Expect.gitClone("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
             , Expect.javaLabsJdkBuild()
-            , Expect.link("java_home", "labs-openjdk-11/java_home")
+            , Expect.link("/today/java_home", "labs-openjdk-11/java_home")
         );
     }
 
@@ -78,9 +78,9 @@ public class JdkTest
                     Jdk.get(url)
                 )
             )
-            , Expect.download(url, "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz")
-            , Expect.extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz", "jdk")
-            , Expect.link("java_home", "jdk/Contents/Home")
+            , Expect.download(url, "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz", Sandbox.today())
+            , Expect.extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.8_10.tar.gz", "jdk", Sandbox.today())
+            , Expect.link("/today/java_home", "jdk/Contents/Home")
         );
     }
 
@@ -96,7 +96,7 @@ public class JdkTest
             )
             , Expect.jdk14DownloadLinux()
             , Expect.bootJdk14Extract()
-            , Expect.link("bootjdk_home", "boot-jdk-14")
+            , Expect.link("/home/bootjdk_home", "boot-jdk-14")
         );
     }
 
@@ -128,7 +128,7 @@ public class JdkTest
             )
             , Expect.jdk11DownloadMacOs()
             , Expect.bootJdk11ExtractMacOs()
-            , Expect.link("bootjdk_home", "boot-jdk-11/Contents/Home")
+            , Expect.link("/home/bootjdk_home", "boot-jdk-11/Contents/Home")
         );
     }
 }

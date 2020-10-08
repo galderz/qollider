@@ -2,16 +2,12 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Link;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 import static java.lang.String.format;
 
@@ -19,28 +15,31 @@ final class FileTree
 {
     static final System.Logger LOG = System.getLogger(Qollider.class.getName());
 
-    final Path root;
-
-    static FileTree ofToday(FileTree home)
+    static Path today(Path home)
     {
         var date = LocalDate.now();
         var formatter = DateTimeFormatter.ofPattern("ddMM");
         var today = date.format(formatter);
-        var baseDir = home.root.resolve("cache");
+        var baseDir = home.resolve("cache");
+
         final var baseToday = baseDir.resolve(today);
+        // Check whether it's a new day before creating directories
         final var isNewDay = !baseToday.toFile().exists();
-        idempotentMkDirs(baseToday);
+        FileTree.idempotentMkDirs(baseToday);
+
+        final var latest = baseDir.resolve(Path.of("latest"));
         if (isNewDay)
         {
-            home.symlink(Path.of("cache", "latest"), Path.of(today));
+            FileTree.symlink(latest, Path.of(today));
         }
-        return new FileTree(baseDir.resolve("latest"));
+        return latest;
     }
 
-    static FileTree ofHome()
+    static Path home()
     {
         var home = Path.of(System.getProperty("user.home"), ".qollider");
-        return new FileTree(idempotentMkDirs(home));
+        FileTree.idempotentMkDirs(home);
+        return home;
     }
 
     private static Path idempotentMkDirs(Path directory)
@@ -57,19 +56,19 @@ final class FileTree
         return directory;
     }
 
-    void mkdirs(Path directory)
+    static void mkdirs(Path directory)
     {
-        FileTree.idempotentMkDirs(root.resolve(directory));
+        FileTree.idempotentMkDirs(directory);
     }
 
-    boolean exists(Path path)
+    static boolean exists(Path path)
     {
-        return root.resolve(path).toFile().exists();
+        return path.toFile().exists();
     }
 
-    boolean touch(Marker marker)
+    static boolean touch(Marker marker)
     {
-        final var path = root.resolve(marker.path());
+        final var path = marker.path();
         try
         {
             Files.writeString(path, marker.cause());
@@ -81,9 +80,8 @@ final class FileTree
         }
     }
 
-    Link symlink(Path relativeLink, Path relativeTarget)
+    static Link symlink(Path link, Path relativeTarget)
     {
-        final var link = root.resolve(relativeLink);
         try
         {
             if (Files.exists(link, LinkOption.NOFOLLOW_LINKS))
@@ -132,9 +130,4 @@ final class FileTree
 //            throw new RuntimeException(e);
 //        }
 //    }
-
-    private FileTree(Path root)
-    {
-        this.root = root;
-    }
 }

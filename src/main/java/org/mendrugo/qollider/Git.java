@@ -2,18 +2,22 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Action;
 
+import java.nio.file.Path;
+
 public final class Git
 {
     final Effect.Exec.Lazy lazy;
+    final Path root;
 
-    Git(Effect.Exec.Lazy lazy)
+    Git(Effect.Exec.Lazy lazy, Path root)
     {
         this.lazy = lazy;
+        this.root = root;
     }
 
     public Action clone(Repository repo)
     {
-        return Step.Exec.Lazy.action(Step.Exec.of(toClone(repo)), lazy);
+        return Step.Exec.Lazy.action(Step.Exec.of(root, toClone(repo)), lazy);
     }
 
     static String[] toClone(Repository repo)

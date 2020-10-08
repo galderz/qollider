@@ -45,8 +45,8 @@ public final class Asserts
         assertThat(actual.exists(), is(true));
         assertThat(actual.touched(), is(expected.touched()));
         assertThat(
-            actual.path().toString()
-            , is(format("%s.marker", Hashing.sha1(expected.step().toString())))
+            actual.path()
+            , is(expected.step().root().resolve(format("%s.marker", Hashing.sha1(expected.step().toString()))))
         );
     }
 
@@ -54,7 +54,7 @@ public final class Asserts
     {
         // TODO avoid cast? the only step that can produce a Link is Linking...
         final var linking = (Step.Linking) expected.step();
-        assertThat(actual.link(), is(linking.link()));
+        assertThat(actual.link(), is(linking.root().resolve(linking.link())));
         assertThat(actual.target(), is(linking.target()));
     }
 

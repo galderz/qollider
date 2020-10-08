@@ -8,7 +8,7 @@ import java.nio.file.Path;
 interface Job
 {
     // Download + Extract
-    record Install(URL url, Path path) implements Job
+    record Install(URL url, Path path, Path root) implements Job
     {
         static Action install(Job.Install install, Effect.Install effects)
         {
@@ -18,12 +18,12 @@ interface Job
             final var tarPath = directory.resolve(fileName);
 
             final var downloadAction = Step.Download.action(
-                new Step.Download(url, tarPath)
+                new Step.Download(url, tarPath, install.root)
                 , effects.download()
             );
 
             final var extractAction = Step.Extract.action(
-                new Step.Extract(tarPath, install.path)
+                new Step.Extract(tarPath, install.path, install.root)
                 , effects.extract()
             );
 

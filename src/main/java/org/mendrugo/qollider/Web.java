@@ -15,19 +15,7 @@ final class Web
 {
     static final System.Logger LOG = System.getLogger(Qollider.class.getName());
 
-    final FileTree fs;
-
-    private Web(FileTree fs)
-    {
-        this.fs = fs;
-    }
-
-    static Web of(FileTree fs)
-    {
-        return new Web(fs);
-    }
-
-    void download(Step.Download download)
+    static void download(Step.Download download)
     {
         try
         {
@@ -36,9 +24,9 @@ final class Web
             );
 
             // Create any parent directories as needed
-            fs.mkdirs(download.path().getParent());
+            FileTree.mkdirs(download.path().getParent());
 
-            final var path = fs.root.resolve(download.path());
+            final var path = download.path();
             final var os = new FileOutputStream(path.toFile());
             final var fileChannel = os.getChannel();
 

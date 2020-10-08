@@ -7,10 +7,11 @@ import java.nio.file.Path;
 
 public final class Graal
 {
-    final Effects today;
+    final Effects effects;
+    final Path today;
 
-    public Graal(Effects today)
-    {
+    public Graal(Effects effects, Path today) {
+        this.effects = effects;
         this.today = today;
     }
 
@@ -27,20 +28,21 @@ public final class Graal
 
     public Action build(Build build)
     {
-        final var git = new Git(today.lazy());
+        final var git = new Git(effects.lazy(), today);
         final var mxAction = git.clone(build.mx);
         final var treeAction = git.clone(build.tree);
 
         final var svm = Path.of(build.tree.name(), "substratevm");
         var buildAction = Step.Exec.Lazy.action(
             Step.Exec.of(
-                svm
-                , today.root().resolve(Path.of(build.mx.name(), "mx")).toString()
+                today
+                , svm
+                , today.resolve(Path.of(build.mx.name(), "mx")).toString()
                 , "--java-home"
-                , today.root().resolve(Homes.java()).toString()
+                , today.resolve(Homes.java()).toString()
                 , "build"
             )
-            , today.lazy()
+            , effects.lazy()
         );
 
         final var target = Path.of(
@@ -50,8 +52,8 @@ public final class Graal
         );
 
         final var linkAction = Step.Linking.link(
-            new Step.Linking(Homes.graal(), target)
-            , today.linking()
+            new Step.Linking(Homes.graal(), target, today)
+            , effects.linking()
         );
 
         return Action.of(mxAction, treeAction, buildAction, linkAction);
@@ -66,8 +68,8 @@ public final class Graal
     {
         final var installAction = install(get);
         final var linkAction = Step.Linking.link(
-            new Step.Linking(Homes.graal(), get.path())
-            , today.linking()
+            new Step.Linking(Homes.graal(), get.path(), today)
+            , effects.linking()
         );
         return Action.of(installAction, linkAction);
     }
@@ -75,8 +77,8 @@ public final class Graal
     private Action install(Get get)
     {
         final var installAction = Job.Install.install(
-            new Job.Install(get.url(), get.path())
-            , today.install()
+            new Job.Install(get.url(), get.path(), today)
+            , effects.install()
         );
 
         final var orgName = Path.of(get.url().getPath()).getName(0);
@@ -84,12 +86,13 @@ public final class Graal
         {
             final var guNativeImageOut = Step.Exec.Lazy.action(
                 Step.Exec.of(
-                    Path.of("graalvm", "bin")
+                    today
+                    , Path.of("graalvm", "bin")
                     , "./gu"
                     , "install"
                     , "native-image"
                 )
-                , today.lazy()
+                , effects.lazy()
             );
 
             return Action.of(installAction, guNativeImageOut);

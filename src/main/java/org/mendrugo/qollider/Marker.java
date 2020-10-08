@@ -47,7 +47,7 @@ record Marker(boolean exists, boolean touched, Path path, String cause) implemen
     {
         final var producer = step.toString();
         final var hash = Hashing.sha1(producer);
-        final var path = Path.of(format("%s.marker", hash));
+        final var path = step.root().resolve(Path.of(format("%s.marker", hash)));
         return new Marker(false, false, path, producer);
     }
 }

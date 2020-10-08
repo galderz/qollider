@@ -58,8 +58,8 @@ public class GraalTest
                     Graal.get(url)
                 )
             )
-            , Expect.download(url, "downloads/archive.tar.gz")
-            , Expect.extract("downloads/archive.tar.gz", "graalvm")
+            , Expect.download(url, "downloads/archive.tar.gz", Sandbox.today())
+            , Expect.extract("downloads/archive.tar.gz", "graalvm", Sandbox.today())
             , Expect.link("graalvm_home", "graalvm")
         );
     }
@@ -75,8 +75,8 @@ public class GraalTest
                     Graal.get(url)
                 )
             )
-            , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz")
-            , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm")
+            , Expect.download(url, "downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", Sandbox.today())
+            , Expect.extract("downloads/graalvm-ce-java8-linux-amd64-19.3.0.tar.gz", "graalvm", Sandbox.today())
             , Expect.guNativeImage()
             , Expect.link("graalvm_home", "graalvm")
         );

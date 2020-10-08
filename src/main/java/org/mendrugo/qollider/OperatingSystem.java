@@ -11,25 +11,13 @@ final class OperatingSystem
 {
     static final System.Logger LOG = System.getLogger(Qollider.class.getName());
 
-    final FileTree fs;
-
-    private OperatingSystem(FileTree fs)
-    {
-        this.fs = fs;
-    }
-
-    static OperatingSystem of(FileTree fs)
-    {
-        return new OperatingSystem(fs);
-    }
-
-    void exec(Step.Exec exec)
+    static void exec(Step.Exec exec)
     {
         final var taskList = exec.args().stream()
             .filter(Predicate.not(String::isEmpty))
             .collect(Collectors.toList());
 
-        final var directory = fs.root.resolve(exec.directory());
+        final var directory = exec.directory();
         // TODO print task without commas
         LOG.log(INFO
             ,"Execute {0} in {1} with environment variables {2}"
@@ -87,7 +75,7 @@ final class OperatingSystem
     }
 
     // TODO type() not unit tested, limit to getting the property
-    Type type()
+    static Type type()
     {
         String osName = System.getProperty("os.name", "generic").toLowerCase(Locale.ROOT);
 

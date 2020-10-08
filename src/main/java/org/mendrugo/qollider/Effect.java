@@ -2,6 +2,7 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Link;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -19,9 +20,9 @@ public interface Effect
         , Supplier<Hardware.Arch> arch
     )
     {
-        static Effect.Download of(Web web, OperatingSystem os, Hardware hw)
+        static Effect.Download of()
         {
-            return new Download(os.fs::exists, os.fs::touch, web::download, os::type, hw::arch);
+            return new Download(FileTree::exists, FileTree::touch, Web::download, OperatingSystem::type, Hardware::arch);
         }
     }
 
@@ -34,9 +35,9 @@ public interface Effect
             , Function<Marker, Boolean> touch
         ) implements Effect
         {
-            static Effect.Exec.Lazy of(OperatingSystem os)
+            static Effect.Exec.Lazy of()
             {
-                return new Lazy(os.fs::exists, os::exec, os.fs::touch);
+                return new Lazy(FileTree::exists, OperatingSystem::exec, FileTree::touch);
             }
         }
     }
@@ -46,22 +47,19 @@ public interface Effect
         , Consumer<Path> mkdirs
     ) implements Effect
     {
-        static Effect.Extract of(OperatingSystem os)
+        static Effect.Extract of()
         {
-            final var exec = Effect.Exec.Lazy.of(os);
-            return new Extract(exec, os.fs::mkdirs);
+            final var exec = Effect.Exec.Lazy.of();
+            return new Extract(exec, FileTree::mkdirs);
         }
     }
 
     record Install(Effect.Download download, Effect.Extract extract)
     {
-        // TODO avoid the need to keep you installs (today and home)
-        // Instead pass in the path (today or home) and build Web and OS based on that
-        static Effect.Install of(Web web, OperatingSystem os)
+        static Effect.Install of()
         {
-            final var hw = new Hardware();
-            final var download = Effect.Download.of(web, os, hw);
-            final var extract = Effect.Extract.of(os);
+            final var download = Effect.Download.of();
+            final var extract = Effect.Extract.of();
             return new Install(download, extract);
         }
     }

@@ -9,19 +9,21 @@ import java.util.stream.Collectors;
 
 public final class Qollider
 {
-    private final Effects home;
-    private final Effects today;
+    private final Effects effects;
+    private final Path home;
+    private final Path today;
 
-    public Qollider(Effects home, Effects today) {
+    public Qollider(Effects effects, Path home, Path today) {
+        this.effects = effects;
         this.home = home;
         this.today = today;
     }
 
     public static Qollider of()
     {
-        final var home = FileTree.ofHome();
-        final var today = FileTree.ofToday(home);
-        return new Qollider(Effects.of(home), Effects.of(today));
+        final var home = FileTree.home();
+        final var today = FileTree.today(home);
+        return new Qollider(Effects.of(), home, today);
     }
 
     public Plan plan(Action... actions)
@@ -38,17 +40,17 @@ public final class Qollider
 
     public Jdk jdk()
     {
-        return new Jdk(home, today);
+        return new Jdk(effects, home, today);
     }
 
     public Graal graal()
     {
-        return new Graal(today);
+        return new Graal(effects, today);
     }
 
     public Mandrel mandrel()
     {
-        return new Mandrel(today);
+        return new Mandrel(effects, today);
     }
 
     public record Action(List<Supplier<Output>> items)
