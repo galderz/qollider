@@ -1,9 +1,5 @@
 # Qollider - The Quarkus particle accelerator
 
-<p align="left">
-  <a href="https://github.com/actions/setup-java"><img alt="GitHub Actions status" src="https://github.com/actions/setup-java/workflows/Main%20workflow/badge.svg"></a>
-</p>
-
 [![build Actions Status](https://github.com/galderz/qollider/workflows/maven/badge.svg)](https://github.com/galderz/qollider/actions)
 
 ## Intro
