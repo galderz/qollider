@@ -1,7 +1,5 @@
 # Qollider - The Quarkus particle accelerator
 
-[!Maven Actions Status](https://github.com/galderz/qollider/workflows/maven/badge.svg)](https://github.com/galderz/qollider/actions)
-
 ## Intro
 
 Qollider automates building and running native image tests of Quarkus and related projects.
