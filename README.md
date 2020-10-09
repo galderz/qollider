@@ -1,6 +1,6 @@
 # Qollider - The Quarkus particle accelerator
 
-[!Maven Actions Status](https://github.com/galderz/qollider/workflows/maven/badge.svg)](https://github.com/galderz/qollider/actions)
+[!Java CI with Maven Actions Status](https://github.com/galderz/qollider/workflows/maven/badge.svg)](https://github.com/galderz/qollider/actions)
 
 ## Intro
 
