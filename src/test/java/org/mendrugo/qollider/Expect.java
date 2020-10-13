@@ -211,6 +211,8 @@ public record Expect(Step step, boolean touched)
             , "/today/mx"
             , "--mandrel-repo"
             , "/today/mandrel"
+            , "--mandrel-home"
+            , "/today/graalvm_home"
         ));
     }
 

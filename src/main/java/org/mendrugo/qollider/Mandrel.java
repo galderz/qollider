@@ -40,6 +40,8 @@ public final class Mandrel
                 , today.resolve(Path.of(build.mx.name())).toString()
                 , "--mandrel-repo"
                 , today.resolve(Path.of(build.tree.name())).toString()
+                , "--mandrel-home"
+                , today.resolve(Homes.graal()).toString()
             )
             , effects.lazy()
         );
