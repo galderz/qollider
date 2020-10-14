@@ -705,6 +705,8 @@ final class Mandrel
                 , today.apply(Path.of(build.tree.name())).toString()
                 , "--maven-home"
                 , Maven.home(roots.home()).toString()
+                , "--mandrel-home"
+                , today.apply(Homes.graal()).toString()
             )
             , exec
         );
@@ -2668,6 +2670,8 @@ final class Check
                 , "/today/mandrel"
                 , "--maven-home"
                 , "/home/maven"
+                , "--mandrel-home"
+                , "/today/graalvm_home"
             ));
         }
 
