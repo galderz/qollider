@@ -72,12 +72,12 @@ interface Step
 
         static Exec of(Path root, Path path, String... args)
         {
-            return of(root, path, List.of());
+            return of(root, path, List.of(), args);
         }
 
         static Exec of(Path root, String... args)
         {
-            return of(root, Path.of(""));
+            return of(root, Path.of(""), args);
         }
 
         final static class Lazy
