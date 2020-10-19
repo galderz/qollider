@@ -17,7 +17,7 @@ final class OperatingSystem
             .filter(Predicate.not(String::isEmpty))
             .collect(Collectors.toList());
 
-        final var directory = exec.directory();
+        final var directory = exec.root().resolve(exec.directory());
         // TODO print task without commas
         LOG.log(INFO
             ,"Execute {0} in {1} with environment variables {2}"
