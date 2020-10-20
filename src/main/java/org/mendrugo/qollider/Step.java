@@ -17,6 +17,12 @@ interface Step
 
     record Download(URL url, Path path, Path root) implements Step
     {
+        @Override
+        public String toString()
+        {
+            return String.format("$ wget %s -O %s @ %s", url, path, root);
+        }
+
         static Action action(Step.Download download, Effect.Download effects)
         {
             return Action.of(() ->
@@ -39,28 +45,28 @@ interface Step
             if (Path.of("").equals(directory) && envVars.isEmpty())
             {
                 return String.format(
-                    "%s $ %s"
-                    , root
+                    "$ %s @ %s"
                     , String.join(" ", args)
+                    , root
                 );
             }
             else if (envVars.isEmpty())
             {
                 return String.format(
-                    "%s/%s $ %s"
+                    "$ %s @ %s/%s"
+                    , String.join(" ", args)
                     , root
                     , directory
-                    , String.join(" ", args)
                 );
             }
             else
             {
                 return String.format(
-                    "%s/%s $ %s %s"
+                    "$ %s @ %s/%s %s"
+                    , String.join(" ", args)
                     , root
                     , directory
-                    , envVars.stream().map(Objects::toString).collect(Collectors.joining(" "))
-                    , String.join(" ", args)
+                    , envVars.stream().map(Objects::toString).collect(Collectors.joining(",", "[", "]"))
                 );
             }
         }

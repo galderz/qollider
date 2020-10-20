@@ -7,8 +7,12 @@ import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static java.lang.System.Logger.Level.INFO;
+
 public final class Qollider
 {
+    static final System.Logger LOG = System.getLogger(Qollider.class.getName());
+
     private final Effects effects;
     private final Path home;
     private final Path today;
@@ -34,8 +38,38 @@ public final class Qollider
                 .flatMap(action -> action.items().stream())
                 .map(Supplier::get)
                 .collect(Collectors.toList());
+
+            LOG.log(INFO, "Execution summary:");
+
+//            TODO Track inputs
+//            log.log(INFO, "Inputs:{0}{1}"
+//                , System.lineSeparator()
+//                , List.of(args).stream()
+//                    .map(Object::toString)
+//                    .collect(Collectors.joining(System.lineSeparator()))
+//            );
+
+            LOG.log(INFO, "Outputs:{0}{1}"
+                , System.lineSeparator()
+                , result.stream()
+                    .map(Qollider::showOutput)
+                    .collect(Collectors.joining(System.lineSeparator()))
+            );
+
             return new Result(result);
         };
+    }
+
+    private static String showOutput(Output output)
+    {
+        if (output instanceof Marker m)
+        {
+            return String.format("%s%s", m.cause(), m.touched() ? "" : " (skipped)");
+        }
+        else
+        {
+            return output.toString();
+        }
     }
 
     public Jdk jdk()
@@ -90,7 +124,18 @@ public final class Qollider
     }
 
     // TODO make private
-    record Link(Path link, Path target) implements Output {}
+    record Link(Path link, Path target) implements Output
+    {
+        @Override
+        public String toString()
+        {
+            return String.format(
+                "$ ln -s %s %s"
+                , target
+                , link
+            );
+        }
+    }
 
     record Get(URL url, Path path)
     {

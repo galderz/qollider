@@ -8,7 +8,6 @@ import java.util.function.Predicate;
 
 import static java.lang.String.format;
 
-// TODO make path latest rather than day (makes the build transferable across days)
 // Boundary value
 record Marker(boolean exists, boolean touched, Path path, String cause) implements Output
 {
