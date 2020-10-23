@@ -22,15 +22,12 @@ jobs:
         java-version: 14
     - name: Build with Maven
       run: mvn -B install --file pom.xml
-    - name: Cache local Maven repository
-      uses: actions/cache@v2
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
+      env:
+        MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/repository"
     - name: Test with JBang
       uses: jbangdev/jbang-action@v0.52.0
       with:
         script: jbang/labs_20_1.java
-        jbangargs: -Dqollider.version=999-SNAPSHOT
+        jbangargs: -Dqollider.version=999-SNAPSHOT --verbose
+      env:
+        JBANG_REPO: "${{ github.workspace }}/repository"
