@@ -30,6 +30,6 @@ jobs:
       uses: jbangdev/jbang-action@v0.52.0
       with:
         script: jbang/labs_20_1.java
-        jbangargs: -Dqollider.version=999-SNAPSHOT --verbose
+        jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
