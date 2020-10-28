@@ -1,0 +1,10 @@
+{
+  "aliases": {
+    "labs-20.1": {
+      "script-ref": "labs_20_1.java",
+      "description": "Script builds Oracle Labs JDK compatible with GraalVM 20.1"
+    }
+  },
+  "base-ref": "examples",
+  "description": "Qollider example scripts"
+}

@@ -24,12 +24,10 @@ jobs:
       run: mvn -B install --file pom.xml
       env:
         MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/repository"
-    - name: Try calling a git command
-      run: git clone -b jvmci-20.1-b04_8253375 --depth 20 https://github.com/galderz/labs-openjdk-11
     - name: Test with JBang
       uses: jbangdev/jbang-action@v0.52.0
       with:
-        script: jbang/labs_20_1.java
+        script: examples/labs_20_1.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
