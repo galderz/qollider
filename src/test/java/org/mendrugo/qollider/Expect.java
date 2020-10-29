@@ -121,6 +121,7 @@ public record Expect(Step step, boolean touched)
             , "build_labsjdk.py"
             , "--boot-jdk"
             , "/home/bootjdk_home"
+            , "--configure-option=--disable-warnings-as-errors"
         ));
     }
 

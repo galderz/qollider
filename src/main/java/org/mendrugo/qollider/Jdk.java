@@ -232,6 +232,7 @@ public final class Jdk
                 , "build_labsjdk.py"
                 , "--boot-jdk"
                 , home.resolve(Homes.bootJdk()).toString()
+                , "--configure-option=--disable-warnings-as-errors"
             );
         }
     }
