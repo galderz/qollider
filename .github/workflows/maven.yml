@@ -31,6 +31,13 @@ jobs:
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
+    - name: Test with Labs 20.3 build example
+      uses: jbangdev/jbang-action@v0.52.0
+      with:
+        script: examples/labs_20_3.java
+        jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
+      env:
+        JBANG_REPO: "${{ github.workspace }}/repository"
     - name: Test with JDK build example
       uses: jbangdev/jbang-action@v0.52.0
       with:

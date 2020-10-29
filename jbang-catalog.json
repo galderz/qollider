@@ -4,6 +4,10 @@
       "script-ref": "labs_20_1.java",
       "description": "Script builds Oracle Labs JDK compatible with GraalVM 20.1"
     },
+    "labs-20.2": {
+      "script-ref": "labs_20_3.java",
+      "description": "Script builds Oracle Labs JDK compatible with GraalVM 20.3"
+    },
     "jdk-jdk": {
       "script-ref": "jdk_jdk.java",
       "description": "Script builds JDK"
