@@ -15,6 +15,11 @@ public record Repository(
     , URI cloneUri
 )
 {
+    public static Repository github(String org, String name, String branch)
+    {
+        return new Repository(org, name, Type.GIT, branch, 1, gitCloneUri(org, name));
+    }
+
     public static Repository of(String uri)
     {
         return Repository.of(URI.create(uri));

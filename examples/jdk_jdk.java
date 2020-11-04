@@ -19,9 +19,7 @@ public class jdk_jdk
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(
-                        Repository.of("https://github.com/openjdk/jdk/tree/master")
-                    )
+                    new Jdk.Build(Repository.github("openjdk", "jdk", "master"))
                 )
             )
             .run();
