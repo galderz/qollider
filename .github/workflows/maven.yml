@@ -24,21 +24,21 @@ jobs:
       run: mvn -B install --file pom.xml
       env:
         MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/repository"
-    - name: Test with Labs 20.1 build example
+    - name: Compile example to build Labs 20.1
       uses: jbangdev/jbang-action@v0.52.0
       with:
         script: examples/labs_20_1.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
-    - name: Test with Labs 20.3 build example
+    - name: Compile example to build Labs 20.3
       uses: jbangdev/jbang-action@v0.52.0
       with:
         script: examples/labs_20_3.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
-    - name: Test with JDK build example
+    - name: Compile example to build JDK
       uses: jbangdev/jbang-action@v0.52.0
       with:
         script: examples/jdk_jdk.java
