@@ -19,7 +19,7 @@ public class labs_20_3
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(Repository.of("graalvm", "labs-openjdk-11", "jvmci-20.3-b03"))
+                    new Jdk.Build(Repository.github("graalvm", "labs-openjdk-11", "jvmci-20.3-b03"))
                 )
             )
             .run();
