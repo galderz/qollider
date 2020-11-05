@@ -4,11 +4,6 @@ import java.nio.file.Path;
 
 public final class Sandbox
 {
-    public static Git git()
-    {
-        return new Git(Sandbox.empty().lazy(), today());
-    }
-
     public static Qollider qolliderMacOs()
     {
         return qollider(OperatingSystem.Type.MAC_OS, Hardware.Arch.X64);

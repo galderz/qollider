@@ -6,18 +6,23 @@ import java.nio.file.Path;
 
 public final class Git
 {
-    final Effect.Exec.Lazy lazy;
+    final Effects effects;
     final Path root;
 
-    Git(Effect.Exec.Lazy lazy, Path root)
+    Git(Effects effects, Path root)
     {
-        this.lazy = lazy;
+        this.effects = effects;
         this.root = root;
+    }
+
+    public Action version()
+    {
+        return Step.Exec.Lazy.action(Step.Exec.of(root, "git", "--version"), effects.lazy());
     }
 
     public Action clone(Repository repo)
     {
-        return Step.Exec.Lazy.action(Step.Exec.of(root, toClone(repo)), lazy);
+        return Step.Exec.Lazy.action(Step.Exec.of(root, toClone(repo)), effects.lazy());
     }
 
     static String[] toClone(Repository repo)

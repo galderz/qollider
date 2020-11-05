@@ -72,6 +72,11 @@ public final class Qollider
         }
     }
 
+    public Git git()
+    {
+        return new Git(effects, today);
+    }
+
     public Jdk jdk()
     {
         return new Jdk(effects, home, today);

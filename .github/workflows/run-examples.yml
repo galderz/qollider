@@ -1,4 +1,4 @@
-name: Run examples
+name: Run Examples
 
 on:
   workflow_dispatch:
@@ -15,13 +15,13 @@ jobs:
         with:
           java-version: 14
       - name: Build with Maven
-        run: mvn -B install --file pom.xml
+        run: mvn -B install --file pom.xml -DskipTests
         env:
           MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/repository"
-      - name: Test with Labs 20.1 build example
+      - name: Run smoke test example
         uses: jbangdev/jbang-action@v0.52.0
         with:
-          script: examples/labs_20_1.java
+          script: examples/git_version.java
           jbangargs: -Dqollider.version=999-SNAPSHOT --verbose
         env:
           JBANG_REPO: "${{ github.workspace }}/repository"

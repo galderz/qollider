@@ -5,7 +5,6 @@ import org.mendrugo.qollider.Asserts;
 import org.mendrugo.qollider.Expect;
 import org.mendrugo.qollider.Repository;
 
-import static org.mendrugo.qollider.Sandbox.git;
 import static org.mendrugo.qollider.Sandbox.qolliderUnknown;
 
 public class GitTest
@@ -13,9 +12,10 @@ public class GitTest
     @Test
     void cloneRepository()
     {
+        final var qollider = qolliderUnknown();
         Asserts.plan(
-            qolliderUnknown().plan(
-                git().clone(
+            qollider.plan(
+                qollider.git().clone(
                     Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
                 )
             )
@@ -26,9 +26,10 @@ public class GitTest
     @Test
     void cloneFullRepository()
     {
+        final var qollider = qolliderUnknown();
         Asserts.plan(
-            qolliderUnknown().plan(
-                git().clone(
+            qollider.plan(
+                qollider.git().clone(
                     Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02?depth=0")
                 )
             )
@@ -39,9 +40,10 @@ public class GitTest
     @Test
     void cloneBranchWithPath()
     {
+        final var qollider = qolliderUnknown();
         Asserts.plan(
-            qolliderUnknown().plan(
-                git().clone(
+            qollider.plan(
+                qollider.git().clone(
                     Repository.of("https://github.com/olpaw/graal/tree/paw/2367")
                 )
             )

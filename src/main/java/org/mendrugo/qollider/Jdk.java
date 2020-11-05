@@ -61,7 +61,7 @@ public final class Jdk
     {
         return switch (tree.type())
         {
-            case GIT -> new Git(effects.lazy(), today).clone(tree);
+            case GIT -> new Git(effects, today).clone(tree);
             case MERCURIAL -> new Mercurial(effects.lazy(), today).clone(tree);
         };
     }

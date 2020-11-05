@@ -21,7 +21,7 @@ public final class Mandrel
 
     public Action build(Build build)
     {
-        final var git = new Git(effects.lazy(), today);
+        final var git = new Git(effects, today);
         final var mxAction = git.clone(build.mx);
         final var packagingAction = git.clone(build.packaging);
         final var treeAction = git.clone(build.tree);
