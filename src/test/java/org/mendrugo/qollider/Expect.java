@@ -217,15 +217,6 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
-    public static Expect mandrelLink()
-    {
-        return Expect.of(new Step.Linking(
-            Path.of("graalvm_home")
-            , Path.of("mandrel-packaging", "mandrel-11-dev")
-            , Sandbox.today()
-        ));
-    }
-
     public static Expect mercurialOpenJdkClone()
     {
         return Expect.of(Step.Exec.of(

@@ -46,16 +46,6 @@ public final class Mandrel
             , effects.lazy()
         );
 
-        final var target = Path.of(
-            build.packaging.name()
-            , "mandrel-11-dev"
-        );
-
-        final var linkAction = Step.Linking.link(
-            new Step.Linking(Homes.graal(), target, today)
-            , effects.linking()
-        );
-
-        return Action.of(mxAction, packagingAction, treeAction, buildAction, linkAction);
+        return Action.of(mxAction, packagingAction, treeAction, buildAction);
     }
 }

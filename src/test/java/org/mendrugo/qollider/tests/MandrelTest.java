@@ -23,7 +23,6 @@ public class MandrelTest
             , Expect.gitClone("graalvm/mandrel-packaging", "master", 1)
             , Expect.gitClone("graalvm/mandrel", "mandrel/20.2", 1)
             , Expect.mandrelBuild()
-            , Expect.mandrelLink()
         );
     }
 }
