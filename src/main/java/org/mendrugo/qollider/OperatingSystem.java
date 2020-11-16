@@ -93,6 +93,12 @@ final class OperatingSystem
 
     record EnvVar(String name, Path path)
     {
+        @Override
+        public String toString()
+        {
+            return String.format("%s=%s", name, path);
+        }
+
         static EnvVar of(String name, String path)
         {
             return of(name, Path.of(path));

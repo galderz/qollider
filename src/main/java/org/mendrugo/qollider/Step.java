@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 interface Step
 {
@@ -20,7 +22,7 @@ interface Step
         @Override
         public String toString()
         {
-            return String.format("$ wget %s -O %s @ %s", url, path, root);
+            return String.format("%s$ wget %s -O %s%n", showPath(root), url, path);
         }
 
         static Action action(Step.Download download, Effect.Download effects)
@@ -42,33 +44,24 @@ interface Step
         @Override
         public String toString()
         {
-            if (Path.of("").equals(directory) && envVars.isEmpty())
-            {
-                return String.format(
-                    "$ %s @ %s"
-                    , String.join(" ", args)
-                    , root
-                );
-            }
-            else if (envVars.isEmpty())
-            {
-                return String.format(
-                    "$ %s @ %s/%s"
-                    , String.join(" ", args)
-                    , root
-                    , directory
-                );
-            }
-            else
-            {
-                return String.format(
-                    "$ %s @ %s/%s %s"
-                    , String.join(" ", args)
-                    , root
-                    , directory
-                    , envVars.stream().map(Objects::toString).collect(Collectors.joining(",", "[", "]"))
-                );
-            }
+            return String.format(
+                "%s%s"
+                , showPath(root, directory)
+                , showCommand(args, envVars)
+            );
+        }
+
+        private static String showCommand(List<String> args, List<EnvVar> envVars)
+        {
+            final var envAndArgs = Lists.concat(
+                envVars.stream().map(Object::toString).collect(Collectors.toList())
+                , args
+            );
+
+            return String.format(
+                "$ %s%n"
+                , String.join(" ", envAndArgs)
+            );
         }
 
         static Exec of(Path root, Path path, List<EnvVar> envVars, String... args)
@@ -155,5 +148,16 @@ interface Step
                 return effects.symLink().apply(link, linking.target);
             });
         }
+    }
+
+    private static String showPath(Path... paths)
+    {
+        return String.format(
+            "\uF07C %s%n"
+            , Stream.of(paths)
+                .map(Object::toString)
+                .filter(Predicate.not(String::isEmpty))
+                .collect(Collectors.joining("/"))
+        );
     }
 }
