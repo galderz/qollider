@@ -135,9 +135,10 @@ public final class Qollider
         public String toString()
         {
             return String.format(
-                "$ ln -s %s %s"
+                "\uF07C %s%n$ ln -s %s %s%n"
+                , link.getParent()
                 , target
-                , link
+                , link.getFileName()
             );
         }
     }
