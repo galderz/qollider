@@ -15,6 +15,8 @@ public record Repository(
     , URI cloneUri
 )
 {
+    // TODO remove factory and leave only one factory, of()
+    //      instead use Repositories to create contansts for commonly used repositories
     public static Repository github(String org, String name, String branch)
     {
         return new Repository(org, name, Type.GIT, branch, 1, gitCloneUri(org, name));
