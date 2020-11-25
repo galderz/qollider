@@ -19,7 +19,7 @@ public class labs_20_3
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(Repositories.LABS_JDK_20_3))
+                    new Jdk.Build(Repositories.LABS_JDK_20_3)
                 )
             )
             .run();
