@@ -2,24 +2,35 @@ package org.mendrugo.qollider;
 
 public final class Repositories
 {
-    public static final Repository JDK_JDK = Repository.of("https://github.com/openjdk/jdk/tree/master");
-    public static final Repository JDK_11_DEV = Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master");
-
-    public static final Repository LABS_JDK_20_3 = Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.3-b06");
+    public static final Repository INFINISPAN = github("infinispan", "infinispan");
+    public static final Repository INFINISPAN_QUARKUS = github("infinispan", "infinispan-quarkus");
+    public static final Repository JDK_JDK = github("openjdk", "jdk");
+    public static final Repository JDK_11_DEV = github("openjdk", "jdk11u-dev");
+    public static final Repository LABS_JDK_20_3 = github("graalvm", "labs-openjdk-11", "jvmci-20.3-b06");
     public static final Repository LABS_JDK = LABS_JDK_20_3;
-
-    public static final Repository GRAAL = Repository.of("https://github.com/oracle/graal/tree/master");
-    public static final Repository MX = Repository.of("https://github.com/graalvm/mx/tree/master");
-
-    public static final Repository MANDREL_20_1 = Repository.of("https://github.com/graalvm/mandrel/tree/mandrel/20.1");
-    public static final Repository MANDREL_20_2 = Repository.of("https://github.com/graalvm/mandrel/tree/mandrel/20.2");
+    public static final Repository GRAAL = github("oracle", "graal");
+    public static final Repository MANDREL_20_1 = github("graalvm", "mandrel", "mandrel/20.1");
+    public static final Repository MANDREL_20_2 = github("graalvm", "mandrel", "mandrel/20.2");
     public static final Repository MANDREL = MANDREL_20_2;
+    public static final Repository MANDREL_PACKAGING = github("graalvm", "mandrel-packaging");
+    public static final Repository MX = github("graalvm", "mx");
+    public static final Repository QUARKUS = github("quarkusio", "quarkus");
 
-    public static final Repository MANDREL_PACKAGING = Repository.of("https://github.com/graalvm/mandrel-packaging/tree/master");
-
-    public static Repository of(String uri)
+    public static Repository github(String org, String name)
     {
-        return Repository.of(uri);
+        return github(org, name, "master");
+    }
+
+    public static Repository github(String org, String name, String branch)
+    {
+        return Repository.of(
+            String.format(
+                "https://github.com/%s/%s/tree/%s"
+                , org
+                , name
+                , branch
+            )
+        );
     }
 
     private Repositories() {}
