@@ -19,9 +19,9 @@ public class MandrelTest
                     new Mandrel.Build(Repositories.MANDREL, Repositories.MX, Repositories.MANDREL_PACKAGING)
                 )
             )
-            , Expect.gitClone("graalvm/mx", "master", 1)
-            , Expect.gitClone("graalvm/mandrel-packaging", "master", 1)
-            , Expect.gitClone("graalvm/mandrel", "mandrel/20.2", 1)
+            , Expect.gitCloneBranch("graalvm/mx", "master", 1)
+            , Expect.gitCloneBranch("graalvm/mandrel-packaging", "master", 1)
+            , Expect.gitCloneBranch("graalvm/mandrel", "mandrel/20.2", 1)
             , Expect.mandrelBuild()
         );
     }

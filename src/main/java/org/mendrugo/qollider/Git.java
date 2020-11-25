@@ -22,10 +22,37 @@ public final class Git
 
     public Action clone(Repository repo)
     {
-        return Step.Exec.Lazy.action(Step.Exec.of(root, toClone(repo)), effects.lazy());
+        if (repo instanceof Repository.Branch repoBranch)
+        {
+            return Step.Exec.Lazy.action(Step.Exec.of(root, toClone(repoBranch)), effects.lazy());
+        }
+        else if (repo instanceof Repository.Commit repoCommit)
+        {
+            final var cloneRepo = Step.Exec.of(
+                root
+                , "git"
+                , "clone"
+                , repo.cloneUri()
+            );
+            final var checkoutCommit = Step.Exec.of(
+                root.resolve(repoCommit.name())
+                , "git"
+                , "checkout"
+                , repoCommit.commitId()
+            );
+
+            return Action.of(
+                Step.Exec.Lazy.action(cloneRepo, effects.lazy())
+                , Step.Exec.Lazy.action(checkoutCommit, effects.lazy())
+            );
+        }
+        else
+        {
+            throw new IllegalStateException(String.format("Unknown repo: %s", repo));
+        }
     }
 
-    static String[] toClone(Repository repo)
+    private String[] toClone(Repository.Branch repo)
     {
         final var result = Lists.mutable(
             "git"
@@ -40,7 +67,7 @@ public final class Git
             result.add(String.valueOf(repo.depth()));
         }
 
-        result.add(repo.cloneUri().toString());
+        result.add(repo.cloneUri());
 
         return result.toArray(String[]::new);
     }

@@ -6,7 +6,7 @@
 
 import org.mendrugo.qollider.Jdk;
 import org.mendrugo.qollider.Qollider;
-import org.mendrugo.qollider.Repository;
+import org.mendrugo.qollider.Repositories;
 
 /**
  * Script to build openjdk/jdk
@@ -19,7 +19,7 @@ public class jdk_jdk
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(Repository.github("openjdk", "jdk", "master"))
+                    new Jdk.Build(Repositories.JDK_JDK)
                 )
             )
             .run();

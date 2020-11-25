@@ -23,7 +23,7 @@ public class JdkTest
                     )
                 )
             )
-            , Expect.gitClone("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
+            , Expect.gitCloneBranch("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
             , Expect.javaLabsJdkBuild()
             , Expect.link("/today/java_home", "labs-openjdk-11/java_home")
         );
@@ -39,7 +39,7 @@ public class JdkTest
                     new Jdk.Build(Repositories.JDK_11_DEV)
                 )
             )
-            , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
+            , Expect.gitCloneBranch("openjdk/jdk11u-dev", "master", 1)
             , Expect.javaOpenJdkConfigure()
             , Expect.javaOpenJdkMake()
             , Expect.javaOpenJdkLink()
@@ -54,7 +54,7 @@ public class JdkTest
             qollider.plan(
                 qollider.jdk().build(
                     new Jdk.Build(
-                        Repository.of("http://hg.openjdk.java.net/jdk-updates/jdk11u-dev")
+                        Repository.of("https://hg.openjdk.java.net/jdk-updates/jdk11u-dev")
                     )
                 )
             )

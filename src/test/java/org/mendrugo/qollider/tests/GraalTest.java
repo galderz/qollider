@@ -23,8 +23,8 @@ public class GraalTest
                     new Graal.Build(Repositories.GRAAL, Repositories.MX)
                 )
             )
-            , Expect.gitClone("graalvm/mx", "master", 1)
-            , Expect.gitClone("oracle/graal", "master", 1)
+            , Expect.gitCloneBranch("graalvm/mx", "master", 1)
+            , Expect.gitCloneBranch("oracle/graal", "master", 1)
             , Expect.graalBuild()
             , Expect.graalLink()
         );

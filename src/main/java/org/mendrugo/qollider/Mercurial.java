@@ -14,14 +14,14 @@ final class Mercurial
         this.root = root;
     }
 
-    Action clone(Repository repository)
+    Action clone(Repository repo)
     {
         return Step.Exec.Lazy.action(
             Step.Exec.of(
                 root
                 , "hg"
                 , "clone"
-                , repository.cloneUri().toString()
+                , repo.cloneUri()
             )
             , lazy
         );

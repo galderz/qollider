@@ -19,7 +19,7 @@ public class GitTest
                     Repository.of("https://github.com/openjdk/jdk11u-dev/tree/master")
                 )
             )
-            , Expect.gitClone("openjdk/jdk11u-dev", "master", 1)
+            , Expect.gitCloneBranch("openjdk/jdk11u-dev", "master", 1)
         );
     }
 
@@ -47,7 +47,22 @@ public class GitTest
                     Repository.of("https://github.com/olpaw/graal/tree/paw/2367")
                 )
             )
-            , Expect.gitClone("olpaw/graal", "paw/2367", 1)
+            , Expect.gitCloneBranch("olpaw/graal", "paw/2367", 1)
+        );
+    }
+
+    @Test
+    void cloneCommit()
+    {
+        final var qollider = qolliderUnknown();
+        Asserts.plan(
+            qollider.plan(
+                qollider.git().clone(
+                    Repository.of("https://github.com/wburns/infinispan/commit/707629178e2b5ac237c95b257208dfbea5e584b2")
+                )
+            )
+            , Expect.gitCloneFull("wburns/infinispan")
+            , Expect.gitCheckoutCommit("707629178e2b5ac237c95b257208dfbea5e584b2", "infinispan")
         );
     }
 }

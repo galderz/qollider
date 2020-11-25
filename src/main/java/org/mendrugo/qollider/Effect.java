@@ -2,7 +2,6 @@ package org.mendrugo.qollider;
 
 import org.mendrugo.qollider.Qollider.Link;
 
-import java.io.File;
 import java.nio.file.Path;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -10,7 +9,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-public interface Effect
+interface Effect
 {
     record Download(
         Predicate<Path> exists

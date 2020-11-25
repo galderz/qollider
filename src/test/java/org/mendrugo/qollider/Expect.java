@@ -54,7 +54,7 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
-    public static Expect gitClone(String repo, String branch, int depth)
+    public static Expect gitCloneBranch(String repo, String branch, int depth)
     {
         return Expect.of(Step.Exec.of(
             Sandbox.today()
@@ -77,6 +77,26 @@ public record Expect(Step step, boolean touched)
             , "-b"
             , branch
             , String.format("https://github.com/%s", repo)
+        ));
+    }
+
+    public static Expect gitCloneFull(String repo)
+    {
+        return Expect.of(Step.Exec.of(
+            Sandbox.today()
+            , "git"
+            , "clone"
+            , String.format("https://github.com/%s", repo)
+        ));
+    }
+
+    public static Expect gitCheckoutCommit(String commitId, String name)
+    {
+        return Expect.of(Step.Exec.of(
+            Sandbox.today().resolve(name)
+            , "git"
+            , "checkout"
+            , commitId
         ));
     }
 
@@ -223,7 +243,7 @@ public record Expect(Step step, boolean touched)
             Sandbox.today()
             , "hg"
             , "clone"
-            , "http://hg.openjdk.java.net/jdk-updates/jdk11u-dev"
+            , "https://hg.openjdk.java.net/jdk-updates/jdk11u-dev"
         ));
     }
 

@@ -6,7 +6,7 @@
 
 import org.mendrugo.qollider.Jdk;
 import org.mendrugo.qollider.Qollider;
-import org.mendrugo.qollider.Repository;
+import org.mendrugo.qollider.Repositories;
 
 /**
  * Script to build labs JDK 20.3.
@@ -19,7 +19,7 @@ public class labs_20_3
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(Repository.github("graalvm", "labs-openjdk-11", "jvmci-20.3-b03"))
+                    new Jdk.Build(Repositories.LABS_JDK_20_3))
                 )
             )
             .run();

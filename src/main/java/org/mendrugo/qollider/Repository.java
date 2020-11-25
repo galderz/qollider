@@ -1,28 +1,22 @@
 package org.mendrugo.qollider;
 
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Objects;
 
-// TODO implement --force
-public record Repository(
-    String organization
-    , String name
-    , Repository.Type type
-    , String branch
-    , int depth
-    , URI cloneUri
-)
+public interface Repository
 {
-    // TODO remove factory and leave only one factory, of()
-    //      instead use Repositories to create contansts for commonly used repositories
-    public static Repository github(String org, String name, String branch)
+    String host();
+    String organization();
+    String name();
+    Repository.Type type();
+
+    default String cloneUri()
     {
-        return new Repository(org, name, Type.GIT, branch, 1, gitCloneUri(org, name));
+        return String.format("https://%s/%s/%s", host(), organization(), name());
     }
 
-    public static Repository of(String uri)
+    static Repository of(String uri)
     {
         return Repository.of(URI.create(uri));
     }
@@ -35,55 +29,53 @@ public record Repository(
         {
             final var organization = path.getName(0).toString();
             final var name = path.getName(1).toString();
-            final var branch = extractBranch(path).toString();
-            final var depth = extractDepth(uri, name);
-            final var cloneUri = gitCloneUri(organization, name);
-            return new Repository(organization, name, Type.GIT, branch, depth, cloneUri);
+            switch (path.getName(2).toString())
+            {
+                case "tree" ->
+                {
+                    final var branch = extractBranch(path).toString();
+                    final var depth = extractDepth(uri, name);
+                    return new Branch(host, organization, name, Type.GIT, branch, depth);
+                }
+                case "commit" ->
+                {
+                    final var commitId = path.getName(3).toString();
+                    return new Commit(host, organization, name, Type.GIT, commitId);
+                }
+                default ->
+                    throw new IllegalArgumentException(String.format("Unknown Github repo URL: %s", uri));
+            }
         }
         else if (host.equals("hg.openjdk.java.net"))
         {
-            final var organization = "openjdk";
+            final var organization = path.getName(0).toString();
             final var name = path.getFileName().toString();
-            return new Repository(organization, name, Type.MERCURIAL, null, 1, uri);
+            return new Commit(host, organization, name, Type.MERCURIAL, null);
         }
         throw Illegal.value(host);
     }
 
-    private static int extractDepth(URI uri, String repoName)
+    record Branch(
+        String host
+        , String organization
+        , String name
+        , Repository.Type type
+        , String branch
+        , int depth
+    ) implements Repository {}
+
+    record Commit(
+        String host
+        , String organization
+        , String name
+        , Repository.Type type
+        , String commitId
+    ) implements Repository {}
+
+    enum Type
     {
-        final var params = URIs.splitQuery(uri);
-        final var value = params.get("depth");
-        if (Objects.nonNull(value))
-        {
-            return Integer.parseInt(value);
-        }
-
-        return repoName.equals("labs-openjdk-11")
-            ? 20
-            : 1;
-    }
-
-    private static URI gitCloneUri(String organization, String name)
-    {
-        try
-        {
-            final var path = Path.of(
-                "/"
-                , organization
-                , name
-            );
-
-            return new URI(
-                "https"
-                , "github.com"
-                , path.toString()
-                , null
-            );
-        }
-        catch (URISyntaxException e)
-        {
-            throw new RuntimeException(e);
-        }
+        GIT
+        , MERCURIAL
     }
 
     private static Path extractBranch(Path path)
@@ -108,9 +100,17 @@ public record Repository(
         return Path.of(first, more);
     }
 
-    enum Type
+    private static int extractDepth(URI uri, String repoName)
     {
-        GIT
-        , MERCURIAL
+        final var params = URIs.splitQuery(uri);
+        final var value = params.get("depth");
+        if (Objects.nonNull(value))
+        {
+            return Integer.parseInt(value);
+        }
+
+        return repoName.equals("labs-openjdk-11")
+            ? 20
+            : 1;
     }
 }
