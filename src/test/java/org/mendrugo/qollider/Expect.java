@@ -247,6 +247,42 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
+    public static Expect mavenBinDownload()
+    {
+        return download(
+            "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz"
+            , "downloads/apache-maven-3.6.3-bin.tar.gz"
+            , Sandbox.home()
+        );
+    }
+
+    public static Expect mavenBinExtract()
+    {
+        return extract("downloads/apache-maven-3.6.3-bin.tar.gz", "maven", Sandbox.home());
+    }
+
+    public static Expect mavenBuild(String name, String... extraArgs)
+    {
+        final var args = Lists.concat(
+            List.of(
+                Sandbox.home().resolve(Path.of("maven", "bin", "mvn")).toString()
+                , "install"
+                , "-DskipTests"
+                , "-DskipITs"
+                , "-Denforcer.skip"
+                , "-Dformat.skip"
+            )
+            , List.of(extraArgs)
+        );
+
+        return Expect.of(Step.Exec.of(
+            Sandbox.today()
+            , Path.of(name)
+            , List.of(new EnvVar("JAVA_HOME", Sandbox.today().resolve(Homes.graal())))
+            , args
+        ));
+    }
+
     static Expect of(Step step)
     {
         return new Expect(step, true);

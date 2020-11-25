@@ -26,6 +26,7 @@ public final class Jdk
 
     public Action build(Build build)
     {
+        // TODO building a JDK requires a boot JDK, verify in say (a container) that this doesn't work
         final var cloneAction = clone(build.tree());
 
         final var buildSteps = switch (build.javaType())

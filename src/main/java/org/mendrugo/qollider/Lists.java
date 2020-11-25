@@ -31,6 +31,13 @@ final class Lists
             .collect(Collectors.toList());
     }
 
+    static <E> List<E> concat(List<? extends E> l1, List<? extends E> l2, List<? extends E> l3)
+    {
+        return Stream.of(l1, l2, l3)
+            .flatMap(Collection::stream)
+            .collect(Collectors.toList());
+    }
+
     static <E> List<E> merge(E first, List<E> list, E last)
     {
         final var result = new ArrayList<E>(list.size() + 1);

@@ -92,6 +92,11 @@ public final class Qollider
         return new Mandrel(effects, today);
     }
 
+    public Maven maven()
+    {
+        return new Maven(effects, home, today);
+    }
+
     public record Action(List<Supplier<Output>> items)
     {
         static Action of(Action... actions)

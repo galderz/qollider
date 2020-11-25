@@ -66,7 +66,12 @@ interface Step
 
         static Exec of(Path root, Path path, List<EnvVar> envVars, String... args)
         {
-            return new Exec(List.of(args), path, envVars, root);
+            return of(root, path, envVars, List.of(args));
+        }
+
+        static Exec of(Path root, Path path, List<EnvVar> envVars, List<String> args)
+        {
+            return new Exec(args, path, envVars, root);
         }
 
         static Exec of(Path root, Path path, String... args)
