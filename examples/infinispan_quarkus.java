@@ -86,8 +86,7 @@ public class infinispan_quarkus implements Callable<Integer>
                 )
                 , qollider.maven().build(
                     new Maven.Build(infinispanQuarkus, List.of(
-                        "-Dnative-noargs"
-                        , "-pl"
+                        "-pl"
                         , "!:infinispan-quarkus-integration-test-server"
                     ))
                 )
@@ -131,7 +130,8 @@ public class infinispan_quarkus implements Callable<Integer>
             .plan(
                 qollider.maven().build(
                     new Maven.Build(infinispanQuarkus, List.of(
-                        "-pl"
+                        "-Dnative-noargs"
+                        , "-pl"
                         , ":infinispan-quarkus-server-runner"
                         , "-Dquarkus.native.additional-build-args=--allow-incomplete-classpath"
                     ))
