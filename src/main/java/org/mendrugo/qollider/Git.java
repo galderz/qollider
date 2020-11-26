@@ -32,8 +32,6 @@ public final class Git
                 root
                 , "git"
                 , "clone"
-                , "--depth"
-                , "1000"
                 , repo.cloneUri()
             );
             final var checkoutCommit = Step.Exec.of(

@@ -86,8 +86,6 @@ public record Expect(Step step, boolean touched)
             Sandbox.today()
             , "git"
             , "clone"
-            , "--depth"
-            , "1000"
             , String.format("https://github.com/%s", repo)
         ));
     }
