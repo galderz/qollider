@@ -11,6 +11,10 @@
     "jdk-jdk": {
       "script-ref": "jdk_jdk.java",
       "description": "Script builds JDK"
+    },
+    "infinispan-quarkus": {
+      "script-ref": "infinispan_quarkus.java",
+      "description": "Script builds Infinispan Quarkus and its dependencies"
     }
   },
   "base-ref": "examples",
