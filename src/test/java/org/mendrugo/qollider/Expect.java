@@ -87,7 +87,7 @@ public record Expect(Step step, boolean touched)
             , "git"
             , "clone"
             , "--depth"
-            , "100"
+            , "1000"
             , String.format("https://github.com/%s", repo)
         ));
     }
