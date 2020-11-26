@@ -105,10 +105,13 @@ public class infinispan_quarkus implements Callable<Integer>
 
         final var srcDir = Path.of(getProperty("user.home"), ".qollider", "cache", "latest", "infinispan-quarkus", "server-runner", "target");
         final var dstDir = Path.of(getProperty("user.home"), ".qollider", "cache", "latest", "tracing-infinispan-native");
-        Files.walk(dstDir)
-            .sorted(Comparator.reverseOrder())
-            .map(Path::toFile)
-            .forEach(File::delete);
+        if (dstDir.toFile().exists())
+        {
+            Files.walk(dstDir)
+                .sorted(Comparator.reverseOrder())
+                .map(Path::toFile)
+                .forEach(File::delete);
+        }
 
         Files.walk(srcDir).forEach(srcPath ->
         {
