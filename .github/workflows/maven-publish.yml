@@ -24,7 +24,7 @@ jobs:
     - name: Publish package
       run: |
         echo "on a tag -> set pom.xml <version> to ${GITHUB_REF##*/}"
-        echo $GPG_SECRET_KEYS | base64 --decode | gpg --import --pinentry-mode loopback
+        echo $GPG_SECRET_KEYS | base64 --decode | gpg --import
         echo $GPG_OWNERTRUST | base64 --decode | gpg --import-ownertrust
         mvn -B org.codehaus.mojo:versions-maven-plugin:2.5:set -DnewVersion=${GITHUB_REF##*/}
         mvn -B -Possrh deploy
@@ -33,3 +33,4 @@ jobs:
         MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
         GPG_SECRET_KEYS: ${{ secrets.GPG_SECRET_KEYS }}
         GPG_OWNERTRUST: ${{ secrets.GPG_OWNERTRUST }}
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
