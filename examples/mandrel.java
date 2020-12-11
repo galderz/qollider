@@ -5,8 +5,8 @@
 //DEPS info.picocli:picocli:4.5.2
 //DEPS org.mendrugo.qollider:qollider:${qollider.version:0.1}
 
-import org.mendrugo.qollider.Graal;
 import org.mendrugo.qollider.Jdk;
+import org.mendrugo.qollider.Mandrel;
 import org.mendrugo.qollider.Qollider;
 import org.mendrugo.qollider.Repositories;
 import org.mendrugo.qollider.Repository;
@@ -17,26 +17,26 @@ import picocli.CommandLine.Option;
 import java.util.concurrent.Callable;
 
 /**
- * Script to build Graal.
+ * Script to build Mandrel.
  */
 @Command(
-    description = "Build Graal"
+    description = "Build Mandrel"
     , mixinStandardHelpOptions = true
-    , name = "graal"
+    , name = "mandrel"
 )
-public class graal implements Callable<Integer>
+public class mandrel implements Callable<Integer>
 {
     @Option(
         description = "JDK repository URI"
         , names = {"-j", "--jdk"}
     )
-    private Repository jdk = Repositories.LABS_JDK;
+    private Repository jdk = Repositories.JDK_11_DEV;
 
     @Option(
-        description = "Graal repository URI"
-        , names = {"-g", "--graal"}
+        description = "Mandrel repository URI"
+        , names = {"-m", "--mandrel"}
     )
-    private Repository graal = Repositories.GRAAL;
+    private Repository mandrel = Repositories.MANDREL;
 
     @Override
     public Integer call() throws Exception
@@ -47,8 +47,12 @@ public class graal implements Callable<Integer>
                 qollider.jdk().build(
                     new Jdk.Build(jdk)
                 )
-                , qollider.graal().build(
-                    new Graal.Build(graal, Repositories.MX)
+                , qollider.mandrel().build(
+                    new Mandrel.Build(
+                        mandrel
+                        , Repositories.MX
+                        , Repositories.MANDREL_PACKAGING
+                    )
                 )
             )
             .run();
@@ -58,7 +62,7 @@ public class graal implements Callable<Integer>
 
     public static void main(String... args)
     {
-        int exitCode = new CommandLine(new graal())
+        int exitCode = new CommandLine(new mandrel())
             .registerConverter(Repository.class, Repository::of)
             .execute(args);
         System.exit(exitCode);

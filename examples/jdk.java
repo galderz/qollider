@@ -5,7 +5,6 @@
 //DEPS info.picocli:picocli:4.5.2
 //DEPS org.mendrugo.qollider:qollider:${qollider.version:0.1}
 
-import org.mendrugo.qollider.Graal;
 import org.mendrugo.qollider.Jdk;
 import org.mendrugo.qollider.Qollider;
 import org.mendrugo.qollider.Repositories;
@@ -17,26 +16,20 @@ import picocli.CommandLine.Option;
 import java.util.concurrent.Callable;
 
 /**
- * Script to build Graal.
+ * Script to build a JDK.
  */
 @Command(
-    description = "Build Graal"
+    description = "Build a JDK"
     , mixinStandardHelpOptions = true
-    , name = "graal"
+    , name = "jdk"
 )
-public class graal implements Callable<Integer>
+public class jdk implements Callable<Integer>
 {
     @Option(
         description = "JDK repository URI"
         , names = {"-j", "--jdk"}
     )
-    private Repository jdk = Repositories.LABS_JDK;
-
-    @Option(
-        description = "Graal repository URI"
-        , names = {"-g", "--graal"}
-    )
-    private Repository graal = Repositories.GRAAL;
+    private Repository jdk = Repositories.JDK_JDK;
 
     @Override
     public Integer call() throws Exception
@@ -45,10 +38,7 @@ public class graal implements Callable<Integer>
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(jdk)
-                )
-                , qollider.graal().build(
-                    new Graal.Build(graal, Repositories.MX)
+                    new Jdk.Build(Repositories.JDK_JDK)
                 )
             )
             .run();
@@ -58,7 +48,7 @@ public class graal implements Callable<Integer>
 
     public static void main(String... args)
     {
-        int exitCode = new CommandLine(new graal())
+        int exitCode = new CommandLine(new jdk())
             .registerConverter(Repository.class, Repository::of)
             .execute(args);
         System.exit(exitCode);
