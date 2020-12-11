@@ -24,24 +24,31 @@ jobs:
       run: mvn -B install --file pom.xml
       env:
         MAVEN_OPTS: "-Dmaven.repo.local=${{ github.workspace }}/repository"
-    - name: Compile example to build Labs 20.1
-      uses: jbangdev/jbang-action@v0.52.0
+    - name: Compile example to build Graal
+      uses: jbangdev/jbang-action@v0.56.0
       with:
-        script: examples/labs_20_1.java
+        script: examples/graal.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
-    - name: Compile example to build Labs 20.3
-      uses: jbangdev/jbang-action@v0.52.0
+    - name: Compile example to build Infinispan Quarkus native server
+      uses: jbangdev/jbang-action@v0.56.0
       with:
-        script: examples/labs_20_3.java
+        script: examples/infinispan_quarkus.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
     - name: Compile example to build JDK
-      uses: jbangdev/jbang-action@v0.52.0
+      uses: jbangdev/jbang-action@v0.56.0
       with:
-        script: examples/jdk_jdk.java
+        script: examples/jdk.java
+        jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
+      env:
+        JBANG_REPO: "${{ github.workspace }}/repository"
+    - name: Compile example to build Mandrel
+      uses: jbangdev/jbang-action@v0.56.0
+      with:
+        script: examples/mandrel.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
