@@ -27,7 +27,7 @@ import java.util.concurrent.Callable;
 import static java.lang.System.*;
 
 /**
- * Script to Infinispan Quarkus native server.
+ * Script to build Infinispan Quarkus native server.
  */
 @Command(
     description = "Build Infinispan Quarkus native server"
