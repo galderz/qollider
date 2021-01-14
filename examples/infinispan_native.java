@@ -32,9 +32,9 @@ import static java.lang.System.*;
 @Command(
     description = "Build Infinispan Quarkus native server"
     , mixinStandardHelpOptions = true
-    , name = "infinispan-quarkus"
+    , name = "infinispan-native"
 )
-public class infinispan_quarkus implements Callable<Integer>
+public class infinispan_native implements Callable<Integer>
 {
     @Option(
         description = "JDK repository"
