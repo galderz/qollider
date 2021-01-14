@@ -149,7 +149,7 @@ public class infinispan_native implements Callable<Integer>
 
     public static void main(String... args)
     {
-        int exitCode = new CommandLine(new infinispan_quarkus())
+        int exitCode = new CommandLine(new infinispan_native())
             .registerConverter(Repository.class, Repository::of)
             .execute(args);
         System.exit(exitCode);
