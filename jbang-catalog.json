@@ -4,8 +4,8 @@
       "script-ref": "graal.java",
       "description": "Script to build Graal"
     },
-    "infinispan-quarkus": {
-      "script-ref": "infinispan_quarkus.java",
+    "infinispan-native": {
+      "script-ref": "infinispan_native.java",
       "description": "Script to build Infinispan Quarkus native server"
     },
     "jdk": {
