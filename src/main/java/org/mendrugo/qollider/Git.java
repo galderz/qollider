@@ -28,6 +28,8 @@ public final class Git
         }
         else if (repo instanceof Repository.Commit repoCommit)
         {
+            // TODO use a treeless clone instead?
+            //      https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone
             final var cloneRepo = Step.Exec.of(
                 root
                 , "git"
@@ -52,6 +54,7 @@ public final class Git
         }
     }
 
+    // TODO rename to toShallowClone
     private String[] toClone(Repository.Branch repo)
     {
         final var result = Lists.mutable(
