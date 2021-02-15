@@ -34,7 +34,7 @@ jobs:
     - name: Compile example to build Infinispan Quarkus native server
       uses: jbangdev/jbang-action@v0.56.0
       with:
-        script: examples/infinispan_quarkus.java
+        script: examples/infinispan_native.java
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
