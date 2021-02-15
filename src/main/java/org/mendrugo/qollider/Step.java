@@ -124,7 +124,7 @@ interface Step
         {
             return Action.of(() ->
             {
-                effects.mkdirs().accept(extract.path); // cheap so do it regardless, no marker
+                effects.mkdirs().accept(extract.root.resolve(extract.path)); // cheap so do it regardless, no marker
 
                 return Exec.Lazy.action(
                     Exec.of(
