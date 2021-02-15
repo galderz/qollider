@@ -26,7 +26,7 @@ final class Web
             // Create any parent directories as needed
             FileTree.mkdirs(download.path().getParent());
 
-            final var path = download.path();
+            final var path = download.root().resolve(download.path());
             final var os = new FileOutputStream(path.toFile());
             final var fileChannel = os.getChannel();
 
