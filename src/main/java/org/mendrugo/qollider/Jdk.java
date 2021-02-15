@@ -12,7 +12,7 @@ import static java.lang.String.format;
 public final class Jdk
 {
     static final Version JDK_11 = new Version(11, 0, 7, 10);
-    static final Version JDK_14 = new Version(14, 0, 2, 12);
+    static final Version JDK_15 = new Version(15, 0, 2, 7);
 
     final Effects effects;
     final Path home;
@@ -26,7 +26,8 @@ public final class Jdk
 
     public Action build(Build build)
     {
-        // TODO building a JDK requires a boot JDK, verify in say (a container) that this doesn't work
+        final var getBootAction = getBoot(build);
+
         final var cloneAction = clone(build.tree());
 
         final var buildSteps = switch (build.javaType())
@@ -42,7 +43,7 @@ public final class Jdk
 
         final var linkAction = link(build);
 
-        return Action.of(Lists.merge(cloneAction, buildAction, linkAction));
+        return Action.of(Lists.concat(List.of(getBootAction, cloneAction), buildAction, List.of(linkAction)));
     }
 
     private Action link(Build build)
@@ -87,10 +88,7 @@ public final class Jdk
 
     public Action getBoot(Build build)
     {
-        final var boot =
-            "jdk".equals(build.tree.name())
-                ? new Boot(Jdk.JDK_14, Path.of("boot-jdk-14"))
-                : new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
+        final var boot = build.boot();
 
         final var installAction = installBoot(boot);
 
@@ -140,6 +138,13 @@ public final class Jdk
         Type javaType()
         {
             return type(tree);
+        }
+
+        Jdk.Boot boot()
+        {
+            return "jdk".equals(tree.name())
+                ? new Boot(Jdk.JDK_15, Path.of("boot-jdk-15"))
+                : new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
         }
 
         private static Jdk.Type type(Repository repo)
