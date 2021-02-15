@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.file.Path;
 import java.text.CharacterIterator;
 import java.text.StringCharacterIterator;
 
@@ -23,10 +24,11 @@ final class Web
                 Channels.newChannel(download.url().openStream())
             );
 
-            // Create any parent directories as needed
-            FileTree.mkdirs(download.path().getParent());
-
             final var path = download.root().resolve(download.path());
+
+            // Create any parent directories as needed
+            FileTree.mkdirs(path.getParent());
+
             final var os = new FileOutputStream(path.toFile());
             final var fileChannel = os.getChannel();
 
