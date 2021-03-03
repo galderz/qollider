@@ -142,9 +142,10 @@ public final class Jdk
 
         Jdk.Boot boot()
         {
-            return "jdk".equals(tree.name())
-                ? new Boot(Jdk.JDK_15, Path.of("boot-jdk-15"))
-                : new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
+            if (tree.name().contains("11"))
+                return new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
+
+            return new Boot(Jdk.JDK_15, Path.of("boot-jdk-15"));
         }
 
         private static Jdk.Type type(Repository repo)
