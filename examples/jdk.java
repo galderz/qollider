@@ -37,9 +37,7 @@ public class jdk implements Callable<Integer>
         final var qollider = Qollider.of();
         qollider
             .plan(
-                qollider.jdk().build(
-                    new Jdk.Build(Repositories.JDK_JDK)
-                )
+                qollider.jdk().build(new Jdk.Build(jdk))
             )
             .run();
 
