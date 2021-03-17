@@ -24,7 +24,7 @@ public final class Repositories
 
     public static final Repository MX = github("graalvm", "mx");
 
-    public static final Repository QUARKUS = github("quarkusio", "quarkus");
+    public static final Repository QUARKUS = github("quarkusio", "quarkus", "main");
 
     public static Repository github(String org, String name)
     {
