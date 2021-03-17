@@ -58,4 +58,21 @@ public class MavenTest
             )
         );
     }
+
+    @Test
+    void test()
+    {
+        final var qollider = Sandbox.qolliderUnknown();
+        Asserts.plan(
+            qollider.plan(
+                qollider.maven().test(
+                    new Maven.Test(
+                        "quarkus"
+                        , List.of()
+                    )
+                )
+            )
+            , Expect.mavenTest("quarkus/integration-tests")
+        );
+    }
 }

@@ -65,6 +65,45 @@ public class Maven
         return Action.of(binInstall, cloneAction, buildAction);
     }
 
+    public record Test(String suite, List<String> additionalTestArgs) {}
+
+    public Action test(Test test)
+    {
+        final var maven = Path.of("maven");
+
+        final var testArgs = Lists.concat(
+            List.of(
+                home.resolve(maven).resolve(Path.of("bin", "mvn")).toString()
+                , "install"
+                , "-Dnative"
+                , "-Dformat.skip"
+            )
+            , test.additionalTestArgs
+            , extraArgs(test.suite)
+        );
+
+        final var testAction = Step.Exec.Lazy.action(
+            Step.Exec.of(
+                today
+                , testPath(test.suite)
+                , List.of(
+                    OperatingSystem.EnvVar.javaHome(today.resolve(Homes.graal()))
+                )
+                , testArgs
+            )
+            , effects.lazy()
+        );
+
+        return Action.of(testAction);
+    }
+
+    private static Path testPath(String suite)
+    {
+        return suite.equals("quarkus")
+            ? Path.of("quarkus", "integration-tests")
+            : Path.of(suite);
+    }
+
     private static List<String> extraArgs(String name)
     {
         if (!"quarkus".equals(name) && name.contains("quarkus"))

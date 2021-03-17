@@ -283,6 +283,26 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
+    public static Expect mavenTest(String name, String... extraArgs)
+    {
+        final var args = Lists.concat(
+            List.of(
+                Sandbox.home().resolve(Path.of("maven", "bin", "mvn")).toString()
+                , "install"
+                , "-Dnative"
+                , "-Dformat.skip"
+            )
+            , List.of(extraArgs)
+        );
+
+        return Expect.of(Step.Exec.of(
+            Sandbox.today()
+            , Path.of(name)
+            , List.of(new EnvVar("JAVA_HOME", Sandbox.today().resolve(Homes.graal())))
+            , args
+        ));
+    }
+
     static Expect of(Step step)
     {
         return new Expect(step, true);
