@@ -52,3 +52,10 @@ jobs:
         jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
       env:
         JBANG_REPO: "${{ github.workspace }}/repository"
+    - name: Compile example to build Quarkus
+      uses: jbangdev/jbang-action@v0.56.0
+      with:
+        script: examples/quarkus.java
+        jbangargs: build -Dqollider.version=999-SNAPSHOT --verbose
+      env:
+        JBANG_REPO: "${{ github.workspace }}/repository"

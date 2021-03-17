@@ -12,6 +12,10 @@
       "script-ref": "jdk.java",
       "description": "Script to build a JDK"
     },
+    "quarkus": {
+      "script-ref": "quarkus.java",
+      "description": "Script to build Quarkus"
+    },
     "mandrel": {
       "script-ref": "mandrel.java",
       "description": "Script to build Mandrel"
