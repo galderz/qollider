@@ -3,7 +3,7 @@
 //JAVAC_OPTIONS --enable-preview -source 14
 //JAVA_OPTIONS --enable-preview
 //DEPS info.picocli:picocli:4.5.2
-//DEPS org.mendrugo.qollider:qollider:${qollider.version:0.0.6}
+//DEPS org.mendrugo.qollider:qollider:${qollider.version:0.0.7}
 
 import org.mendrugo.qollider.Graal;
 import org.mendrugo.qollider.Jdk;
