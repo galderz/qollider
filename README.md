@@ -10,7 +10,7 @@ Qollider is an API for building and testing Quarkus, its dependencies and relate
 
 ## Dependencies
 
-Qollider users require Java 14 or higher.
+Qollider users require Java 16 or higher.
 
 ## Examples
 

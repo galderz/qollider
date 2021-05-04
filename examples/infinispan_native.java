@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//JAVA 14
-//JAVAC_OPTIONS --enable-preview -source 14
+//JAVA 16
+//JAVAC_OPTIONS --enable-preview -source 16
 //JAVA_OPTIONS --enable-preview
 //DEPS info.picocli:picocli:4.5.2
 //DEPS org.mendrugo.qollider:qollider:${qollider.version:0.0.7}

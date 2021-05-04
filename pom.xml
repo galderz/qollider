@@ -35,7 +35,7 @@
     </scm>
 
     <properties>
-        <java.version>14</java.version>
+        <java.version>16</java.version>
 
         <hamcrest.version>2.2</hamcrest.version>
         <junit.version>5.6.2</junit.version>

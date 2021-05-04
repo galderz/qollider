@@ -1,6 +1,6 @@
 //usr/bin/env jbang "$0" "$@" ; exit $?
-//JAVA 14+
-//JAVAC_OPTIONS --enable-preview -source 14
+//JAVA 16+
+//JAVAC_OPTIONS --enable-preview -source 16
 //JAVA_OPTIONS --enable-preview
 //DEPS org.hamcrest:hamcrest:2.2
 //DEPS org.junit.jupiter:junit-jupiter-engine:5.6.1
