@@ -420,7 +420,7 @@ final class Jdk
             return jdk.resolve(
                 Path.of(
                     "build"
-                    , "graal-server-release"
+                    , "graal-server-fastdebug"
                     , "images"
                     , "graal-builder-jdk"
                 )
@@ -433,7 +433,7 @@ final class Jdk
                 Path.of(build.tree.name())
                 , "bash"
                 , "configure"
-                , "--with-conf-name=graal-server-release"
+                , "--with-conf-name=graal-server-fastdebug"
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
@@ -2616,7 +2616,7 @@ final class Check
                 Path.of("jdk11u-dev")
                 , "bash"
                 , "configure"
-                , "--with-conf-name=graal-server-release"
+                , "--with-conf-name=graal-server-fastdebug"
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
@@ -2639,7 +2639,7 @@ final class Check
         {
             return Expect.of(new Steps.Linking(
                 Path.of("java_home")
-                , Path.of("jdk11u-dev/build/graal-server-release/images/graal-builder-jdk")
+                , Path.of("jdk11u-dev/build/graal-server-fastdebug/images/graal-builder-jdk")
             ));
         }
 

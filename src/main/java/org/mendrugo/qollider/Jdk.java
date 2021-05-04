@@ -182,7 +182,7 @@ public final class Jdk
             return jdk.resolve(
                 Path.of(
                     "build"
-                    , "graal-server-release"
+                    , "graal-server-fastdebug"
                     , "images"
                     , "graal-builder-jdk"
                 )
@@ -196,13 +196,14 @@ public final class Jdk
                 , Path.of(build.tree.name())
                 , "bash"
                 , "configure"
-                , "--with-conf-name=graal-server-release"
+                , "--with-conf-name=graal-server-fastdebug"
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
                 , "--enable-aot=no"
+                , "--with-debug-level=fastdebug"
                 , format("--with-boot-jdk=%s", home.resolve(Homes.bootJdk()))
             );
         }

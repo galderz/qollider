@@ -152,12 +152,13 @@ public record Expect(Step step, boolean touched)
             , Path.of("jdk11u-dev")
             , "bash"
             , "configure"
-            , "--with-conf-name=graal-server-release"
+            , "--with-conf-name=graal-server-fastdebug"
             , "--disable-warnings-as-errors"
             , "--with-jvm-features=graal"
             , "--with-jvm-variants=server"
             , "--with-extra-cflags=-fcommon"
             , "--enable-aot=no"
+            , "--with-debug-level=fastdebug"
             , "--with-boot-jdk=/home/bootjdk_home"
         ));
     }
@@ -176,7 +177,7 @@ public record Expect(Step step, boolean touched)
     {
         return Expect.of(new Step.Linking(
             Path.of("java_home")
-            , Path.of("jdk11u-dev/build/graal-server-release/images/graal-builder-jdk")
+            , Path.of("jdk11u-dev/build/graal-server-fastdebug/images/graal-builder-jdk")
             , Sandbox.today()
         ));
     }
