@@ -202,7 +202,6 @@ public final class Jdk
                 , "--with-jvm-variants=server"
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
-                , "--enable-aot=no"
                 , "--with-debug-level=fastdebug"
                 , format("--with-boot-jdk=%s", home.resolve(Homes.bootJdk()))
             );

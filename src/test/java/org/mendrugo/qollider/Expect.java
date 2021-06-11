@@ -157,7 +157,6 @@ public record Expect(Step step, boolean touched)
             , "--with-jvm-features=graal"
             , "--with-jvm-variants=server"
             , "--with-extra-cflags=-fcommon"
-            , "--enable-aot=no"
             , "--with-debug-level=fastdebug"
             , "--with-boot-jdk=/home/bootjdk_home"
         ));
