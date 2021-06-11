@@ -103,9 +103,9 @@ public class JdkTest
                     new Jdk.Build(Repositories.JDK_JDK)
                 )
             )
-            , Expect.jdk15DownloadLinux()
-            , Expect.bootJdk15Extract()
-            , Expect.link("/home/bootjdk_home", "boot-jdk-15")
+            , Expect.jdk16DownloadLinux()
+            , Expect.bootJdk16Extract()
+            , Expect.link("/home/bootjdk_home", "boot-jdk-16")
         );
     }
 
