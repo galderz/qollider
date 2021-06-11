@@ -149,6 +149,9 @@
                             </execution>
                         </executions>
                     </plugin>
+                    <!-- Not working with Java 16, see:
+                         https://github.com/galderz/qollider/runs/2803057501?check_suite_focus=true
+                         https://issues.sonatype.org/browse/NEXUS-27902
                     <plugin>
                         <groupId>org.sonatype.plugins</groupId>
                         <artifactId>nexus-staging-maven-plugin</artifactId>
@@ -160,6 +163,7 @@
                             <autoReleaseAfterClose>true</autoReleaseAfterClose>
                         </configuration>
                     </plugin>
+                    -->
                 </plugins>
             </build>
             <distributionManagement>
