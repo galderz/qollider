@@ -8,12 +8,11 @@ public final class Repositories
     public static final Repository JDK_JDK = github("openjdk", "jdk");
     public static final Repository JDK_11_DEV = github("openjdk", "jdk11u-dev");
 
-    // 20.1 branch includes workarounds for building with XCode 12 on macOS:
-    // https://bugs.openjdk.java.net/browse/JDK-8253375
-    // https://bugs.openjdk.java.net/browse/JDK-8253791
-    public static final Repository LABS_JDK_20_1 = github("galderz", "labs-openjdk-11", "jvmci-20.1-b04_8253375");
-    public static final Repository LABS_JDK_20_3 = github("graalvm", "labs-openjdk-11", "jvmci-20.3-b06");
-    public static final Repository LABS_JDK = LABS_JDK_20_3;
+    public static final Repository LABS_JDK_20_3 = github("graalvm", "labs-openjdk-11", "jvmci-20.3-b16");
+    public static final Repository LABS_JDK_21_2 = github("graalvm", "labs-openjdk-11", "jvmci-21.2-b05");
+    public static final Repository LABS_JDK = LABS_JDK_21_2;
+    public static final Repository GRAAL_20_3 = github("oracle", "graal", "release/graal-vm%2F20.3");
+    public static final Repository GRAAL_21_2 = github("oracle", "graal", "release/graal-vm%2F21.2");
     public static final Repository GRAAL = github("oracle", "graal");
 
     public static final Repository MANDREL_20_1 = github("graalvm", "mandrel", "mandrel/20.1");
