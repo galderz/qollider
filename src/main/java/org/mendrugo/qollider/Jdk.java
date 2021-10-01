@@ -5,6 +5,7 @@ import org.mendrugo.qollider.Qollider.Get;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 import static java.lang.String.format;
@@ -51,7 +52,7 @@ public final class Jdk
         final var jdkPath = Path.of(build.tree.name());
         final var target = switch (build.javaType())
         {
-            case OPENJDK -> OpenJDK.javaHome(jdkPath);
+            case OPENJDK -> OpenJDK.javaHome(build, jdkPath);
             case LABSJDK -> LabsJDK.javaHome(jdkPath);
         };
 
@@ -133,7 +134,7 @@ public final class Jdk
             : path;
     }
 
-    public record Build(Repository tree)
+    public record Build(Repository tree, DebugLevel debugLevel)
     {
         Type javaType()
         {
@@ -154,14 +155,27 @@ public final class Jdk
         }
     }
 
+    public enum DebugLevel
+    {
+        RELEASE
+        , FASTDEBUG
+        , SLOWDEBUG;
+
+        @Override
+        public String toString()
+        {
+            return super.toString().toLowerCase(Locale.ROOT);
+        }
+    }
+
     record Boot(Jdk.Version version, Path path) {}
 
     enum Type
     {
         OPENJDK
         , LABSJDK
-    }
 
+    }
     record Version(int major, int minor, int micro, int build)
     {
         String majorMinorMicro()
@@ -177,12 +191,12 @@ public final class Jdk
             return List.of(configure(build, home, today), make(build, today));
         }
 
-        static Path javaHome(Path jdk)
+        static Path javaHome(Build build, Path jdk)
         {
             return jdk.resolve(
                 Path.of(
                     "build"
-                    , "graal-server-fastdebug"
+                    , "graal-server-" + build.debugLevel
                     , "images"
                     , "graal-builder-jdk"
                 )
@@ -196,13 +210,13 @@ public final class Jdk
                 , Path.of(build.tree.name())
                 , "bash"
                 , "configure"
-                , "--with-conf-name=graal-server-fastdebug"
+                , "--with-conf-name=graal-server-" + build.debugLevel
                 , "--disable-warnings-as-errors"
                 , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
-                , "--with-debug-level=fastdebug"
+                , "--with-debug-level=" + build.debugLevel
                 , format("--with-boot-jdk=%s", home.resolve(Homes.bootJdk()))
             );
         }

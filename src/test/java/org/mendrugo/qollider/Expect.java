@@ -145,19 +145,19 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
-    public static Expect javaOpenJdkConfigure()
+    public static Expect javaOpenJdkConfigure(String debugLevel)
     {
         return Expect.of(Step.Exec.of(
             Sandbox.today()
             , Path.of("jdk11u-dev")
             , "bash"
             , "configure"
-            , "--with-conf-name=graal-server-fastdebug"
+            , "--with-conf-name=graal-server-" + debugLevel
             , "--disable-warnings-as-errors"
             , "--with-jvm-features=graal"
             , "--with-jvm-variants=server"
             , "--with-extra-cflags=-fcommon"
-            , "--with-debug-level=fastdebug"
+            , "--with-debug-level=" + debugLevel
             , "--with-boot-jdk=/home/bootjdk_home"
         ));
     }
@@ -172,11 +172,14 @@ public record Expect(Step step, boolean touched)
         ));
     }
 
-    public static Expect javaOpenJdkLink()
+    public static Expect javaOpenJdkLink(String debugLevel)
     {
         return Expect.of(new Step.Linking(
             Path.of("java_home")
-            , Path.of("jdk11u-dev/build/graal-server-fastdebug/images/graal-builder-jdk")
+            , Path.of(String.format(
+                "jdk11u-dev/build/graal-server-%s/images/graal-builder-jdk"
+                , debugLevel
+            ))
             , Sandbox.today()
         ));
     }

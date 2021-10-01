@@ -20,6 +20,7 @@ public class JdkTest
                 qollider.jdk().build(
                     new Jdk.Build(
                         Repository.of("https://github.com/graalvm/labs-openjdk-11/tree/jvmci-20.2-b02")
+                        , Jdk.DebugLevel.RELEASE
                     )
                 )
             )
@@ -33,22 +34,42 @@ public class JdkTest
     }
 
     @Test
-    void buildOpenJdk()
+    void buildOpenJdkRelease()
     {
         final var qollider = Sandbox.qolliderMacOs();
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().build(
-                    new Jdk.Build(Repositories.JDK_11_DEV)
+                    new Jdk.Build(Repositories.JDK_11_DEV, Jdk.DebugLevel.RELEASE)
                 )
             )
             , Expect.jdk11DownloadMacOs()
             , Expect.bootJdk11ExtractMacOs()
             , Expect.link("/home/bootjdk_home", "boot-jdk-11/Contents/Home")
             , Expect.gitCloneBranch("openjdk/jdk11u-dev", "master", 1)
-            , Expect.javaOpenJdkConfigure()
+            , Expect.javaOpenJdkConfigure("release")
             , Expect.javaOpenJdkMake()
-            , Expect.javaOpenJdkLink()
+            , Expect.javaOpenJdkLink("release")
+        );
+    }
+
+    @Test
+    void buildOpenJdkFastDebug()
+    {
+        final var qollider = Sandbox.qolliderMacOs();
+        Asserts.plan(
+            qollider.plan(
+                qollider.jdk().build(
+                    new Jdk.Build(Repositories.JDK_11_DEV, Jdk.DebugLevel.FASTDEBUG)
+                )
+            )
+            , Expect.jdk11DownloadMacOs()
+            , Expect.bootJdk11ExtractMacOs()
+            , Expect.link("/home/bootjdk_home", "boot-jdk-11/Contents/Home")
+            , Expect.gitCloneBranch("openjdk/jdk11u-dev", "master", 1)
+            , Expect.javaOpenJdkConfigure("fastdebug")
+            , Expect.javaOpenJdkMake()
+            , Expect.javaOpenJdkLink("fastdebug")
         );
     }
 
@@ -61,6 +82,7 @@ public class JdkTest
                 qollider.jdk().build(
                     new Jdk.Build(
                         Repository.of("https://hg.openjdk.java.net/jdk-updates/jdk11u-dev")
+                        , Jdk.DebugLevel.RELEASE
                     )
                 )
             )
@@ -68,9 +90,9 @@ public class JdkTest
             , Expect.bootJdk11ExtractMacOs()
             , Expect.link("/home/bootjdk_home", "boot-jdk-11/Contents/Home")
             , Expect.mercurialOpenJdkClone()
-            , Expect.javaOpenJdkConfigure()
+            , Expect.javaOpenJdkConfigure("release")
             , Expect.javaOpenJdkMake()
-            , Expect.javaOpenJdkLink()
+            , Expect.javaOpenJdkLink("release")
         );
     }
 
@@ -100,7 +122,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repositories.JDK_JDK)
+                    new Jdk.Build(Repositories.JDK_JDK, Jdk.DebugLevel.RELEASE)
                 )
             )
             , Expect.jdk16DownloadLinux()
@@ -116,7 +138,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repositories.JDK_11_DEV)
+                    new Jdk.Build(Repositories.JDK_11_DEV, Jdk.DebugLevel.RELEASE)
                 )
             )
             , Expect.jdk11DownloadLinux()
@@ -132,7 +154,7 @@ public class JdkTest
         Asserts.plan(
             qollider.plan(
                 qollider.jdk().getBoot(
-                    new Jdk.Build(Repositories.JDK_11_DEV)
+                    new Jdk.Build(Repositories.JDK_11_DEV, Jdk.DebugLevel.RELEASE)
                 )
             )
             , Expect.jdk11DownloadMacOs()

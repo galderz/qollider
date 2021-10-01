@@ -31,13 +31,19 @@ public class jdk implements Callable<Integer>
     )
     private Repository jdk = Repositories.JDK_JDK;
 
+    @Option(
+        description = "Debug level"
+        , names = {"-d", "--debug-level"}
+    )
+    private Jdk.DebugLevel debugLevel = Jdk.DebugLevel.FASTDEBUG;
+
     @Override
     public Integer call() throws Exception
     {
         final var qollider = Qollider.of();
         qollider
             .plan(
-                qollider.jdk().build(new Jdk.Build(jdk))
+                qollider.jdk().build(new Jdk.Build(jdk, debugLevel))
             )
             .run();
 
@@ -48,6 +54,7 @@ public class jdk implements Callable<Integer>
     {
         int exitCode = new CommandLine(new jdk())
             .registerConverter(Repository.class, Repository::of)
+            .registerConverter(Jdk.DebugLevel.class, debugLevel -> Jdk.DebugLevel.valueOf(debugLevel.toUpperCase()))
             .execute(args);
         System.exit(exitCode);
     }
