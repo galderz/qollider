@@ -30,7 +30,7 @@ public class quarkus implements Callable<Integer>
     private Repository jdk = Repositories.JDK_11_DEV;
 
     @Option(
-        description = "Debug level"
+        description = "JDK Debug level"
         , names = {"-d", "--jdk-debug-level"}
     )
     private Jdk.DebugLevel jdkDebugLevel = Jdk.DebugLevel.FASTDEBUG;

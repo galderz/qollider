@@ -33,7 +33,7 @@ public class graal implements Callable<Integer>
     private Repository jdk = Repositories.LABS_JDK;
 
     @Option(
-        description = "Debug level"
+        description = "JDK Debug level"
         , names = {"-d", "--jdk-debug-level"}
     )
     private Jdk.DebugLevel jdkDebugLevel = Jdk.DebugLevel.FASTDEBUG;

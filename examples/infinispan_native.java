@@ -43,6 +43,12 @@ public class infinispan_native implements Callable<Integer>
     private Repository jdk = Repositories.JDK_11_DEV;
 
     @Option(
+        description = "JDK Debug level"
+        , names = {"-d", "--jdk-debug-level"}
+    )
+    private Jdk.DebugLevel jdkDebugLevel = Jdk.DebugLevel.FASTDEBUG;
+
+    @Option(
         description = "Mandrel repository"
         , names = {"-m", "--mandrel"}
     )
@@ -73,7 +79,7 @@ public class infinispan_native implements Callable<Integer>
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(jdk)
+                    new Jdk.Build(jdk, jdkDebugLevel)
                 )
                 , qollider.mandrel().build(
                     new Mandrel.Build(mandrel, Repositories.MX, Repositories.MANDREL_PACKAGING)
