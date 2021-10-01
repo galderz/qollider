@@ -33,6 +33,12 @@ public class mandrel implements Callable<Integer>
     private Repository jdk = Repositories.JDK_11_DEV;
 
     @Option(
+        description = "Debug level"
+        , names = {"-d", "--jdk-debug-level"}
+    )
+    private Jdk.DebugLevel jdkDebugLevel = Jdk.DebugLevel.FASTDEBUG;
+
+    @Option(
         description = "Mandrel repository URI"
         , names = {"-m", "--mandrel"}
     )
@@ -45,7 +51,7 @@ public class mandrel implements Callable<Integer>
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(jdk)
+                    new Jdk.Build(jdk, jdkDebugLevel)
                 )
                 , qollider.mandrel().build(
                     new Mandrel.Build(

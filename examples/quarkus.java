@@ -30,6 +30,12 @@ public class quarkus implements Callable<Integer>
     private Repository jdk = Repositories.JDK_11_DEV;
 
     @Option(
+        description = "Debug level"
+        , names = {"-d", "--jdk-debug-level"}
+    )
+    private Jdk.DebugLevel jdkDebugLevel = Jdk.DebugLevel.FASTDEBUG;
+
+    @Option(
         description = "Graal repository URI"
         , names = {"-g", "--graal"}
     )
@@ -48,7 +54,7 @@ public class quarkus implements Callable<Integer>
         qollider
             .plan(
                 qollider.jdk().build(
-                    new Jdk.Build(jdk)
+                    new Jdk.Build(jdk, jdkDebugLevel)
                 )
                 , qollider.mandrel().build(
                     new Mandrel.Build(graal, Repositories.MX, Repositories.MANDREL_PACKAGING)
