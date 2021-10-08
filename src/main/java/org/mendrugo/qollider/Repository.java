@@ -110,7 +110,7 @@ public interface Repository
         }
 
         return repoName.equals("labs-openjdk-11")
-            ? 20
+            ? 40
             : 1;
     }
 }

@@ -27,7 +27,7 @@ public class JdkTest
             , Expect.jdk11DownloadMacOs()
             , Expect.bootJdk11ExtractMacOs()
             , Expect.link("/home/bootjdk_home", "boot-jdk-11/Contents/Home")
-            , Expect.gitCloneBranch("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 20)
+            , Expect.gitCloneBranch("graalvm/labs-openjdk-11", "jvmci-20.2-b02", 40)
             , Expect.javaLabsJdkBuild()
             , Expect.link("/today/java_home", "labs-openjdk-11/java_home")
         );
