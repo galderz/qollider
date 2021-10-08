@@ -104,10 +104,14 @@ public record Expect(Step step, boolean touched)
     {
         return Expect.of(Step.Exec.of(
             Sandbox.today()
-            , Path.of("graal", "substratevm")
+            , Path.of("graal")
             , "/today/mx/mx"
             , "--java-home"
             , "/today/java_home"
+            , "--primary-suite-path"
+            , "substratevm"
+            , "--components=Native Image,LibGraal"
+            , "--native-images=native-image,lib:jvmcicompiler"
             , "build"
         ));
     }

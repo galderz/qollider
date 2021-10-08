@@ -32,14 +32,17 @@ public final class Graal
         final var mxAction = git.clone(build.mx);
         final var treeAction = git.clone(build.tree);
 
-        final var svm = Path.of(build.tree.name(), "substratevm");
         var buildAction = Step.Exec.Lazy.action(
             Step.Exec.of(
                 today
-                , svm
+                , Path.of(build.tree.name())
                 , today.resolve(Path.of(build.mx.name(), "mx")).toString()
                 , "--java-home"
                 , today.resolve(Homes.java()).toString()
+                , "--primary-suite-path"
+                , "substratevm"
+                , "--components=Native Image,LibGraal"
+                , "--native-images=native-image,lib:jvmcicompiler"
                 , "build"
             )
             , effects.lazy()
