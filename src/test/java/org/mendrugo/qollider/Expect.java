@@ -158,7 +158,6 @@ public record Expect(Step step, boolean touched)
             , "configure"
             , "--with-conf-name=graal-server-" + debugLevel
             , "--disable-warnings-as-errors"
-            , "--with-jvm-features=graal"
             , "--with-jvm-variants=server"
             , "--with-extra-cflags=-fcommon"
             , "--with-debug-level=" + debugLevel

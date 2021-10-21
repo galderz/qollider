@@ -212,7 +212,6 @@ public final class Jdk
                 , "configure"
                 , "--with-conf-name=graal-server-" + build.debugLevel
                 , "--disable-warnings-as-errors"
-                , "--with-jvm-features=graal"
                 , "--with-jvm-variants=server"
                 // Workaround for https://bugs.openjdk.java.net/browse/JDK-8235903 on newer GCC versions
                 , "--with-extra-cflags=-fcommon"
