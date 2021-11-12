@@ -125,9 +125,9 @@ public class JdkTest
                     new Jdk.Build(Repositories.JDK_JDK, Jdk.DebugLevel.RELEASE)
                 )
             )
-            , Expect.jdk16DownloadLinux()
-            , Expect.bootJdk16Extract()
-            , Expect.link("/home/bootjdk_home", "boot-jdk-16")
+            , Expect.jdk17DownloadLinux()
+            , Expect.bootJdk17Extract()
+            , Expect.link("/home/bootjdk_home", "boot-jdk-17")
         );
     }
 

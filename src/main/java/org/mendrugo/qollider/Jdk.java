@@ -13,7 +13,7 @@ import static java.lang.String.format;
 public final class Jdk
 {
     static final Version JDK_11 = new Version(11, 0, 7, 10);
-    static final Version JDK_16 = new Version(16, 0, 1, 9);
+    static final Version JDK_17 = new Version(17, 0, 1, 12);
 
     final Effects effects;
     final Path home;
@@ -146,7 +146,7 @@ public final class Jdk
             if (tree.name().contains("11"))
                 return new Boot(Jdk.JDK_11, Path.of("boot-jdk-11"));
 
-            return new Boot(Jdk.JDK_16, Path.of("boot-jdk-16"));
+            return new Boot(Jdk.JDK_17, Path.of("boot-jdk-17"));
         }
 
         private static Jdk.Type type(Repository repo)
