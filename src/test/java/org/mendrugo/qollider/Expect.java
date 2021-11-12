@@ -190,7 +190,7 @@ public record Expect(Step step, boolean touched)
     public static Expect jdk11DownloadLinux()
     {
         return download(
-            "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
+            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
             , "downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
             , Sandbox.home()
         );
@@ -199,7 +199,7 @@ public record Expect(Step step, boolean touched)
     public static Expect jdk11DownloadMacOs()
     {
         return download(
-            "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
             , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
             , Sandbox.home()
         );
@@ -208,7 +208,7 @@ public record Expect(Step step, boolean touched)
     public static Expect jdk17DownloadLinux()
     {
         return download(
-            "https://github.com/AdoptOpenJDK/openjdk17-binaries/releases/download/jdk-17.0.1%2B12/OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.1_12.tar.gz"
+            "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.1%2B12/OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.1_12.tar.gz"
             , "downloads/OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.1_12.tar.gz"
             , Sandbox.home()
         );

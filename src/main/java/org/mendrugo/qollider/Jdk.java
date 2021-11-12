@@ -104,7 +104,7 @@ public final class Jdk
     private Action installBoot(Boot boot)
     {
         final var javaBaseUrl = format(
-            "https://github.com/AdoptOpenJDK/openjdk%d-binaries/releases/download"
+            "https://github.com/adoptium/temurin%d-binaries/releases/download"
             , boot.version().major()
         );
 
