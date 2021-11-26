@@ -9,12 +9,12 @@ public record Expect(Step step, boolean touched)
 {
     public static Expect bootJdk11ExtractLinux()
     {
-        return extract("downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz", "boot-jdk-11", Sandbox.home());
+        return extract("downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.13_8.tar.gz", "boot-jdk-11", Sandbox.home());
     }
 
     public static Expect bootJdk11ExtractMacOs()
     {
-        return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz", "boot-jdk-11", Sandbox.home());
+        return extract("downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.13_8.tar.gz", "boot-jdk-11", Sandbox.home());
     }
 
     public static Expect bootJdk17Extract()
@@ -190,8 +190,8 @@ public record Expect(Step step, boolean touched)
     public static Expect jdk11DownloadLinux()
     {
         return download(
-            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
-            , "downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.7_10.tar.gz"
+            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.13%2B8/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.13_8.tar.gz"
+            , "downloads/OpenJDK11U-jdk_aarch64_linux_hotspot_11.0.13_8.tar.gz"
             , Sandbox.home()
         );
     }
@@ -199,8 +199,8 @@ public record Expect(Step step, boolean touched)
     public static Expect jdk11DownloadMacOs()
     {
         return download(
-            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.7%2B10/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
-            , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.7_10.tar.gz"
+            "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.13%2B8/OpenJDK11U-jdk_x64_mac_hotspot_11.0.13_8.tar.gz"
+            , "downloads/OpenJDK11U-jdk_x64_mac_hotspot_11.0.13_8.tar.gz"
             , Sandbox.home()
         );
     }

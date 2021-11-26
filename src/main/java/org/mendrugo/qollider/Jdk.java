@@ -12,7 +12,7 @@ import static java.lang.String.format;
 
 public final class Jdk
 {
-    static final Version JDK_11 = new Version(11, 0, 7, 10);
+    static final Version JDK_11 = new Version(11, 0, 13, 8);
     static final Version JDK_17 = new Version(17, 0, 1, 12);
 
     final Effects effects;
