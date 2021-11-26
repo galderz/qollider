@@ -44,6 +44,12 @@ public class graal implements Callable<Integer>
     )
     private Repository graal = Repositories.GRAAL;
 
+    @Option(
+        description = "MX repository URI"
+        , names = {"-m", "--mx"}
+    )
+    private Repository mx = Repositories.MX;
+
     @Override
     public Integer call() throws Exception
     {
@@ -54,7 +60,7 @@ public class graal implements Callable<Integer>
                     new Jdk.Build(jdk, jdkDebugLevel)
                 )
                 , qollider.graal().build(
-                    new Graal.Build(graal, Repositories.MX)
+                    new Graal.Build(graal, mx)
                 )
             )
             .run();
