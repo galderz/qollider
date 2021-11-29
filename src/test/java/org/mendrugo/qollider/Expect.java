@@ -105,6 +105,9 @@ public record Expect(Step step, boolean touched)
         return Expect.of(Step.Exec.of(
             Sandbox.today()
             , Path.of("graal")
+            , List.of(
+                EnvVar.of("MX_PYTHON", "python3")
+            )
             , "/today/mx/mx"
             , "--java-home"
             , "/today/java_home"

@@ -1,9 +1,11 @@
 package org.mendrugo.qollider;
 
+import org.mendrugo.qollider.OperatingSystem.EnvVar;
 import org.mendrugo.qollider.Qollider.Action;
 import org.mendrugo.qollider.Qollider.Get;
 
 import java.nio.file.Path;
+import java.util.List;
 
 public final class Graal
 {
@@ -36,6 +38,9 @@ public final class Graal
             Step.Exec.of(
                 today
                 , Path.of(build.tree.name())
+                , List.of(
+                    EnvVar.of("MX_PYTHON", "python3")
+                )
                 , today.resolve(Path.of(build.mx.name(), "mx")).toString()
                 , "--java-home"
                 , today.resolve(Homes.java()).toString()
